@@ -106,8 +106,18 @@ nonisolated struct Keyframe: Codable, Hashable, Sendable, Identifiable {
 /// A clip parameter that can be keyframed.
 nonisolated enum AnimatableProperty: String, Codable, CaseIterable, Identifiable, Sendable, CodingKeyRepresentable {
     case positionX, positionY, scale, rotation, opacity, yaw, pitch
+    // Color grade (Color tab).
+    case exposure, brightness, contrast, saturation, temperature, tint, highlights, shadows
+    case liftX, liftY, liftMaster, gammaX, gammaY, gammaMaster
+    case gainX, gainY, gainMaster, offsetX, offsetY, offsetMaster
+    case lutIntensity
 
     var id: String { rawValue }
+
+    /// Motion parameters belong to the Effects tab; the rest to the Color tab.
+    var isColor: Bool { !Self.motion.contains(self) }
+    static let motion: [AnimatableProperty] = [.positionX, .positionY, .scale, .rotation, .opacity, .yaw, .pitch]
+    static let grade: [AnimatableProperty] = allCases.filter(\.isColor)
 
     var title: String {
         switch self {
@@ -118,12 +128,33 @@ nonisolated enum AnimatableProperty: String, Codable, CaseIterable, Identifiable
         case .opacity: "Opacity"
         case .yaw: "Yaw"
         case .pitch: "Pitch"
+        case .exposure: "Exposure"
+        case .brightness: "Brightness"
+        case .contrast: "Contrast"
+        case .saturation: "Saturation"
+        case .temperature: "Temperature"
+        case .tint: "Tint"
+        case .highlights: "Highlights"
+        case .shadows: "Shadows"
+        case .liftX: "Lift Color X"
+        case .liftY: "Lift Color Y"
+        case .liftMaster: "Lift"
+        case .gammaX: "Gamma Color X"
+        case .gammaY: "Gamma Color Y"
+        case .gammaMaster: "Gamma"
+        case .gainX: "Gain Color X"
+        case .gainY: "Gain Color Y"
+        case .gainMaster: "Gain"
+        case .offsetX: "Offset Color X"
+        case .offsetY: "Offset Color Y"
+        case .offsetMaster: "Offset"
+        case .lutIntensity: "LUT Intensity"
         }
     }
 
     var defaultValue: Double {
         switch self {
-        case .scale, .opacity: 1
+        case .scale, .opacity, .contrast, .saturation, .lutIntensity: 1
         default: 0
         }
     }
@@ -138,6 +169,27 @@ nonisolated enum AnimatableProperty: String, Codable, CaseIterable, Identifiable
         case .opacity: \.opacity
         case .yaw: \.transform.yaw
         case .pitch: \.transform.pitch
+        case .exposure: \.color.exposure
+        case .brightness: \.color.brightness
+        case .contrast: \.color.contrast
+        case .saturation: \.color.saturation
+        case .temperature: \.color.temperature
+        case .tint: \.color.tint
+        case .highlights: \.color.highlights
+        case .shadows: \.color.shadows
+        case .liftX: \.color.lift.x
+        case .liftY: \.color.lift.y
+        case .liftMaster: \.color.lift.master
+        case .gammaX: \.color.gamma.x
+        case .gammaY: \.color.gamma.y
+        case .gammaMaster: \.color.gamma.master
+        case .gainX: \.color.gain.x
+        case .gainY: \.color.gain.y
+        case .gainMaster: \.color.gain.master
+        case .offsetX: \.color.offset.x
+        case .offsetY: \.color.offset.y
+        case .offsetMaster: \.color.offset.master
+        case .lutIntensity: \.color.lutIntensity
         }
     }
 
@@ -149,6 +201,10 @@ nonisolated enum AnimatableProperty: String, Codable, CaseIterable, Identifiable
         case .rotation: -3600...3600
         case .opacity: 0...1
         case .yaw, .pitch: -89...89
+        case .exposure: -3...3
+        case .contrast, .saturation: 0...2
+        case .lutIntensity: 0...1
+        default: -1...1
         }
     }
 }
@@ -275,6 +331,16 @@ nonisolated extension Clip {
             yaw: value(of: .yaw, at: timelineTime),
             pitch: value(of: .pitch, at: timelineTime)
         )
+    }
+
+    /// The grade at a moment, with keyframed color values evaluated there.
+    func grade(at timelineTime: Time) -> ColorGrade {
+        guard animation.keyframes.keys.contains(where: \.isColor) else { return color }
+        var clip = self
+        for property in AnimatableProperty.grade where isAnimated(property) {
+            clip[keyPath: property.keyPath] = value(of: property, at: timelineTime)
+        }
+        return clip.color
     }
 
     func isAnimated(_ property: AnimatableProperty) -> Bool {

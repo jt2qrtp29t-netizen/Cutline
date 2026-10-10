@@ -11,6 +11,10 @@ enum Changelog {
     }
 
     static let entries: [Entry] = [
+        Entry(version: "3.0", title: "Color tab", changes: [
+            "A new color grading engine on the GPU, with one fixed order: exposure, white balance, offset, lift/gamma/gain, contrast and saturation, curves, then LUT. Values are only clamped at the very end.",
+            "Every color control can be keyframed, undone and saved. Older projects load and look exactly as before.",
+        ]),
         Entry(version: "2.9", title: "Changelog", changes: [
             "New Changelog window listing what every version added. Open it with the list icon in the top bar or from the Help menu.",
         ]),

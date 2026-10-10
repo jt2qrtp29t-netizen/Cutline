@@ -23,7 +23,7 @@ struct EffectsPanel: View {
                     TransitionsSection(editor: editor)
                     if let clip = editor.effectsClip {
                         InspectorSection(title: "Animate · \(clip.isText ? (clip.text?.string ?? "Text") : clip.name)") {
-                            ForEach(AnimatableProperty.allCases) { property in
+                            ForEach(AnimatableProperty.motion) { property in
                                 ParameterRow(editor: editor, clip: clip, property: property)
                             }
                             Text("◆ adds or removes a keyframe at the playhead; ◀︎ ▶︎ jump between keyframes. Changing an animated value sets a keyframe at the playhead.")

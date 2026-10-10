@@ -11,7 +11,7 @@ struct CurveEditorPanel: View {
             HStack(spacing: 8) {
                 SectionLabel("Curve")
                 Menu {
-                    ForEach(AnimatableProperty.allCases) { property in
+                    ForEach(AnimatableProperty.motion) { property in
                         Button(property.title) { editor.effectsProperty = property }
                     }
                 } label: {
@@ -86,6 +86,7 @@ private struct CurveGraph: View {
         case .positionX, .positionY: 100
         case .scale, .opacity: 0.2
         case .rotation, .yaw, .pitch: 20
+        default: 0.2
         }
         let span = max(high - low, minimumSpan)
         let mid = (low + high) / 2

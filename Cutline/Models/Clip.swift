@@ -51,20 +51,6 @@ nonisolated struct CropInsets: Codable, Hashable, Sendable {
     static let minimumVisible = 0.05
 }
 
-nonisolated struct ColorAdjustments: Codable, Hashable, Sendable {
-    /// Exposure in stops, -3...3.
-    var exposure: Double = 0
-    /// -1...1, 0 = unchanged.
-    var brightness: Double = 0
-    /// 0...2, 1 = unchanged.
-    var contrast: Double = 1
-    /// 0...2, 1 = unchanged.
-    var saturation: Double = 1
-
-    static let neutral = ColorAdjustments()
-    var isNeutral: Bool { self == .neutral }
-}
-
 /// A non-destructive window onto a media item, placed on a track. A clip on a
 /// video track shows the media's picture; a clip on an audio track plays its sound.
 ///
@@ -81,7 +67,8 @@ nonisolated struct Clip: Identifiable, Codable, Hashable, Sendable {
     var transform: ClipTransform = .identity
     var crop: CropInsets = .none
     var opacity: Double = 1
-    var color: ColorAdjustments = .neutral
+    /// The clip's color grade (Color tab). Stored as "color" so older projects load.
+    var color: ColorGrade = .neutral
     /// Linear gain for audio clips; 1 = unchanged.
     var volume: Double = 1
     /// Stereo position for audio clips: -1 = left, 0 = center, 1 = right.
@@ -124,7 +111,7 @@ nonisolated struct Clip: Identifiable, Codable, Hashable, Sendable {
         transform = try c.decodeIfPresent(ClipTransform.self, forKey: .transform) ?? .identity
         crop = try c.decodeIfPresent(CropInsets.self, forKey: .crop) ?? .none
         opacity = try c.decodeIfPresent(Double.self, forKey: .opacity) ?? 1
-        color = try c.decodeIfPresent(ColorAdjustments.self, forKey: .color) ?? .neutral
+        color = try c.decodeIfPresent(ColorGrade.self, forKey: .color) ?? .neutral
         volume = try c.decodeIfPresent(Double.self, forKey: .volume) ?? 1
         pan = try c.decodeIfPresent(Double.self, forKey: .pan) ?? 0
         pitchSemitones = try c.decodeIfPresent(Double.self, forKey: .pitchSemitones) ?? 0

@@ -14,10 +14,12 @@ extension AnimatableProperty {
         case .positionX, .positionY: "px"
         case .scale, .opacity: "%"
         case .rotation, .yaw, .pitch: "°"
+        case .exposure: "EV"
+        default: ""
         }
     }
 
-    var fractionDigits: Int { self == .opacity ? 0 : 1 }
+    var fractionDigits: Int { self == .opacity ? 0 : isColor ? 2 : 1 }
 
     /// Value change per point dragged (⌥ for 10× finer).
     var unitsPerPoint: Double {
@@ -26,6 +28,7 @@ extension AnimatableProperty {
         case .scale: 0.001
         case .opacity: 0.005
         case .rotation, .yaw, .pitch: 0.25
+        default: 0.005
         }
     }
 

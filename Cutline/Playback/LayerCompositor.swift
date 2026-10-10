@@ -212,16 +212,9 @@ nonisolated final class LayerCompositor: NSObject, AVVideoCompositing, @unchecke
             image = rotated3D(image, yaw: values.yaw, pitch: values.pitch, renderSize: renderSize)
         }
 
-        let color = clip.color
-        if color.exposure != 0 {
-            image = image.applyingFilter("CIExposureAdjust", parameters: [kCIInputEVKey: color.exposure])
-        }
-        if color.brightness != 0 || color.contrast != 1 || color.saturation != 1 {
-            image = image.applyingFilter("CIColorControls", parameters: [
-                kCIInputBrightnessKey: color.brightness,
-                kCIInputContrastKey: color.contrast,
-                kCIInputSaturationKey: color.saturation,
-            ])
+        let grade = clip.grade(at: time)
+        if !grade.isNeutral {
+            image = ColorPipeline.apply(grade, to: image, lut: LUTLibrary.shared.lut(for: grade.lut))
         }
         if values.opacity < 1 {
             image = image.applyingFilter("CIColorMatrix", parameters: [
