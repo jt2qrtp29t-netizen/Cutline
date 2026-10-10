@@ -40,6 +40,11 @@ enum Theme {
     static let clipFill = Color(hex: 0x3175A8)
     static let clipBorder = Color(hex: 0x285F88)
     static let clipBorderSelected = Color(hex: 0x4F93C8)
+    /// Transition markers drawn over cuts on the timeline.
+    static let transitionFill = Color(hex: 0x1B1B1A).opacity(0.78)
+    static let transitionBorder = Color(hex: 0xC9A2F2)
+    static let transitionBorderSelected = Color(hex: 0xE6D2FF)
+    static let transitionDropTarget = Color(hex: 0xC9A2F2).opacity(0.35)
     static let clipLabelStrip = Color(hex: 0x25597F)
     static let clipText = Color(hex: 0xF2F6FA)
     static let clipOffline = Color(hex: 0x6B2E30)

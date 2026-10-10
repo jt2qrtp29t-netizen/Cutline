@@ -22,6 +22,9 @@ struct InspectorPanel: View {
                         TextInspector(editor: editor, clip: clip, text: text)
                             .id(clip.id)
                     } else {
+                        if let transition = editor.selectedTransition {
+                            SelectedTransitionSection(editor: editor, id: transition)
+                        }
                         selectionSection
                         MarkersInspector(editor: editor)
                         ProjectInspectorSection(settings: editor.settings, mediaCount: editor.state.media.count)

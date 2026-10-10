@@ -215,3 +215,99 @@ extension EditorController {
         if !applied { NSSound.beep() }
     }
 }
+
+// MARK: Transitions
+
+/// Where a dragged transition would land: the cut between two clips.
+struct TransitionDropTarget: Equatable {
+    let trackIndex: Int
+    let outgoingID: UUID
+    let incomingID: UUID
+    let cut: Time
+}
+
+/// Drag payload for transitions dragged out of the Effects tab.
+nonisolated struct TransitionDragItem: Codable, Transferable {
+    let kind: TransitionKind
+
+    static var transferRepresentation: some TransferRepresentation {
+        CodableRepresentation(contentType: .cutlineTransition)
+    }
+}
+
+extension EditorController {
+    /// The cut nearest a timeline point on a track, if close enough to drop on.
+    func transitionTarget(onTrack index: Int, near time: Time, tolerance: Time) -> TransitionDropTarget? {
+        guard state.tracks.indices.contains(index), state.tracks[index].kind.isVisual, !state.tracks[index].isLocked,
+              let cut = state.cut(onTrack: index, near: time, tolerance: tolerance) else { return nil }
+        return TransitionDropTarget(trackIndex: index, outgoingID: cut.outgoing.id, incomingID: cut.incoming.id,
+                                    cut: cut.incoming.start)
+    }
+
+    /// Adds (or replaces) a transition on a cut and selects it.
+    func addTransition(_ kind: TransitionKind, at target: TransitionDropTarget) {
+        var id: UUID?
+        store.edit("Add \(kind.title)") { state in
+            id = state.addTransition(kind, between: target.outgoingID, and: target.incomingID,
+                                     duration: Time(seconds: transitionDuration))
+        }
+        if let id {
+            selectedTransition = id
+            selection = []
+        } else {
+            NSSound.beep()
+        }
+    }
+
+    /// Applies a transition to the cut nearest the playhead (within a second) on the
+    /// selected clip's track, or on the first visual track with a cut there.
+    func applyTransitionAtPlayhead(_ kind: TransitionKind) {
+        let time = playback.currentTime
+        let tolerance = Time(seconds: 1)
+        var candidates = state.tracks.indices.filter { state.tracks[$0].kind.isVisual }
+        if let selected = selectedClips.first, let index = state.trackIndex(ofClip: selected.id) {
+            candidates.removeAll { $0 == index }
+            candidates.insert(index, at: 0)
+        }
+        for index in candidates {
+            if let target = transitionTarget(onTrack: index, near: time, tolerance: tolerance) {
+                addTransition(kind, at: target)
+                return
+            }
+        }
+        NSSound.beep()
+    }
+
+    /// Selects a transition; its settings show in the inspector and the Effects tab.
+    func selectTransition(_ id: UUID) {
+        endTextEditing()
+        selectedTransition = id
+        selection = []
+    }
+
+    func setTransitionKind(_ kind: TransitionKind, for id: UUID) {
+        store.edit("Change Transition") { state in
+            guard let (track, _) = state.transition(id),
+                  let index = state.tracks[track].transitions.firstIndex(where: { $0.id == id }) else { return }
+            state.tracks[track].transitions[index].kind = kind
+        }
+    }
+
+    /// Sets a transition's length; `live` while dragging its slider (one undo step per drag).
+    func setTransitionDuration(_ duration: Time, for id: UUID) {
+        let apply: (inout ProjectState) -> Void = { state in
+            guard let (track, _) = state.transition(id),
+                  let index = state.tracks[track].transitions.firstIndex(where: { $0.id == id }) else { return }
+            state.tracks[track].transitions[index].duration = max(duration, Transition.minimumDuration)
+        }
+        if store.isLiveEditing { store.liveEdit(apply) } else { store.edit("Change Transition Length", apply) }
+        transitionDuration = duration.seconds
+    }
+
+    func deleteTransition(_ id: UUID) {
+        store.edit("Delete Transition") { state in
+            for index in state.tracks.indices { state.tracks[index].transitions.removeAll { $0.id == id } }
+        }
+        if selectedTransition == id { selectedTransition = nil }
+    }
+}

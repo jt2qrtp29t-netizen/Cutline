@@ -38,19 +38,25 @@ nonisolated final class LayerCompositor: NSObject, AVVideoCompositing, @unchecke
         // Source buffers must outlive the render because CIImage references them lazily.
         var sources: [CVReadOnlyPixelBuffer] = []
         if let instruction = request.videoCompositionInstruction as? CompositorInstruction {
+            let time = Time(request.compositionTime)
             for layer in instruction.layers {
-                let time = Time(request.compositionTime)
-                if let text = layer.text {
-                    guard let image = TextRenderer.image(for: text) else { continue }
-                    output = Self.process(image, layer: layer, renderSize: renderSize, at: time)
-                        .composited(over: output)
+                guard let outgoing = image(of: layer, request: request, renderSize: renderSize, time: time, keeping: &sources)
+                else {
+                    // The outgoing side is missing (e.g. no frame yet); still show the incoming one.
+                    if let blend = layer.transition,
+                       let incoming = image(of: blend.incomingLayer, request: request, renderSize: renderSize, time: time, keeping: &sources) {
+                        output = incoming.composited(over: output)
+                    }
                     continue
                 }
-                guard let trackID = layer.trackID,
-                      let buffer = request.sourceReadOnlyPixelBuffer(byTrackID: trackID) else { continue }
-                sources.append(buffer)
-                let image = buffer.withUnsafeBuffer { CIImage(cvPixelBuffer: $0) }
-                output = Self.process(image, layer: layer, renderSize: renderSize, at: time).composited(over: output)
+                if let blend = layer.transition {
+                    let incoming = image(of: blend.incomingLayer, request: request, renderSize: renderSize, time: time, keeping: &sources)
+                        ?? CIImage.empty()
+                    let mixed = Self.blend(blend.kind, from: outgoing, to: incoming, progress: blend.progress(at: time), canvas: canvas)
+                    output = mixed.composited(over: output)
+                } else {
+                    output = outgoing.composited(over: output)
+                }
             }
         }
 
@@ -60,6 +66,72 @@ nonisolated final class LayerCompositor: NSObject, AVVideoCompositing, @unchecke
         }
         request.finish(withComposedPixelBuffer: CVReadOnlyPixelBuffer(pixelBuffer))
         withExtendedLifetime(sources) {}
+    }
+
+    /// The processed image of one layer's clip at `time`: drawn text, or the clip's
+    /// source frame. Source buffers are kept in `sources` until the frame is rendered.
+    private func image(of layer: CompositorLayer, request: AVAsynchronousVideoCompositionRequest,
+                       renderSize: CGSize, time: Time, keeping sources: inout [CVReadOnlyPixelBuffer]) -> CIImage? {
+        if let text = layer.text {
+            guard let image = TextRenderer.image(for: text) else { return nil }
+            return Self.process(image, layer: layer, renderSize: renderSize, at: time)
+        }
+        guard let trackID = layer.trackID,
+              let buffer = request.sourceReadOnlyPixelBuffer(byTrackID: trackID) else { return nil }
+        sources.append(buffer)
+        let image = buffer.withUnsafeBuffer { CIImage(cvPixelBuffer: $0) }
+        return Self.process(image, layer: layer, renderSize: renderSize, at: time)
+    }
+
+    /// Mixes the outgoing and incoming images of a transition. `progress` runs 0 → 1.
+    static func blend(_ kind: TransitionKind, from a: CIImage, to b: CIImage, progress p: Double, canvas: CGRect) -> CIImage {
+        let clear = CIImage(color: CIColor(red: 0, green: 0, blue: 0, alpha: 0)).cropped(to: canvas)
+        func onCanvas(_ image: CIImage) -> CIImage { image.composited(over: clear).cropped(to: canvas) }
+        func dissolve(_ x: CIImage, _ y: CIImage, _ t: Double) -> CIImage {
+            CIFilter(name: "CIDissolveTransition", parameters: [
+                kCIInputImageKey: onCanvas(x), kCIInputTargetImageKey: onCanvas(y), kCIInputTimeKey: t,
+            ])?.outputImage?.cropped(to: canvas) ?? onCanvas(y)
+        }
+        func darken(_ image: CIImage, _ factor: Double) -> CIImage {
+            let f = CGFloat(factor.clamped(to: 0...1))
+            return image.applyingFilter("CIColorMatrix", parameters: [
+                "inputRVector": CIVector(x: f, y: 0, z: 0, w: 0),
+                "inputGVector": CIVector(x: 0, y: f, z: 0, w: 0),
+                "inputBVector": CIVector(x: 0, y: 0, z: f, w: 0),
+            ])
+        }
+        func scaled(_ image: CIImage, _ factor: Double) -> CIImage {
+            let c = CGPoint(x: canvas.midX, y: canvas.midY)
+            return image.transformed(by: CGAffineTransform(translationX: -c.x, y: -c.y)
+                .concatenating(CGAffineTransform(scaleX: factor, y: factor))
+                .concatenating(CGAffineTransform(translationX: c.x, y: c.y)))
+        }
+        // Slides and zooms ease in and out; dissolves stay linear, like most editors.
+        let eased = p * p * (3 - 2 * p)
+        let w = canvas.width, h = canvas.height
+
+        switch kind {
+        case .crossDissolve:
+            return dissolve(a, b, p)
+        case .dipToBlack:
+            // Core Image is y-up; dimming keeps alpha, so a lower track doesn't show through.
+            return p < 0.5 ? onCanvas(darken(a, 1 - p * 2)) : onCanvas(darken(b, p * 2 - 1))
+        case .slideLeft, .slideRight, .slideUp, .slideDown:
+            // The incoming clip pushes the outgoing one off the opposite edge.
+            let (dx, dy): (CGFloat, CGFloat) = switch kind {
+            case .slideLeft: (-w, 0)
+            case .slideRight: (w, 0)
+            case .slideUp: (0, h)
+            default: (0, -h)
+            }
+            let e = CGFloat(eased)
+            let outgoing = a.transformed(by: CGAffineTransform(translationX: dx * e, y: dy * e))
+            let incoming = b.transformed(by: CGAffineTransform(translationX: -dx * (1 - e), y: -dy * (1 - e)))
+            return onCanvas(incoming.composited(over: outgoing))
+        case .zoom:
+            // Push into the outgoing clip while the incoming one settles from slightly smaller.
+            return dissolve(scaled(a, 1 + 0.6 * eased), scaled(b, 0.85 + 0.15 * eased), eased)
+        }
     }
 
     /// Orients, flips, crops, fits, positions, rotates and grades one layer in

@@ -194,4 +194,5 @@ nonisolated struct ProjectState: Codable, Hashable, Sendable {
 nonisolated extension UTType {
     static let cutlineProject = UTType(exportedAs: "app.cutline.project")
     static let cutlineMediaReference = UTType(exportedAs: "app.cutline.media-reference")
+    static let cutlineTransition = UTType(exportedAs: "app.cutline.transition")
 }

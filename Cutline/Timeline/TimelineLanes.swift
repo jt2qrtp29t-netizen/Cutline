@@ -80,6 +80,27 @@ struct TimelineLanes: View {
                 .offset(x: x, y: placed.row.y)
             }
 
+            // Transitions sit over the middle of their cut, on top of the clips.
+            ForEach(layout.rows, id: \.trackID) { row in
+                let track = editor.state.tracks[row.trackIndex]
+                ForEach(track.placedTransitions(), id: \.transition.id) { placed in
+                    let width = max(layout.width(for: placed.duration), 14)
+                    let height = min(max(row.height * 0.5, 16), 26)
+                    TransitionMarker(editor: editor, placed: placed, isLocked: track.isLocked)
+                        .frame(width: width, height: height)
+                        .offset(x: layout.x(for: placed.cut) - width / 2, y: row.y + (row.height - height) / 2)
+                }
+            }
+
+            if let target = editor.transitionDropTarget, let row = layout.row(forTrack: target.trackIndex) {
+                RoundedRectangle(cornerRadius: 4)
+                    .fill(Theme.transitionDropTarget)
+                    .overlay { RoundedRectangle(cornerRadius: 4).strokeBorder(Theme.transitionBorder, lineWidth: 2) }
+                    .frame(width: 28, height: row.height)
+                    .offset(x: layout.x(for: target.cut) - 14, y: row.y)
+                    .allowsHitTesting(false)
+            }
+
             ForEach(editor.state.markers) { marker in
                 Rectangle()
                     .fill(Theme.marker(marker.color).opacity(0.35))
@@ -108,7 +129,7 @@ struct TimelineLanes: View {
         }
         .coordinateSpace(.named(TimelineCoordinateSpace.lanes))
         .onDrop(
-            of: [.cutlineMediaReference, .fileURL],
+            of: [.cutlineMediaReference, .fileURL, .cutlineTransition],
             delegate: TimelineDropDelegate(editor: editor, layout: layout)
         )
     }
@@ -130,7 +151,10 @@ private struct LaneBackground: View {
             .gesture(
                 DragGesture(minimumDistance: 0, coordinateSpace: .named(TimelineCoordinateSpace.lanes))
                     .onChanged { value in
-                        if value.translation == .zero { editor.selection = [] }
+                        if value.translation == .zero {
+                            editor.selection = []
+                            editor.selectedTransition = nil
+                        }
                         editor.dragPlayhead(viewportX: value.location.x - originX, contentX: value.location.x, layout: layout)
                     }
                     .onEnded { _ in editor.endPlayheadDrag() }

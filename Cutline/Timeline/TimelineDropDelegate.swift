@@ -1,20 +1,42 @@
 import SwiftUI
 import UniformTypeIdentifiers
 
-/// Handles media dragged from the bin and video files dragged from Finder onto the lanes.
+/// Handles media dragged from the bin and video files dragged from Finder onto the
+/// lanes, and transitions dragged from the Effects tab onto cuts.
 struct TimelineDropDelegate: DropDelegate {
     let editor: EditorController
     let layout: TimelineLayout
 
     func validateDrop(info: DropInfo) -> Bool {
-        info.hasItemsConforming(to: [.cutlineMediaReference, .fileURL])
+        info.hasItemsConforming(to: [.cutlineMediaReference, .fileURL, .cutlineTransition])
+    }
+
+    private func isTransition(_ info: DropInfo) -> Bool {
+        info.hasItemsConforming(to: [.cutlineTransition])
+    }
+
+    /// The cut under the pointer, within 24 points.
+    private func transitionTarget(for info: DropInfo) -> TransitionDropTarget? {
+        guard let row = layout.row(forY: info.location.y),
+              info.location.y >= row.y, info.location.y < row.y + row.height else { return nil }
+        return editor.transitionTarget(onTrack: row.trackIndex, near: layout.time(forX: info.location.x),
+                                       tolerance: layout.duration(forWidth: 24))
     }
 
     func dropEntered(info: DropInfo) {
+        if isTransition(info) {
+            editor.transitionDropTarget = transitionTarget(for: info)
+            return
+        }
         editor.showDropPreview(preview(for: info))
     }
 
     func dropUpdated(info: DropInfo) -> DropProposal? {
+        if isTransition(info) {
+            let target = transitionTarget(for: info)
+            if editor.transitionDropTarget != target { editor.transitionDropTarget = target }
+            return DropProposal(operation: target == nil ? .forbidden : .copy)
+        }
         let preview = preview(for: info)
         editor.showDropPreview(preview)
         return DropProposal(operation: preview.isLocked ? .forbidden : .copy)
@@ -22,9 +44,19 @@ struct TimelineDropDelegate: DropDelegate {
 
     func dropExited(info: DropInfo) {
         editor.clearDropPreview()
+        editor.transitionDropTarget = nil
     }
 
     func performDrop(info: DropInfo) -> Bool {
+        if isTransition(info) {
+            defer {
+                editor.transitionDropTarget = nil
+                editor.draggedTransition = nil
+            }
+            guard let target = transitionTarget(for: info), let kind = editor.draggedTransition else { return false }
+            editor.addTransition(kind, at: target)
+            return true
+        }
         let target = preview(for: info)
         editor.clearDropPreview()
         defer { editor.draggedMediaID = nil }

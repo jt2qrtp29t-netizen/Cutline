@@ -17,6 +17,10 @@ struct EffectsPanel: View {
 
             ScrollView {
                 VStack(alignment: .leading, spacing: 12) {
+                    if let transition = editor.selectedTransition {
+                        SelectedTransitionSection(editor: editor, id: transition)
+                    }
+                    TransitionsSection(editor: editor)
                     if let clip = editor.effectsClip {
                         InspectorSection(title: "Animate · \(clip.isText ? (clip.text?.string ?? "Text") : clip.name)") {
                             ForEach(AnimatableProperty.allCases) { property in

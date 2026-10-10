@@ -39,6 +39,16 @@
 		</dict>
 		<dict>
 			<key>UTTypeIdentifier</key>
+			<string>app.cutline.transition</string>
+			<key>UTTypeDescription</key>
+			<string>Cutline Transition</string>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.data</string>
+			</array>
+		</dict>
+		<dict>
+			<key>UTTypeIdentifier</key>
 			<string>app.cutline.media-reference</string>
 			<key>UTTypeDescription</key>
 			<string>Cutline Media Reference</string>

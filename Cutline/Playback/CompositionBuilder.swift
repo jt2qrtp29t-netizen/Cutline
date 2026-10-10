@@ -46,8 +46,9 @@ nonisolated enum CompositionBuilder {
         /// Nil when there is nothing on any video track.
         let videoComposition: AVVideoComposition?
         let duration: Time
-        /// Composition track ID for each timeline track index (video and audio).
-        let trackIDs: [Int: CMPersistentTrackID]
+        /// Composition track holding each video clip. Clips on a track with transitions
+        /// alternate between two composition tracks (A/B roll) so they can overlap.
+        let clipTrackIDs: [UUID: CMPersistentTrackID]
         /// Preferred transform of each media item's video track.
         let sourceTransforms: [UUID: CGAffineTransform]
     }
@@ -84,41 +85,35 @@ nonisolated enum CompositionBuilder {
         }
 
         let composition = AVMutableComposition()
-        var trackIDs: [Int: CMPersistentTrackID] = [:]
+        var clipTrackIDs: [UUID: CMPersistentTrackID] = [:]
+        let frame = state.settings.frameDuration
 
-        for (index, track) in state.tracks.enumerated() where track.kind == .video && !track.clips.isEmpty {
-            guard let compositionTrack = composition.addMutableTrack(withMediaType: .video, preferredTrackID: kCMPersistentTrackID_Invalid)
-            else { continue }
-            var cursor = Time.zero
-            var inserted = false
+        for track in state.tracks where track.kind == .video && !track.clips.isEmpty {
+            // Transitions need the outgoing and incoming clips at the same time, so a
+            // track with transitions alternates its clips between two composition tracks.
+            let rolls = track.placedTransitions().isEmpty ? 1 : 2
+            var lanes: [(track: AVMutableCompositionTrack, cursor: Time, used: Bool)] = []
+            for _ in 0..<rolls {
+                guard let added = composition.addMutableTrack(withMediaType: .video, preferredTrackID: kCMPersistentTrackID_Invalid)
+                else { continue }
+                lanes.append((added, .zero, false))
+            }
+            guard !lanes.isEmpty else { continue }
 
-            for clip in track.clips.sorted(by: { $0.start < $1.start }) {
+            for (position, clip) in track.clips.sorted(by: { $0.start < $1.start }).enumerated() {
                 guard let source = sources[clip.mediaID], let sourceTrack = source.video else { continue }
-                let sourceRange = try await availableRange(for: clip, in: sourceTrack)
-                guard sourceRange.duration > .zero else { continue }
-
-                if clip.start > cursor {
-                    compositionTrack.insertEmptyTimeRange(TimeRange(start: cursor, end: clip.start).cmTimeRange)
+                let lane = position % lanes.count
+                let handles = track.transitionHandles(for: clip.id)
+                var cursor = lanes[lane].cursor
+                let inserted = try await insert(clip, lead: handles.lead, tail: handles.tail, from: sourceTrack,
+                                                into: lanes[lane].track, cursor: &cursor, frame: frame)
+                lanes[lane].cursor = cursor
+                if inserted {
+                    lanes[lane].used = true
+                    clipTrackIDs[clip.id] = lanes[lane].track.trackID
                 }
-                do {
-                    try compositionTrack.insertTimeRange(sourceRange.cmTimeRange, of: sourceTrack, at: clip.start.cmTime)
-                } catch {
-                    throw BuildError.insertFailed(clip: clip.name, kind: track.kind.rawValue, range: sourceRange,
-                                                  at: clip.start, underlying: error)
-                }
-                if sourceRange.duration != clip.duration {
-                    compositionTrack.scaleTimeRange(CMTimeRange(start: clip.start.cmTime, duration: sourceRange.duration.cmTime),
-                                                    toDuration: clip.duration.cmTime)
-                }
-                cursor = clip.end
-                inserted = true
             }
-
-            if inserted {
-                trackIDs[index] = compositionTrack.trackID
-            } else {
-                composition.removeTrack(compositionTrack)
-            }
+            for lane in lanes where !lane.used { composition.removeTrack(lane.track) }
         }
 
         // The player's clock must run for the whole timeline, including audio that
@@ -138,19 +133,56 @@ nonisolated enum CompositionBuilder {
 
         let transforms = sources.compactMapValues { $0.video == nil ? nil : $0.transform }
         let videoComposition = duration > .zero
-            ? makeVideoComposition(for: state, duration: duration, trackIDs: trackIDs, sourceTransforms: transforms)
+            ? makeVideoComposition(for: state, duration: duration, clipTrackIDs: clipTrackIDs, sourceTransforms: transforms)
             : nil
         return Output(composition: composition, videoComposition: videoComposition, duration: duration,
-                      trackIDs: trackIDs, sourceTransforms: transforms)
+                      clipTrackIDs: clipTrackIDs, sourceTransforms: transforms)
     }
 
-    /// Source range of a clip, clipped to what the media track actually contains.
-    private static func availableRange(for clip: Clip, in track: AVAssetTrack) async throws -> TimeRange {
-        let trackRange = try await track.load(.timeRange)
+    /// Inserts a clip's media at its place on the timeline, extended by `lead` before
+    /// its start and `tail` after its end (transition handles). Media the file doesn't
+    /// have is filled by holding its first or last frame. Returns false if nothing
+    /// could be inserted.
+    private static func insert(_ clip: Clip, lead: Time, tail: Time, from sourceTrack: AVAssetTrack,
+                               into track: AVMutableCompositionTrack, cursor: inout Time, frame: Time) async throws -> Bool {
+        let trackRange = try await sourceTrack.load(.timeRange)
         let available = TimeRange(start: Time(trackRange.start), end: Time(trackRange.end))
-        let start = max(clip.sourceStart, available.start)
-        let end = min(clip.sourceEnd, available.end)
-        return TimeRange(start: start, end: max(start, end))
+        guard available.duration > .zero else { return false }
+
+        let timelineStart = clip.start - lead
+        let timelineEnd = clip.end + tail
+        let wantedStart = clip.sourceStart - lead.scaled(by: clip.speed)
+        let wantedEnd = clip.sourceEnd + tail.scaled(by: clip.speed)
+        let mainStart = max(wantedStart, available.start)
+        let mainEnd = min(wantedEnd, available.end)
+        guard mainEnd > mainStart else { return false }
+        // Timeline time covered by held frames before and after the real media.
+        let headHold = (mainStart - wantedStart).scaled(by: 1 / clip.speed)
+        let tailHold = (wantedEnd - mainEnd).scaled(by: 1 / clip.speed)
+
+        if timelineStart > cursor {
+            track.insertEmptyTimeRange(TimeRange(start: cursor, end: timelineStart).cmTimeRange)
+        }
+        var at = timelineStart
+        func place(_ range: TimeRange, lasting length: Time) throws {
+            guard length > .zero, range.duration > .zero else { return }
+            do {
+                try track.insertTimeRange(range.cmTimeRange, of: sourceTrack, at: at.cmTime)
+            } catch {
+                throw BuildError.insertFailed(clip: clip.name, kind: "video", range: range, at: at, underlying: error)
+            }
+            if range.duration != length {
+                track.scaleTimeRange(CMTimeRange(start: at.cmTime, duration: range.duration.cmTime), toDuration: length.cmTime)
+            }
+            at += length
+        }
+        let holdFrame = min(frame, available.duration)
+        try place(TimeRange(start: available.start, end: available.start + holdFrame), lasting: headHold)
+        let mainLength = (timelineEnd - tailHold) - at
+        try place(TimeRange(start: mainStart, end: mainEnd), lasting: mainLength)
+        try place(TimeRange(start: available.end - holdFrame, end: available.end), lasting: timelineEnd - at)
+        cursor = timelineEnd
+        return true
     }
 
     /// Splits the timeline at every video clip boundary and describes which clips
@@ -159,34 +191,59 @@ nonisolated enum CompositionBuilder {
     static func makeVideoComposition(
         for state: ProjectState,
         duration: Time,
-        trackIDs: [Int: CMPersistentTrackID],
+        clipTrackIDs: [UUID: CMPersistentTrackID],
         sourceTransforms: [UUID: CGAffineTransform]
     ) -> AVVideoComposition {
         // Video tracks bottom to top, then text tracks above them (T1, then T2 on top).
-        let videoTracks = state.trackIndices(of: .video) + state.trackIndices(of: .text)
+        let visualTracks = state.trackIndices(of: .video) + state.trackIndices(of: .text)
+        let transitions = Dictionary(uniqueKeysWithValues: visualTracks.map { ($0, state.tracks[$0].placedTransitions()) })
         var boundaries = Set<Time>([.zero, duration])
-        for index in videoTracks {
+        for index in visualTracks {
             for clip in state.tracks[index].clips {
                 boundaries.insert(clip.start)
                 boundaries.insert(clip.end)
             }
+            for placed in transitions[index] ?? [] {
+                boundaries.insert(placed.range.start)
+                boundaries.insert(placed.range.end)
+            }
         }
-        let sorted = boundaries.filter { $0 <= duration }.sorted()
+        let sorted = boundaries.filter { $0 >= .zero && $0 <= duration }.sorted()
+
+        /// The layer for a clip, or nil if it has nothing to show.
+        func layer(for clip: Clip, onTrack index: Int) -> CompositorLayer? {
+            guard state.isClipActive(clip, onTrack: index) else { return nil }
+            if clip.isText { return CompositorLayer(trackID: nil, clip: clip, sourceTransform: .identity) }
+            guard let trackID = clipTrackIDs[clip.id], let transform = sourceTransforms[clip.mediaID] else { return nil }
+            return CompositorLayer(trackID: trackID, clip: clip, sourceTransform: transform)
+        }
 
         var instructions: [CompositorInstruction] = []
         for (start, end) in zip(sorted, sorted.dropFirst()) where end > start {
             let span = TimeRange(start: start, end: end)
             var layers: [CompositorLayer] = []
-            for index in videoTracks {
-                guard let clip = state.tracks[index].clips.first(where: { $0.range.overlaps(span) }),
-                      state.isClipActive(clip, onTrack: index)
-                else { continue }
-                if clip.isText {
-                    layers.append(CompositorLayer(trackID: nil, clip: clip, sourceTransform: .identity))
+            for index in visualTracks {
+                if let placed = transitions[index]?.first(where: { span.start >= $0.range.start && span.end <= $0.range.end }) {
+                    let outgoing = layer(for: placed.outgoing, onTrack: index)
+                    let incoming = layer(for: placed.incoming, onTrack: index)
+                    switch (outgoing, incoming) {
+                    case let (outgoing?, incoming?):
+                        var mixed = outgoing
+                        mixed.transition = TransitionBlend(kind: placed.transition.kind, range: placed.range,
+                                                           incomingTrackID: incoming.trackID, incomingClip: incoming.clip,
+                                                           incomingSourceTransform: incoming.sourceTransform)
+                        layers.append(mixed)
+                    case let (single?, nil), let (nil, single?):
+                        // One side is muted or missing: show the other on its own side of the cut.
+                        if single.clip.range.overlaps(span) { layers.append(single) }
+                    case (nil, nil):
+                        break
+                    }
                     continue
                 }
-                guard let trackID = trackIDs[index], let transform = sourceTransforms[clip.mediaID] else { continue }
-                layers.append(CompositorLayer(trackID: trackID, clip: clip, sourceTransform: transform))
+                guard let clip = state.tracks[index].clips.first(where: { $0.range.overlaps(span) }),
+                      let single = layer(for: clip, onTrack: index) else { continue }
+                layers.append(single)
             }
             instructions.append(CompositorInstruction(timeRange: span.cmTimeRange, layers: layers))
         }

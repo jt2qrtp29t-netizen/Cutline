@@ -8,7 +8,10 @@ final class EditorController {
     let store: ProjectStore
     let playback = PlaybackController()
 
-    var selection: Set<UUID> = []
+    var selection: Set<UUID> = [] {
+        // Selecting clips deselects the transition.
+        didSet { if !selection.isEmpty, selectedTransition != nil { selectedTransition = nil } }
+    }
     /// Timeline zoom.
     var pixelsPerSecond: Double = 60
     var snappingEnabled = true
@@ -38,6 +41,16 @@ final class EditorController {
     /// The parameter shown in the curve editor and highlighted in the Effects panel.
     var effectsProperty: AnimatableProperty = .positionX
     var selectedKeyframes: Set<KeyframeRef> = []
+    /// The transition selected on the timeline, if any.
+    var selectedTransition: UUID?
+    /// Transition being dragged from the Effects tab, and the cut it would land on.
+    var draggedTransition: TransitionKind?
+    var transitionDropTarget: TransitionDropTarget?
+    /// Length used for new transitions (the last one chosen).
+    @ObservationIgnored var transitionDuration: Double {
+        get { UserDefaults.standard.object(forKey: "transitions.duration") as? Double ?? 1 }
+        set { UserDefaults.standard.set(newValue, forKey: "transitions.duration") }
+    }
 
     static let zoomRange: ClosedRange<Double> = 2...1200
 
@@ -243,6 +256,7 @@ final class EditorController {
     /// Shift or Command add to / remove from the selection.
     func select(_ clipID: UUID, modifiers: NSEvent.ModifierFlags = []) {
         endTextEditing()
+        selectedTransition = nil
         let group = modifiers.contains(.option) ? [clipID] : state.linkedGroup(of: clipID)
         if modifiers.contains(.shift) || modifiers.contains(.command) {
             if selection.contains(clipID) {
@@ -269,7 +283,11 @@ final class EditorController {
     }
 
     func deleteSelection() {
-        // In the Effects tab, Delete removes selected keyframes first.
+        // A selected transition goes first, then (in the Effects tab) selected keyframes.
+        if let transition = selectedTransition {
+            deleteTransition(transition)
+            return
+        }
         if workspace == .effects, !selectedKeyframes.isEmpty {
             deleteKeyframes(selectedKeyframes)
             return
