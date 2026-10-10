@@ -160,10 +160,18 @@ private struct CurveGraph: View {
                 }
 
                 if frames.isEmpty {
+                    // Inside the plot, below the flat line, on a backing so nothing shows through.
                     Text("\(property.title) isn't animated. Click ◆ in the Effects panel to add keyframes.")
                         .font(.system(size: 10))
                         .foregroundStyle(Theme.textTertiary)
-                        .padding(8)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 5)
+                        .background(Theme.recessed.opacity(0.9), in: .rect(cornerRadius: 5))
+                        .padding(.leading, CurveMapping.labelGutter + 8)
+                        .padding(.trailing, 8)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading)
+                        .padding(.bottom, 10)
                         .allowsHitTesting(false)
                 }
             }
@@ -216,14 +224,20 @@ private struct CurveGraph: View {
     }
 
     private func drawGrid(_ context: GraphicsContext, size: CGSize, map: CurveMapping) {
+        // Label column on the left, separated from the plot.
+        let gutter = CurveMapping.labelGutter
+        context.fill(Path(CGRect(x: 0, y: 0, width: gutter, height: size.height)), with: .color(Theme.background))
+        context.fill(Path(CGRect(x: gutter, y: 0, width: 1, height: size.height)), with: .color(Theme.border))
+
         var grid = Path()
         for i in 0...4 {
-            let y = size.height * CGFloat(i) / 4
-            grid.addRect(CGRect(x: 0, y: y.rounded(), width: size.width, height: 1))
+            // Grid lines sit on the same values as the labels.
             let value = map.range.upperBound - (map.range.upperBound - map.range.lowerBound) * Double(i) / 4
+            let y = map.y(value)
+            grid.addRect(CGRect(x: gutter, y: y.rounded(), width: size.width - gutter, height: 1))
             context.draw(
                 Text(property.formatted(value)).font(.system(size: 9).monospacedDigit()).foregroundStyle(Theme.textTertiary),
-                at: CGPoint(x: 6, y: min(max(y, 8), size.height - 8)), anchor: .leading
+                at: CGPoint(x: gutter - 6, y: y), anchor: .trailing
             )
         }
         context.fill(grid, with: .color(Theme.curveGrid))
@@ -231,27 +245,33 @@ private struct CurveGraph: View {
 }
 
 /// Converts between curve-editor points and (time in seconds, value).
+/// The left gutter is reserved for the value labels, so the curve never runs under them.
 private struct CurveMapping {
     let size: CGSize
     let duration: Double
     let range: ClosedRange<Double>
+    static let labelGutter: CGFloat = 64
     let inset: CGFloat = 12
 
+    private var left: CGFloat { Self.labelGutter + inset }
+    private var plotWidth: CGFloat { max(size.width - left - inset, 1) }
+    private var plotHeight: CGFloat { max(size.height - inset * 2, 1) }
+
     func x(_ time: Double) -> CGFloat {
-        inset + CGFloat(time / duration) * (size.width - inset * 2)
+        left + CGFloat(time / duration) * plotWidth
     }
 
     func y(_ value: Double) -> CGFloat {
         let span = range.upperBound - range.lowerBound
-        return inset + CGFloat((range.upperBound - value) / span) * (size.height - inset * 2)
+        return inset + CGFloat((range.upperBound - value) / span) * plotHeight
     }
 
     func point(time: Double, value: Double) -> CGPoint { CGPoint(x: x(time), y: y(value)) }
 
     func timeValue(at point: CGPoint) -> (Double, Double) {
-        let time = Double((point.x - inset) / max(size.width - inset * 2, 1)) * duration
+        let time = Double((point.x - left) / plotWidth) * duration
         let span = range.upperBound - range.lowerBound
-        let value = range.upperBound - Double((point.y - inset) / max(size.height - inset * 2, 1)) * span
+        let value = range.upperBound - Double((point.y - inset) / plotHeight) * span
         return (time.clamped(to: 0...duration), value)
     }
 }
