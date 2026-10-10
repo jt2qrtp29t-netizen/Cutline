@@ -14,6 +14,18 @@ struct PreviewPanel: View {
                 }
                 .shadow(color: Theme.shadow, radius: 12, y: 4)
                 .overlay(alignment: .top) { OfflineMediaBanner(editor: editor).padding(10) }
+                .overlay(alignment: .topLeading) {
+                    if editor.showsUngraded {
+                        Text("BEFORE · UNGRADED")
+                            .font(.system(size: 10, weight: .bold))
+                            .foregroundStyle(Theme.textPrimary)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 4)
+                            .background(Theme.raised.opacity(0.9), in: .capsule)
+                            .padding(10)
+                            .allowsHitTesting(false)
+                    }
+                }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .padding(.horizontal, 24)
                 .padding(.top, 20)

@@ -8,13 +8,34 @@ struct ColorPanel: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            HStack {
+            HStack(spacing: 6) {
                 SectionLabel("Color")
                 Spacer()
+                Toggle(isOn: Binding(get: { editor.bypassGrade }, set: { editor.bypassGrade = $0 })) {
+                    Label("Before", systemImage: "circle.lefthalf.filled")
+                }
+                .toggleStyle(.button)
+                .controlSize(.small)
+                .help("Show the ungraded picture (or hold B)")
                 if let clip = editor.colorClip {
-                    Button("Reset Grade") { editor.resetGrade(nil, of: clip.id) }
+                    Button("Copy") { editor.copyGrade() }
                         .controlSize(.small)
-                        .disabled(clip.color.isNeutral && !clip.animation.keyframes.keys.contains(where: \.isColor))
+                        .help("Copy this clip’s grade (⌥⌘C)")
+                    Button("Paste") { editor.pasteGrade() }
+                        .controlSize(.small)
+                        .disabled(editor.copiedGrade == nil)
+                        .help(editor.copiedGrade.map { "Paste the grade from “\($0.sourceName)” (⌥⌘V)" } ?? "Copy a grade first")
+                    Menu {
+                        Button("Apply Grade to All Clips on Track") { editor.applyGradeToTrack(from: clip.id) }
+                        Divider()
+                        Button("Reset Grade", role: .destructive) { editor.resetGrade(nil, of: clip.id) }
+                    } label: {
+                        Image(systemName: "ellipsis.circle")
+                    }
+                    .menuStyle(.borderlessButton)
+                    .menuIndicator(.hidden)
+                    .fixedSize()
+                    .help("More grade actions")
                 }
             }
             .padding(.horizontal, 14)

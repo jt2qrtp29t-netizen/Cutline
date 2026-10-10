@@ -41,6 +41,11 @@ final class EditorController {
     /// The parameter shown in the curve editor and highlighted in the Effects panel.
     var effectsProperty: AnimatableProperty = .positionX
     var selectedKeyframes: Set<KeyframeRef> = []
+    /// The grade on the clipboard (Copy Grade / Paste Grade).
+    var copiedGrade: CopiedGrade?
+    /// Before/after: the Before toggle in the Color tab, and holding B.
+    var bypassGrade = false { didSet { updateGradeBypass() } }
+    var isHoldingBefore = false { didSet { updateGradeBypass() } }
     /// The transition selected on the timeline, if any.
     var selectedTransition: UUID?
     /// Transition being dragged from the Effects tab, and the cut it would land on.

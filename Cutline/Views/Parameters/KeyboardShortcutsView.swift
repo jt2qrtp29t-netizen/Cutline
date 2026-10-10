@@ -54,6 +54,13 @@ enum ShortcutList {
             Item(keys: "⇧⌘N", action: "Snapping on / off"),
             Item(keys: "⇧⌘T", action: "Add Text"),
         ]),
+        Group(title: "Color", symbolName: "camera.filters", items: [
+            Item(keys: "Hold B", action: "Show the ungraded picture (before)"),
+            Item(keys: "⌥⌘C", action: "Copy Grade"),
+            Item(keys: "⌥⌘V", action: "Paste Grade onto the selected clips"),
+            Item(keys: "Double-click a wheel", action: "Reset that color wheel"),
+            Item(keys: "Click  /  double-click", action: "Add / remove a curve point"),
+        ]),
         Group(title: "Markers", symbolName: "bookmark", items: [
             Item(keys: "⌘M", action: "Add Marker…"),
             Item(keys: "⌥⌘←  /  ⌥⌘→", action: "Previous / Next Marker"),

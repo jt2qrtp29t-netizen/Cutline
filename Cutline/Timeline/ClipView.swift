@@ -218,6 +218,17 @@ private struct ClipContextMenu: View {
         ))
         if editor.state.track(ofClip: clip.id)?.kind.isVisual == true {
             Divider()
+            Button("Copy Grade") {
+                editor.selection = [clip.id]
+                editor.copyGrade()
+            }
+            Button("Paste Grade") {
+                if !isSelected { editor.selection = [clip.id] }
+                editor.pasteGrade()
+            }
+            .disabled(editor.copiedGrade == nil)
+            Button("Apply Grade to All Clips on Track") { editor.applyGradeToTrack(from: clip.id) }
+            Divider()
             Menu("Animate In") {
                 ForEach(AnimationPreset.inOutPresets) { preset in
                     Button(preset.title(for: .animateIn)) {

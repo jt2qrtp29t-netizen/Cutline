@@ -254,3 +254,72 @@ extension EditorController {
         return nil
     }
 }
+
+/// A copied grade: the values and the grade's keyframes.
+struct CopiedGrade: Equatable {
+    var grade: ColorGrade
+    var keyframes: [AnimatableProperty: [Keyframe]]
+    var sourceName: String
+}
+
+extension EditorController {
+    /// Shows the ungraded frame while either the Before toggle is on or B is held.
+    var showsUngraded: Bool { bypassGrade || isHoldingBefore }
+
+    func updateGradeBypass() {
+        playback.setGradeBypassed(showsUngraded)
+    }
+
+    /// The clip whose grade Copy Grade takes: the Color tab's clip, else the only
+    /// selected visual clip.
+    private var gradeSourceClip: Clip? {
+        colorClip ?? (selectedClips.count == 1 ? selectedClips.first.flatMap { clip in
+            state.track(ofClip: clip.id)?.kind.isVisual == true ? clip : nil
+        } : nil)
+    }
+
+    func copyGrade() {
+        guard let clip = gradeSourceClip else { NSSound.beep(); return }
+        copiedGrade = CopiedGrade(grade: clip.color,
+                                  keyframes: clip.animation.keyframes.filter { $0.key.isColor },
+                                  sourceName: clip.name)
+    }
+
+    /// Pastes the copied grade onto the selected visual clips (one undo step). Keyframes
+    /// keep their times from the clip's start; ones past a clip's end are dropped.
+    func pasteGrade() {
+        guard let copied = copiedGrade else { NSSound.beep(); return }
+        let targets = selectedClips.filter { clip in
+            state.track(ofClip: clip.id)?.kind.isVisual == true && !state.isClipLocked(clip.id)
+        }
+        guard !targets.isEmpty else { NSSound.beep(); return }
+        apply(copied, to: targets.map(\.id), actionName: targets.count == 1 ? "Paste Grade" : "Paste Grade to \(targets.count) Clips")
+    }
+
+    /// Gives every clip on the graded clip's track the same grade.
+    func applyGradeToTrack(from clipID: UUID) {
+        guard let clip = state.clip(clipID), let track = state.track(ofClip: clipID), track.kind.isVisual else {
+            NSSound.beep(); return
+        }
+        let copied = CopiedGrade(grade: clip.color, keyframes: clip.animation.keyframes.filter { $0.key.isColor },
+                                 sourceName: clip.name)
+        let targets = track.clips.filter { $0.id != clipID && !state.isClipLocked($0.id) }.map(\.id)
+        guard !targets.isEmpty else { NSSound.beep(); return }
+        apply(copied, to: targets, actionName: "Apply Grade to Track")
+    }
+
+    private func apply(_ copied: CopiedGrade, to clipIDs: [UUID], actionName: String) {
+        store.edit(actionName) { state in
+            for id in clipIDs {
+                state.updateClip(id) { clip in
+                    clip.color = copied.grade
+                    for property in AnimatableProperty.grade { clip.animation.keyframes[property] = nil }
+                    for (property, frames) in copied.keyframes {
+                        let kept = frames.filter { $0.time <= clip.duration }
+                        if !kept.isEmpty { clip.animation.keyframes[property] = kept }
+                    }
+                }
+            }
+        }
+    }
+}

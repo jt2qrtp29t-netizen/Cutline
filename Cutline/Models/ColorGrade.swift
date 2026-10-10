@@ -190,6 +190,20 @@ nonisolated struct LUTReference: Codable, Hashable, Sendable {
     }
 }
 
+nonisolated extension ProjectState {
+    /// The project with every grade (and grade keyframe) removed: the "before" view.
+    func withoutGrades() -> ProjectState {
+        var copy = self
+        for t in copy.tracks.indices {
+            for c in copy.tracks[t].clips.indices {
+                copy.tracks[t].clips[c].color = .neutral
+                for property in AnimatableProperty.grade { copy.tracks[t].clips[c].animation.keyframes[property] = nil }
+            }
+        }
+        return copy
+    }
+}
+
 /// A clip's color grade. It is applied in one fixed order (see `ColorPipeline`):
 ///
 /// 1. exposure

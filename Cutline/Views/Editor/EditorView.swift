@@ -62,6 +62,7 @@ struct EditorView: View {
             editor.playback.setMuted(muted)
         }
         .background(ScrollTabSwitcher(editor: editor))
+        .background(BeforeKeyMonitor(editor: editor))
         .alert(item: $editor.alert) { alert in
             Alert(title: Text(alert.title), message: Text(alert.message))
         }

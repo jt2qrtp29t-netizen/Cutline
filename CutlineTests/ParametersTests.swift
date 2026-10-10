@@ -89,7 +89,7 @@ import Testing
 
     @Test func everyMenuShortcutIsListed() {
         let keys = Set(ShortcutList.groups.flatMap(\.items).map(\.keys))
-        for shortcut in ["⌘N", "⌘I", "⇧⌘E", "⌘B", "⌥⌘L", "⇧⌘L", "⇧⌘N", "⇧⌘T", "⌘M", "⇧⌘M", "⌥⌘M", "⌘,", "⌘/", "Space"] {
+        for shortcut in ["⌘N", "⌘I", "⇧⌘E", "⌘B", "⌥⌘L", "⇧⌘L", "⇧⌘N", "⇧⌘T", "⌘M", "⇧⌘M", "⌥⌘M", "⌘,", "⌘/", "Space", "⌥⌘C", "⌥⌘V"] {
             #expect(keys.contains(shortcut), "\(shortcut) is missing from the Keyboard Shortcuts window")
         }
     }

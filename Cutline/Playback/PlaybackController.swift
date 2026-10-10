@@ -193,7 +193,7 @@ final class PlaybackController {
         if timing == installedTiming, let installed, let item = player.currentItem {
             if installed.videoComposition != nil {
                 item.videoComposition = CompositionBuilder.makeVideoComposition(
-                    for: state, duration: installed.duration,
+                    for: gradeBypassed ? state.withoutGrades() : state, duration: installed.duration,
                     clipTrackIDs: installed.clipTrackIDs, sourceTransforms: installed.sourceTransforms
                 )
             }
@@ -202,7 +202,16 @@ final class PlaybackController {
             return
         }
         guard !isLiveEdit else { return }
-        scheduleRebuild(state, timing: timing)
+        scheduleRebuild(gradeBypassed ? state.withoutGrades() : state, timing: timing)
+    }
+
+    /// Shows every clip ungraded (the "before" view) without touching the project.
+    private(set) var gradeBypassed = false
+
+    func setGradeBypassed(_ bypassed: Bool) {
+        guard bypassed != gradeBypassed else { return }
+        gradeBypassed = bypassed
+        if let latestState { update(with: latestState, isLiveEdit: false) }
     }
 
     private func scheduleRebuild(_ state: ProjectState, timing: TimingSignature) {

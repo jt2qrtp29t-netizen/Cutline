@@ -20,6 +20,8 @@ enum Changelog {
             "RGB curves (master, red, green, blue) with draggable points, and a hue vs saturation curve.",
             "LUTs: apply a .cube file with adjustable intensity. Invalid files show a clear error; a missing LUT shows a warning on the clip and the clip renders without it.",
             "Scopes: histogram, waveform and vectorscope of the frame in the viewer, with the grade applied, updating as you play or scrub.",
+            "Before/after: hold B (or use the Before button) to see the ungraded picture.",
+            "Copy Grade (⌥⌘C) and Paste Grade (⌥⌘V) between clips, Apply Grade to All Clips on Track, and resets for each section or the whole grade.",
         ]),
         Entry(version: "2.9", title: "Changelog", changes: [
             "New Changelog window listing what every version added. Open it with the list icon in the top bar or from the Help menu.",

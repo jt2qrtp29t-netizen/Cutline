@@ -76,6 +76,12 @@ struct CutlineCommands: Commands {
             Button("Lock / Unlock Clips") { editor?.toggleLockSelection() }
                 .keyboardShortcut("l", modifiers: [.command, .shift])
                 .disabled(editor == nil)
+            Button("Copy Grade") { editor?.copyGrade() }
+                .keyboardShortcut("c", modifiers: [.command, .option])
+                .disabled(editor == nil)
+            Button("Paste Grade") { editor?.pasteGrade() }
+                .keyboardShortcut("v", modifiers: [.command, .option])
+                .disabled(editor == nil)
             Button("Speed…") { editor?.showClipDialogForSelection(.speed) }
                 .disabled(editor == nil)
             Button("Duration…") { editor?.showClipDialogForSelection(.duration) }
