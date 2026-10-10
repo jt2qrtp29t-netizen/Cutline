@@ -11,6 +11,10 @@ enum Changelog {
     }
 
     static let entries: [Entry] = [
+        Entry(version: "3.1", title: "Color keyframes on the timeline", changes: [
+            "The Color tab shows its keyframes in a lane under the timeline, where they can be selected, dragged to retime and deleted.",
+            "Each tab now lists its own keyframes: motion in Effects, color in Color.",
+        ]),
         Entry(version: "3.0", title: "Color tab", changes: [
             "A new color grading engine on the GPU, with one fixed order: exposure, white balance, offset, lift/gamma/gain, contrast and saturation, curves, then LUT. Values are only clamped at the very end.",
             "Every color control can be keyframed, undone and saved. Older projects load and look exactly as before.",

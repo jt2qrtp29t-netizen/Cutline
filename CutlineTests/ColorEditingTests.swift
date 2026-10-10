@@ -1,3 +1,4 @@
+import CoreGraphics
 import Foundation
 import Testing
 @testable import Cutline
@@ -154,5 +155,44 @@ import Testing
         let loaded = try ProjectState.decode(state.encoded())
         let editor = EditorController(store: ProjectStore(state: loaded))
         #expect(editor.lutProblem(of: loaded.tracks[0].clips[0]) != nil)
+    }
+}
+
+@MainActor struct ColorKeyframeLaneTests {
+    @Test func eachTabListsItsOwnKeyframes() {
+        var state = ProjectState()
+        var clip = Clip(id: UUID(), mediaID: UUID(), name: "c", start: .zero, duration: Time(seconds: 4), sourceStart: .zero)
+        clip.animation.setKeyframe(.scale, at: .zero, value: 1.5)
+        clip.animation.setKeyframe(.liftMaster, at: .zero, value: 0.2)
+        clip.animation.setKeyframe(.saturation, at: Time(seconds: 1), value: 0.5)
+        state.tracks[0].clips = [clip]
+        let editor = EditorController(store: ProjectStore(state: state))
+        editor.selection = [clip.id]
+        let lane = KeyframeLane(editor: editor, layout: TimelineLayout(pixelsPerSecond: 100, tracks: state.tracks), visibleRect: .zero)
+
+        editor.workspace = .color
+        #expect(Set(lane.rows(for: clip)) == [.liftMaster, .saturation])
+        editor.workspace = .effects
+        #expect(lane.rows(for: clip).contains(.scale) && !lane.rows(for: clip).contains(where: \.isColor))
+    }
+
+    @Test func deleteRemovesSelectedColorKeyframesInTheColorTab() {
+        var state = ProjectState()
+        var clip = Clip(id: UUID(), mediaID: UUID(), name: "c", start: .zero, duration: Time(seconds: 4), sourceStart: .zero)
+        clip.animation.setKeyframe(.gainMaster, at: Time(seconds: 1), value: 0.3)
+        state.tracks[0].clips = [clip]
+        let editor = EditorController(store: ProjectStore(state: state))
+        let undo = UndoManager()
+        undo.groupsByEvent = false
+        editor.store.undoManager = undo
+        editor.workspace = .color
+        editor.selection = [clip.id]
+        let frame = clip.animation.keyframes(for: .gainMaster)[0]
+        editor.selectedKeyframes = [KeyframeRef(clipID: clip.id, property: .gainMaster, keyframeID: frame.id)]
+        undo.beginUndoGrouping()
+        editor.deleteSelection()
+        undo.endUndoGrouping()
+        #expect(!editor.state.clip(clip.id)!.isAnimated(.gainMaster))
+        #expect(editor.state.tracks[0].clips.count == 1, "the clip itself stays")
     }
 }

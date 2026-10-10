@@ -1,7 +1,8 @@
 import SwiftUI
 
-/// Keyframes of the selected clip under the timeline (Effects tab): one row per
-/// parameter, aligned with the timeline above. Click a diamond to select it (⇧ adds),
+/// Keyframes of the selected clip under the timeline: one row per parameter, aligned
+/// with the timeline above. The Effects tab shows motion keyframes, the Color tab
+/// color keyframes. Click a diamond to select it (⇧ adds),
 /// drag to retime (selected keyframes move together), Delete removes.
 struct KeyframeLane: View {
     let editor: EditorController
@@ -10,14 +11,23 @@ struct KeyframeLane: View {
 
     static let rowHeight: CGFloat = 18
 
+    /// The rows for this tab: animated parameters (and, in Effects, the one shown in
+    /// the curve editor).
+    func rows(for clip: Clip) -> [AnimatableProperty] {
+        if editor.workspace == .color {
+            return AnimatableProperty.grade.filter { clip.isAnimated($0) }
+        }
+        return AnimatableProperty.motion.filter { clip.isAnimated($0) || $0 == editor.effectsProperty }
+    }
+
     var body: some View {
-        if let clip = editor.effectsClip {
-            let rows = AnimatableProperty.allCases.filter { clip.isAnimated($0) || $0 == editor.effectsProperty }
+        if let clip = editor.effectsClip, !rows(for: clip).isEmpty {
+            let rows = rows(for: clip)
             HStack(spacing: 0) {
                 VStack(spacing: 0) {
                     ForEach(rows) { property in
                         Button {
-                            editor.effectsProperty = property
+                            if !property.isColor { editor.effectsProperty = property }
                         } label: {
                             Text(property.title)
                                 .font(.system(size: 10, weight: property == editor.effectsProperty ? .semibold : .regular))
@@ -43,7 +53,8 @@ struct KeyframeLane: View {
             .padding(.vertical, 4)
             .background(Theme.background)
         } else {
-            Text("Select a video or text clip to see its keyframes here.")
+            Text(editor.effectsClip == nil ? "Select a video or text clip to see its keyframes here."
+                 : "No color keyframes yet. Click ◆ next to a color control to add one at the playhead.")
                 .font(.system(size: 10))
                 .foregroundStyle(Theme.textTertiary)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -82,7 +93,7 @@ private struct KeyframeRow: View {
                         DragGesture(minimumDistance: 2)
                             .onChanged { drag in
                                 if !editor.selectedKeyframes.contains(ref) { editor.selectedKeyframes = [ref] }
-                                editor.effectsProperty = property
+                                if !property.isColor { editor.effectsProperty = property }
                                 editor.dragKeyframes(editor.selectedKeyframes, by: layout.duration(forWidth: drag.translation.width))
                             }
                             .onEnded { _ in

@@ -312,7 +312,7 @@ final class EditorController {
             deleteTransition(transition)
             return
         }
-        if workspace == .effects, !selectedKeyframes.isEmpty {
+        if workspace == .effects || workspace == .color, !selectedKeyframes.isEmpty {
             deleteKeyframes(selectedKeyframes)
             return
         }
