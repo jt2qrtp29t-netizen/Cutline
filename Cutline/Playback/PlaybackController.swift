@@ -1,5 +1,7 @@
 import AVFoundation
+import CoreImage
 import Observation
+import QuartzCore
 
 /// Owns playback for one editor window: an `AVPlayer` for the picture and an
 /// `AudioRenderer` for the audio tracks, started together at a shared host time.
@@ -234,6 +236,7 @@ final class PlaybackController {
         let resumeAt = Time(player.currentTime())
         let item = AVPlayerItem(asset: output.composition)
         item.videoComposition = output.videoComposition
+        attachFrameOutput(to: item)
         player.replaceCurrentItem(with: item)
         duration = output.duration
 
@@ -245,6 +248,57 @@ final class PlaybackController {
             seekInFlight = false
             drainSeeks()
         }
+    }
+
+    // MARK: Frames for scopes
+
+    /// While true, the displayed frames can be read with `latestFrame()` (the scopes
+    /// turn this on while they're visible; it costs a copy per frame).
+    var providesFrames = false {
+        didSet {
+            guard providesFrames != oldValue else { return }
+            if let item = player.currentItem {
+                if providesFrames { attachFrameOutput(to: item) } else { detachFrameOutput(from: item) }
+            }
+        }
+    }
+    @ObservationIgnored private var frameOutput: AVPlayerItemVideoOutput?
+    @ObservationIgnored private var lastFrame: CIImage?
+    /// Keeps the pixel buffer behind `lastFrame` alive (CIImage reads it lazily).
+    @ObservationIgnored private var lastFrameBuffer: CVReadOnlyPixelBuffer?
+    /// Bumped whenever `latestFrame()` returns a new frame.
+    @ObservationIgnored private(set) var frameNumber = 0
+
+    private func attachFrameOutput(to item: AVPlayerItem) {
+        frameOutput = nil
+        guard providesFrames else { return }
+        let output = AVPlayerItemVideoOutput(pixelBufferAttributes: CVPixelBufferAttributes(
+            pixelFormatTypes: [CVPixelFormatType(rawValue: kCVPixelFormatType_32BGRA)]))
+        item.add(output)
+        frameOutput = output
+        // A paused frame was drawn before the output existed: draw it again.
+        if !isPlaying { refreshFrame() }
+    }
+
+    private func detachFrameOutput(from item: AVPlayerItem) {
+        if let frameOutput { item.remove(frameOutput) }
+        frameOutput = nil
+        lastFrame = nil
+        lastFrameBuffer = nil
+    }
+
+    /// The frame being shown, as rendered (with the grade), or nil before one is available.
+    func latestFrame() -> CIImage? {
+        guard let output = frameOutput else { return nil }
+        let time = output.itemTime(forHostTime: CACurrentMediaTime())
+        let itemTime = isPlaying ? time : player.currentTime()
+        if output.hasNewPixelBuffer(forItemTime: itemTime),
+           let buffer = output.pixelBufferAndDisplayTime(forItemTime: itemTime).pixelBuffer {
+            lastFrameBuffer = buffer
+            lastFrame = buffer.withUnsafeBuffer { CIImage(cvPixelBuffer: $0) }
+            frameNumber += 1
+        }
+        return lastFrame
     }
 
     /// Re-renders the current frame after appearance changes while paused.
