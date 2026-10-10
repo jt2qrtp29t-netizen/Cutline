@@ -4,7 +4,9 @@ import SwiftUI
 extension AnimatableProperty {
     var displayScale: Double {
         switch self {
-        case .scale, .opacity: 100
+        case .scale, .opacity, .contrast, .saturation, .lutIntensity: 100
+        case .brightness, .temperature, .tint, .highlights, .shadows: 100
+        case .liftMaster, .gammaMaster, .gainMaster, .offsetMaster: 100
         default: 1
         }
     }
@@ -15,11 +17,18 @@ extension AnimatableProperty {
         case .scale, .opacity: "%"
         case .rotation, .yaw, .pitch: "°"
         case .exposure: "EV"
+        case .contrast, .saturation, .lutIntensity: "%"
         default: ""
         }
     }
 
-    var fractionDigits: Int { self == .opacity ? 0 : isColor ? 2 : 1 }
+    var fractionDigits: Int {
+        switch self {
+        case .opacity, .contrast, .saturation, .lutIntensity: 0
+        case .exposure: 2
+        default: 1
+        }
+    }
 
     /// Value change per point dragged (⌥ for 10× finer).
     var unitsPerPoint: Double {
@@ -43,7 +52,7 @@ extension AnimatableProperty {
     }
 
     func formatted(_ value: Double) -> String {
-        String(format: "%.\(fractionDigits)f\(unit == "%" ? "%%" : " " + unit)", value * displayScale)
+        String(format: "%.\(fractionDigits)f\(unit == "%" ? "%%" : unit.isEmpty ? "" : " " + unit)", value * displayScale)
     }
 }
 

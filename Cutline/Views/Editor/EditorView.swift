@@ -12,6 +12,8 @@ struct EditorView: View {
     @AppStorage("layout.binWidth") private var binWidth = Double(Theme.Metrics.mediaBinWidth)
     @AppStorage("layout.timelineHeight") private var timelineHeight = 300.0
     @AppStorage("layout.curveWidth") private var curveWidth = 360.0
+    @AppStorage("layout.colorPanelWidth") private var colorPanelWidth = 480.0
+    @AppStorage("layout.scopesWidth") private var scopesWidth = 340.0
 
     init(document: CutlineDocument) {
         self.document = document
@@ -113,7 +115,18 @@ struct EditorView: View {
                 CurveEditorPanel(editor: editor)
                     .frame(width: curveWidth)
             }
-        case .color, .playground, .export:
+        case .color:
+            HStack(spacing: 0) {
+                ColorPanel(editor: editor)
+                    .frame(width: colorPanelWidth)
+                PanelDivider(axis: .vertical, size: $colorPanelWidth, range: 400...720)
+                PreviewPanel(editor: editor)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                PanelDivider(axis: .vertical, size: $scopesWidth, range: 260...560, direction: -1)
+                ScopesPanel(editor: editor)
+                    .frame(width: scopesWidth)
+            }
+        case .playground, .export:
             WorkspacePlaceholder(workspace: editor.workspace)
         }
     }

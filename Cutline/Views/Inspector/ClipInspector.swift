@@ -132,13 +132,19 @@ struct ClipInspector: View {
             slider("Opacity", \.opacity, range: 0...1, displayScale: 100, unit: "%", action: "Change Opacity")
         }
 
-        InspectorSection(title: "Color", onReset: {
-            editor.adjustClip(clip.id, actionName: "Reset Color") { $0.color = .neutral }
-        }) {
-            slider("Exposure", \.color.exposure, range: -3...3, fractionDigits: 2, action: "Change Exposure")
-            slider("Brightness", \.color.brightness, range: -0.5...0.5, displayScale: 100, action: "Change Brightness")
-            slider("Contrast", \.color.contrast, range: 0.25...2, displayScale: 100, unit: "%", action: "Change Contrast")
-            slider("Saturation", \.color.saturation, range: 0...2, displayScale: 100, unit: "%", action: "Change Saturation")
+        InspectorSection(title: "Color") {
+            HStack(spacing: 8) {
+                Text(clip.color.isNeutral ? "No grade" : "Graded")
+                    .font(.system(size: 11))
+                    .foregroundStyle(Theme.textSecondary)
+                Spacer()
+                Button("Open Color Tab") { editor.workspace = .color }
+                    .controlSize(.small)
+            }
+            Text("Exposure, contrast, saturation and the rest of the grade are in the Color tab (⌘3).")
+                .font(.system(size: 10))
+                .foregroundStyle(Theme.textTertiary)
+                .fixedSize(horizontal: false, vertical: true)
         }
     }
 

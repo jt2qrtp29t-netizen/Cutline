@@ -14,6 +14,9 @@ enum Changelog {
         Entry(version: "3.0", title: "Color tab", changes: [
             "A new color grading engine on the GPU, with one fixed order: exposure, white balance, offset, lift/gamma/gain, contrast and saturation, curves, then LUT. Values are only clamped at the very end.",
             "Every color control can be keyframed, undone and saved. Older projects load and look exactly as before.",
+            "Lift, Gamma, Gain and Offset color wheels in a 2×2 grid: drag to tint (⌥ for fine control), a master slider under each, double-click to reset, and one keyframe diamond per wheel.",
+            "Basic controls: exposure, brightness, contrast, saturation, temperature, tint, highlights and shadows, each with keyframes.",
+            "Exposure, brightness, contrast and saturation moved from the Edit tab to the Color tab.",
         ]),
         Entry(version: "2.9", title: "Changelog", changes: [
             "New Changelog window listing what every version added. Open it with the list icon in the top bar or from the Help menu.",

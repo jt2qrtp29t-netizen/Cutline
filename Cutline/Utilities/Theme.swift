@@ -50,6 +50,24 @@ enum Theme {
     static let clipText = Color(hex: 0xF2F6FA)
     static let clipOffline = Color(hex: 0x6B2E30)
     static let offlineBadge = Color(hex: 0xE5484D)
+
+    // MARK: Color tab
+
+    /// The hue under a wheel position (x = Cb, y = Cr), as a vectorscope shows it.
+    static func wheelHue(x: Double, y: Double) -> Color {
+        let shift = ColorWheel(x: x, y: y).chroma * 0.9
+        return Color(.sRGB, red: 0.5 + shift.x, green: 0.5 + shift.y, blue: 0.5 + shift.z)
+    }
+    static let wheelCenter = Color(hex: 0x3A3A38)
+    static let wheelRing = Color(hex: 0x0E0E0D)
+    static let wheelPuck = Color(hex: 0xF4F4F0)
+    static let curveMaster = Color(hex: 0xE8E8E4)
+    static let curveRed = Color(hex: 0xF0605A)
+    static let curveGreen = Color(hex: 0x52D47A)
+    static let curveBlue = Color(hex: 0x5A8FF0)
+    static let toneCurveGrid = Color(hex: 0xFFFFFF).opacity(0.07)
+    static let scopeTrace = Color(hex: 0xBFE8C8)
+    static let scopeBackground = Color(hex: 0x0B0B0A)
     /// The viewer's "Media Offline" slate (drawn by the compositor, off the main actor).
     nonisolated static let offlineSlateFill = CIColor(red: 0x8A / 255, green: 0x1F / 255, blue: 0x24 / 255)
     /// Translucent preview of where a dragged clip will land.

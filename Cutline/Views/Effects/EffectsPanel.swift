@@ -51,7 +51,9 @@ struct EffectsPanel: View {
     }
 }
 
-private struct ParameterRow: View {
+/// One animatable parameter: keyframe controls, a number field and a precision slider.
+/// Used by the Effects and Color tabs.
+struct ParameterRow: View {
     let editor: EditorController
     let clip: Clip
     let property: AnimatableProperty
@@ -85,7 +87,7 @@ private struct ParameterRow: View {
                 .disabled(!animated)
 
                 Button {
-                    editor.effectsProperty = property
+                    if !property.isColor { editor.effectsProperty = property }
                 } label: {
                     Text(property.title)
                         .font(.system(size: 11, weight: isCurrent ? .semibold : .regular))
@@ -94,7 +96,7 @@ private struct ParameterRow: View {
                         .contentShape(.rect)
                 }
                 .buttonStyle(.plain)
-                .help("Show \(property.title) in the curve editor")
+                .help(property.isColor ? property.title : "Show \(property.title) in the curve editor")
 
                 NumberField(value: value, range: property.range, displayScale: property.displayScale, unit: property.unit,
                             fractionDigits: property.fractionDigits, step: property.unitsPerPoint * 10) { newValue in
@@ -104,7 +106,10 @@ private struct ParameterRow: View {
             }
             PrecisionSlider(
                 value: value, range: property.sliderRange(for: editor.settings), unitsPerPoint: property.unitsPerPoint,
-                onBegin: { editor.effectsProperty = property; editor.beginAdjustment() },
+                onBegin: {
+                    if !property.isColor { editor.effectsProperty = property }
+                    editor.beginAdjustment()
+                },
                 onChange: { editor.setEffectValue(property, of: clip.id, to: $0) },
                 onEnd: { editor.endAdjustment("Change \(property.title)") }
             )
@@ -114,7 +119,9 @@ private struct ParameterRow: View {
         .padding(.horizontal, 4)
         .background(isCurrent ? Theme.accentMuted : Theme.raised.opacity(0), in: .rect(cornerRadius: 6))
         .contextMenu {
-            Button("Show in Curve Editor") { editor.effectsProperty = property }
+            if !property.isColor {
+                Button("Show in Curve Editor") { editor.effectsProperty = property }
+            }
             Button("Remove All \(property.title) Keyframes", role: .destructive) {
                 editor.clearAnimation(property, in: clip)
             }
