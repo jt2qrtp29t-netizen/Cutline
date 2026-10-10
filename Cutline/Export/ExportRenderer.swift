@@ -254,18 +254,26 @@ nonisolated enum ExportRenderer {
     }
 }
 
-/// Mixes the audio tracks exactly as playback does (same voices, speed, pitch, pan,
-/// volume and mute/solo), rendered offline into a file.
+/// Mixes the audio tracks exactly as playback does (the same voices, speed, pitch,
+/// pan, volume and mute/solo), rendered offline into a file on a background thread.
 enum ExportAudioMixer {
     static func render(_ snapshot: ExportSnapshot, to url: URL, cancellation: ExportCancellation,
-                       progress: (Double) -> Void = { _ in }) async throws {
+                       progress: @escaping @Sendable (Double) -> Void = { _ in }) async throws {
         let state = snapshot.state
         // Audio from movie files is decoded once into a readable proxy; wait for those.
+        var readable: [UUID: URL] = [:]
         let audioMedia = Set(state.trackIndices(of: .audio).flatMap { state.tracks[$0].clips.map(\.mediaID) })
         for media in state.media where audioMedia.contains(media.id) && media.hasAudio && MediaURLCache.shared.isAvailable(media) {
-            _ = await AudioSourceCache.shared.prepare(media)
+            if let url = await AudioSourceCache.shared.prepare(media) { readable[media.id] = url }
         }
+        let files = readable
+        try await Task.detached(priority: .userInitiated) {
+            try mix(snapshot, files: files, to: url, cancellation: cancellation, progress: progress)
+        }.value
+    }
 
+    nonisolated private static func mix(_ snapshot: ExportSnapshot, files: [UUID: URL], to url: URL,
+                                        cancellation: ExportCancellation, progress: (Double) -> Void) throws {
         let rate = Double(snapshot.settings.audioSampleRate)
         let channels = AVAudioChannelCount(max(1, min(2, snapshot.settings.audioChannels)))
         guard let format = AVAudioFormat(standardFormatWithSampleRate: rate, channels: channels) else {
@@ -274,12 +282,14 @@ enum ExportAudioMixer {
         let engine = AVAudioEngine()
         let chunk: AVAudioFrameCount = 4096
         try engine.enableManualRenderingMode(.offline, format: format, maximumFrameCount: chunk)
-        let renderer = AudioRenderer(engine: engine)
-        renderer.start(state, at: snapshot.range.start, hostTime: nil)
+        _ = engine.mainMixerNode
+        let voices = AudioVoice.makeAll(for: snapshot.state, from: snapshot.range.start, in: engine) { files[$0.id] }
+        try engine.start()
         defer {
-            renderer.stop()
+            voices.forEach { $0.player.stop() }
             engine.stop()
         }
+        for voice in voices { try voice.player.playAudio(at: nil) }
 
         let file = try AVAudioFile(forWriting: url, settings: format.settings, commonFormat: .pcmFormatFloat32, interleaved: false)
         guard let buffer = AVAudioPCMBuffer(pcmFormat: engine.manualRenderingFormat, frameCapacity: chunk) else {
@@ -287,7 +297,6 @@ enum ExportAudioMixer {
         }
         let total = AVAudioFramePosition((snapshot.range.duration.seconds * rate).rounded())
         var done: AVAudioFramePosition = 0
-        var chunks = 0
         while done < total {
             if cancellation.isCancelled { throw ExportError.cancelled }
             let frames = AVAudioFrameCount(min(AVAudioFramePosition(chunk), total - done))
@@ -295,12 +304,7 @@ enum ExportAudioMixer {
             guard status == .success else { throw ExportError.writingFailed("the audio mix stopped early.") }
             try file.write(from: buffer)
             done += AVAudioFramePosition(buffer.frameLength)
-            chunks += 1
-            // Let the app stay responsive while mixing long timelines.
-            if chunks % 24 == 0 {
-                progress(Double(done) / Double(total))
-                await Task.yield()
-            }
+            progress(Double(done) / Double(total))
         }
     }
 }
