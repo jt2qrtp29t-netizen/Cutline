@@ -43,6 +43,7 @@ final class PlaygroundSession {
         editor.workspace = .playground
         editor.store.undoManager = undoManager
         undoManager.groupsByEvent = true
+        updateRenderFilter()
     }
 
     /// Everything to save.
@@ -97,6 +98,7 @@ final class PlaygroundSession {
         variants = []
         snapshots = []
         disabledExperiments = []
+        updateRenderFilter()
         saveNow()
     }
 }

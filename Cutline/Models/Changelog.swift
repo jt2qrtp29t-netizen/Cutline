@@ -17,6 +17,8 @@ enum Changelog {
             "Adjust, Effects and Color panels work on Playground clips, with an amber Sandbox badge so it’s never mistaken for the real timeline.",
             "Send to Playground (right-click a clip in Edit) copies clips with their grade, effects and keyframes. Copies are independent of the originals.",
             "Promote to Edit adds a Playground clip to your project as a new clip, or applies its settings to the original or the selected Edit clip, as one undo step.",
+            "Variants: duplicate a clip into A, B, C… and compare them one at a time or side by side, then keep the best.",
+            "Snapshots: save named checkpoints of the Playground and restore any of them.",
         ]),
         Entry(version: "3.1", title: "Color keyframes on the timeline", changes: [
             "The Color tab shows its keyframes in a lane under the timeline, where they can be selected, dragged to retime and deleted.",

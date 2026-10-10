@@ -193,7 +193,7 @@ final class PlaybackController {
         if timing == installedTiming, let installed, let item = player.currentItem {
             if installed.videoComposition != nil {
                 item.videoComposition = CompositionBuilder.makeVideoComposition(
-                    for: gradeBypassed ? state.withoutGrades() : state, duration: installed.duration,
+                    for: prepared(state), duration: installed.duration,
                     clipTrackIDs: installed.clipTrackIDs, sourceTransforms: installed.sourceTransforms
                 )
             }
@@ -202,7 +202,20 @@ final class PlaybackController {
             return
         }
         guard !isLiveEdit else { return }
-        scheduleRebuild(gradeBypassed ? state.withoutGrades() : state, timing: timing)
+        scheduleRebuild(prepared(state), timing: timing)
+    }
+
+    /// Changes what's drawn without changing the project (the Playground's variant
+    /// compare and Labs switches use it).
+    @ObservationIgnored var renderFilter: ((ProjectState) -> ProjectState)? {
+        didSet { if let latestState { update(with: latestState, isLiveEdit: false) } }
+    }
+
+    /// The state as it's rendered: grades removed for "before", then the render filter.
+    func prepared(_ state: ProjectState) -> ProjectState {
+        var state = gradeBypassed ? state.withoutGrades() : state
+        if let renderFilter { state = renderFilter(state) }
+        return state
     }
 
     /// Shows every clip ungraded (the "before" view) without touching the project.

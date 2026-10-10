@@ -35,6 +35,7 @@ struct PlaygroundWorkspace: View {
             PreviewPanel(editor: sandbox)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .overlay(alignment: .topTrailing) { SandboxBadge().padding(12) }
+                .overlay { VariantPreviewLabels(session: session).allowsHitTesting(false) }
 
             PanelDivider(axis: .vertical, size: $rightWidth, range: 260...520, direction: -1)
             PlaygroundSidePanel(main: main, session: session)
@@ -92,6 +93,8 @@ struct PlaygroundSidePanel: View {
                             .foregroundStyle(Theme.offlineBadge)
                             .fixedSize(horizontal: false, vertical: true)
                     }
+                    VariantsSection(session: session)
+                    SnapshotsSection(session: session)
                     PromoteSection(session: session)
                     InspectorSection(title: "About") {
                         Text("Experiment freely here: this timeline, its undo history and everything on it are separate from your project. Right-click clips in Edit and choose Send to Playground to bring copies in.")
