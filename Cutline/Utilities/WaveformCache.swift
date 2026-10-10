@@ -17,6 +17,14 @@ final class WaveformCache {
     @ObservationIgnored private var peaks: [UUID: [Float]] = [:]
     @ObservationIgnored private var loading: Set<UUID> = []
 
+    /// Drops peaks for media whose file went missing, moved or came back.
+    func forget(_ ids: Set<UUID>) {
+        for id in ids where peaks[id] != nil {
+            peaks[id] = nil
+            revision &+= 1
+        }
+    }
+
     func peaks(for media: MediaItem, url: URL) -> [Float]? {
         if let cached = peaks[media.id] { return cached }
         guard media.hasAudio, !loading.contains(media.id) else { return nil }

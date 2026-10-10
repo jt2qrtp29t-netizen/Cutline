@@ -40,23 +40,18 @@ nonisolated final class LayerCompositor: NSObject, AVVideoCompositing, @unchecke
         if let instruction = request.videoCompositionInstruction as? CompositorInstruction {
             let time = Time(request.compositionTime)
             for layer in instruction.layers {
-                guard let outgoing = image(of: layer, request: request, renderSize: renderSize, time: time, keeping: &sources)
-                else {
-                    // The outgoing side is missing (e.g. no frame yet); still show the incoming one.
-                    if let blend = layer.transition,
-                       let incoming = image(of: blend.incomingLayer, request: request, renderSize: renderSize, time: time, keeping: &sources) {
-                        output = incoming.composited(over: output)
-                    }
+                let own = image(of: layer, request: request, renderSize: renderSize, time: time, keeping: &sources)
+                guard let blend = layer.transition else {
+                    if let own { output = own.composited(over: output) }
                     continue
                 }
-                if let blend = layer.transition {
-                    let incoming = image(of: blend.incomingLayer, request: request, renderSize: renderSize, time: time, keeping: &sources)
-                        ?? CIImage.empty()
-                    let mixed = Self.blend(blend.kind, from: outgoing, to: incoming, progress: blend.progress(at: time), canvas: canvas)
-                    output = mixed.composited(over: output)
-                } else {
-                    output = outgoing.composited(over: output)
+                let other = blend.incomingLayer.flatMap {
+                    image(of: $0, request: request, renderSize: renderSize, time: time, keeping: &sources)
                 }
+                // A missing side (open edge, or no frame yet) blends with nothing.
+                let (from, to) = blend.layerIsIncoming ? (CIImage.empty(), own ?? .empty()) : (own ?? .empty(), other ?? .empty())
+                let mixed = Self.blend(blend.kind, from: from, to: to, progress: blend.progress(at: time), canvas: canvas)
+                output = mixed.composited(over: output)
             }
         }
 
@@ -76,11 +71,38 @@ nonisolated final class LayerCompositor: NSObject, AVVideoCompositing, @unchecke
             guard let image = TextRenderer.image(for: text) else { return nil }
             return Self.process(image, layer: layer, renderSize: renderSize, at: time)
         }
+        if layer.isOffline {
+            return Self.process(Self.offlineSlate(named: layer.clip.name, size: renderSize), layer: layer,
+                                renderSize: renderSize, at: time)
+        }
         guard let trackID = layer.trackID,
               let buffer = request.sourceReadOnlyPixelBuffer(byTrackID: trackID) else { return nil }
         sources.append(buffer)
         let image = buffer.withUnsafeBuffer { CIImage(cvPixelBuffer: $0) }
         return Self.process(image, layer: layer, renderSize: renderSize, at: time)
+    }
+
+    /// Stands in for a clip whose media file is missing: a red frame naming the clip.
+    static func offlineSlate(named name: String, size: CGSize) -> CIImage {
+        let canvas = CGRect(origin: .zero, size: size)
+        var slate = CIImage(color: Theme.offlineSlateFill).cropped(to: canvas)
+        let fontSize = max(size.height / 18, 12)
+        for (line, scale, offset) in [("Media Offline", 1.0, 0.6), (name, 0.55, -1.0)] {
+            guard let text = CIFilter(name: "CITextImageGenerator", parameters: [
+                "inputText": line, "inputFontName": "HelveticaNeue-Bold", "inputFontSize": fontSize * scale,
+                "inputScaleFactor": 1.0, "inputPadding": 0,
+            ])?.outputImage else { continue }
+            // The generator draws black text: invert it to white, keeping its alpha.
+            let white = text.applyingFilter("CIColorMatrix", parameters: [
+                "inputRVector": CIVector(x: 0, y: 0, z: 0, w: 0), "inputGVector": CIVector(x: 0, y: 0, z: 0, w: 0),
+                "inputBVector": CIVector(x: 0, y: 0, z: 0, w: 0), "inputBiasVector": CIVector(x: 1, y: 1, z: 1, w: 0),
+            ]).applyingFilter("CIPremultiply")
+            let e = white.extent
+            let x = canvas.midX - e.width / 2 - e.minX
+            let y = canvas.midY + CGFloat(offset) * fontSize - e.height / 2 - e.minY
+            slate = white.transformed(by: CGAffineTransform(translationX: x, y: y)).composited(over: slate)
+        }
+        return slate.cropped(to: canvas)
     }
 
     /// Mixes the outgoing and incoming images of a transition. `progress` runs 0 → 1.
@@ -114,7 +136,10 @@ nonisolated final class LayerCompositor: NSObject, AVVideoCompositing, @unchecke
         case .crossDissolve:
             return dissolve(a, b, p)
         case .dipToBlack:
-            // Core Image is y-up; dimming keeps alpha, so a lower track doesn't show through.
+            // Dimming keeps alpha, so a lower track doesn't show through. On an open
+            // edge the whole transition is a fade from or to black.
+            if a.extent.isEmpty { return onCanvas(darken(b, p)) }
+            if b.extent.isEmpty { return onCanvas(darken(a, 1 - p)) }
             return p < 0.5 ? onCanvas(darken(a, 1 - p * 2)) : onCanvas(darken(b, p * 2 - 1))
         case .slideLeft, .slideRight, .slideUp, .slideDown:
             // The incoming clip pushes the outgoing one off the opposite edge.

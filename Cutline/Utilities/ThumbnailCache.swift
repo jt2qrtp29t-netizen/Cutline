@@ -62,12 +62,23 @@ final class ThumbnailCache {
         return Time(ticks: (time.ticks / step.ticks) * step.ticks)
     }
 
+    /// Drops everything for media whose file went missing, moved or came back, so
+    /// frames that failed (or came from the old file) are generated again.
+    func forget(_ ids: Set<UUID>) {
+        let prefixes = ids.map(\.uuidString)
+        func matches(_ key: String) -> Bool { prefixes.contains { key.hasPrefix($0) } }
+        inFlight = inFlight.filter { !matches($0) }
+        generators = generators.filter { !matches($0.key) }
+        revision &+= 1
+    }
+
     private static func key(for request: Request) -> String {
-        "\(request.mediaID.uuidString)@\(request.time.ticks)/\(request.size.rawValue)"
+        // The file path is part of the key so a relinked item never shows the old file's frames.
+        "\(request.mediaID.uuidString)@\(request.time.ticks)/\(request.size.rawValue)#\(request.url.path.hashValue)"
     }
 
     private func generator(for request: Request) -> AVAssetImageGenerator {
-        let key = "\(request.mediaID.uuidString)/\(request.size.rawValue)"
+        let key = "\(request.mediaID.uuidString)/\(request.size.rawValue)#\(request.url.path.hashValue)"
         if let existing = generators[key] { return existing }
         let generator = AVAssetImageGenerator(asset: AVURLAsset(url: request.url))
         generator.appliesPreferredTrackTransform = true

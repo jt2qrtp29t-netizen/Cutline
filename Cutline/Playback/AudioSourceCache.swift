@@ -16,6 +16,15 @@ final class AudioSourceCache {
         return nil
     }
 
+    /// Drops prepared files for media whose source went missing, moved or came back.
+    func forget(_ ids: Set<UUID>) {
+        for id in ids {
+            ready[id] = nil
+            preparing[id]?.cancel()
+            preparing[id] = nil
+        }
+    }
+
     /// Waits until the media's audio is readable.
     func prepare(_ media: MediaItem) async -> URL? {
         if let url = ready[media.id] { return url }

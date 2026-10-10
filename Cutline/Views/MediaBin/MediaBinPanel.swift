@@ -101,6 +101,10 @@ struct MediaBinPanel: View {
 
     @ViewBuilder
     private func contextMenu(for media: MediaItem) -> some View {
+        if editor.isOffline(media) {
+            Button("Relink…") { editor.relinkMedia(media.id) }
+            Divider()
+        }
         Button("Reveal in Finder") {
             NSWorkspace.shared.activateFileViewerSelecting([MediaURLCache.shared.url(for: media)])
         }
@@ -123,6 +127,17 @@ private struct MediaBinItem: View {
             ZStack(alignment: .bottomTrailing) {
                 PosterThumbnail(media: media)
                     .aspectRatio(16 / 9, contentMode: .fit)
+                    .overlay {
+                        if !MediaURLCache.shared.isAvailable(media) {
+                            ZStack {
+                                Theme.clipOffline.opacity(0.85)
+                                Label("Offline", systemImage: "exclamationmark.triangle.fill")
+                                    .font(.system(size: 10, weight: .semibold))
+                                    .foregroundStyle(Theme.textPrimary)
+                            }
+                            .help("“\(media.path)” is missing. Right-click to relink it.")
+                        }
+                    }
                     .clipShape(.rect(cornerRadius: 6))
                 Text(Timecode.string(for: media.duration, fps: fps))
                     .font(.system(size: 9, weight: .semibold).monospacedDigit())

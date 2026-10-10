@@ -1,3 +1,4 @@
+import CoreImage
 import SwiftUI
 
 /// The single source of truth for every color and shared metric in the app.
@@ -48,6 +49,9 @@ enum Theme {
     static let clipLabelStrip = Color(hex: 0x25597F)
     static let clipText = Color(hex: 0xF2F6FA)
     static let clipOffline = Color(hex: 0x6B2E30)
+    static let offlineBadge = Color(hex: 0xE5484D)
+    /// The viewer's "Media Offline" slate (drawn by the compositor, off the main actor).
+    nonisolated static let offlineSlateFill = CIColor(red: 0x8A / 255, green: 0x1F / 255, blue: 0x24 / 255)
     /// Translucent preview of where a dragged clip will land.
     static let clipGhost = Color(hex: 0x3175A8).opacity(0.45)
 

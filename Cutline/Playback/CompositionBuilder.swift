@@ -210,11 +210,14 @@ nonisolated enum CompositionBuilder {
         }
         let sorted = boundaries.filter { $0 >= .zero && $0 <= duration }.sorted()
 
-        /// The layer for a clip, or nil if it has nothing to show.
+        /// The layer for a clip, or nil if it has nothing to show. Video clips that
+        /// didn't make it into the composition (their file is missing) show a slate.
         func layer(for clip: Clip, onTrack index: Int) -> CompositorLayer? {
             guard state.isClipActive(clip, onTrack: index) else { return nil }
             if clip.isText { return CompositorLayer(trackID: nil, clip: clip, sourceTransform: .identity) }
-            guard let trackID = clipTrackIDs[clip.id], let transform = sourceTransforms[clip.mediaID] else { return nil }
+            guard let trackID = clipTrackIDs[clip.id], let transform = sourceTransforms[clip.mediaID] else {
+                return CompositorLayer(trackID: nil, clip: clip, sourceTransform: .identity, isOffline: true)
+            }
             return CompositorLayer(trackID: trackID, clip: clip, sourceTransform: transform)
         }
 
@@ -224,18 +227,27 @@ nonisolated enum CompositionBuilder {
             var layers: [CompositorLayer] = []
             for index in visualTracks {
                 if let placed = transitions[index]?.first(where: { span.start >= $0.range.start && span.end <= $0.range.end }) {
-                    let outgoing = layer(for: placed.outgoing, onTrack: index)
-                    let incoming = layer(for: placed.incoming, onTrack: index)
+                    let outgoing = placed.outgoing.flatMap { layer(for: $0, onTrack: index) }
+                    let incoming = placed.incoming.flatMap { layer(for: $0, onTrack: index) }
                     switch (outgoing, incoming) {
                     case let (outgoing?, incoming?):
                         var mixed = outgoing
                         mixed.transition = TransitionBlend(kind: placed.transition.kind, range: placed.range,
                                                            incomingTrackID: incoming.trackID, incomingClip: incoming.clip,
-                                                           incomingSourceTransform: incoming.sourceTransform)
+                                                           incomingSourceTransform: incoming.sourceTransform,
+                                                           incomingIsOffline: incoming.isOffline)
                         layers.append(mixed)
                     case let (single?, nil), let (nil, single?):
-                        // One side is muted or missing: show the other on its own side of the cut.
-                        if single.clip.range.overlaps(span) { layers.append(single) }
+                        if placed.isEdge {
+                            // From or to nothing on an open edge.
+                            var mixed = single
+                            mixed.transition = TransitionBlend(kind: placed.transition.kind, range: placed.range,
+                                                               layerIsIncoming: placed.outgoing == nil)
+                            layers.append(mixed)
+                        } else if single.clip.range.overlaps(span) {
+                            // One side of a cut is muted: show the other on its own side.
+                            layers.append(single)
+                        }
                     case (nil, nil):
                         break
                     }

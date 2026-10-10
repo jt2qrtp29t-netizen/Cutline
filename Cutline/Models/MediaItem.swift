@@ -50,7 +50,7 @@ nonisolated struct MediaItem: Identifiable, Codable, Hashable, Sendable {
     func resolveURL() -> URL {
         if let bookmark {
             var stale = false
-            if let url = try? URL(resolvingBookmarkData: bookmark, options: [.withoutUI], bookmarkDataIsStale: &stale) {
+            if let url = try? URL(resolvingBookmarkData: bookmark, options: [.withoutUI, .withoutMounting], bookmarkDataIsStale: &stale) {
                 return url
             }
         }

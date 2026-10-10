@@ -86,9 +86,13 @@ struct TimelineLanes: View {
                 ForEach(track.placedTransitions(), id: \.transition.id) { placed in
                     let width = max(layout.width(for: placed.duration), 14)
                     let height = min(max(row.height * 0.5, 16), 26)
+                    // Over the frames it plays across: centered on a cut, inside the clip on an open edge.
+                    let x = placed.outgoing == nil ? layout.x(for: placed.cut)
+                        : placed.incoming == nil ? layout.x(for: placed.cut) - width
+                        : layout.x(for: placed.cut) - width / 2
                     TransitionMarker(editor: editor, placed: placed, isLocked: track.isLocked)
                         .frame(width: width, height: height)
-                        .offset(x: layout.x(for: placed.cut) - width / 2, y: row.y + (row.height - height) / 2)
+                        .offset(x: x, y: row.y + (row.height - height) / 2)
                 }
             }
 
@@ -97,7 +101,9 @@ struct TimelineLanes: View {
                     .fill(Theme.transitionDropTarget)
                     .overlay { RoundedRectangle(cornerRadius: 4).strokeBorder(Theme.transitionBorder, lineWidth: 2) }
                     .frame(width: 28, height: row.height)
-                    .offset(x: layout.x(for: target.cut) - 14, y: row.y)
+                    // Centered on a cut; just inside the clip on an open edge.
+                    .offset(x: layout.x(for: target.cut) - (target.outgoingID == nil ? 0 : target.incomingID == nil ? 28 : 14),
+                            y: row.y)
                     .allowsHitTesting(false)
             }
 

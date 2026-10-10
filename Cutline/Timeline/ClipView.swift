@@ -50,6 +50,7 @@ struct ClipView: View {
                             .font(.system(size: 10, weight: .medium))
                             .foregroundStyle(Theme.clipText)
                             .lineLimit(1)
+                            .help("“\(media?.path ?? clip.name)” is missing. Right-click to relink it.")
                     }
             }
         }
@@ -186,6 +187,10 @@ private struct ClipContextMenu: View {
 
     var body: some View {
         let targets = editor.contextTargets(for: clip.id)
+        if !clip.isText, let media = editor.state.mediaItem(clip.mediaID), editor.isOffline(media) {
+            Button("Relink “\(media.name)”…") { editor.relinkMedia(media.id) }
+            Divider()
+        }
         Button(editor.isLinked(targets) ? "Unlink" : "Link") { editor.toggleLink(targets) }
             .keyboardShortcut("l", modifiers: [.command, .option])
             .disabled(!editor.canToggleLink(targets))

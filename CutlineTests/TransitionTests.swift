@@ -95,7 +95,7 @@ struct TransitionTests {
         #expect(state.addTransition(.crossDissolve, between: a.id, and: b.id) == nil, "there's a gap")
         state.updateClip(b.id) { $0.start = Time(seconds: 2) }
         #expect(state.addTransition(.crossDissolve, between: a.id, and: b.id) != nil)
-        #expect(state.cut(onTrack: 0, near: Time(seconds: 2.1), tolerance: Time(seconds: 0.2))?.incoming.id == b.id)
+        #expect(state.cut(onTrack: 0, near: Time(seconds: 2.1), tolerance: Time(seconds: 0.2))?.incoming?.id == b.id)
         // Audio tracks don't take transitions.
         state.tracks[1].clips = [a, b].map { var c = $0; c.id = UUID(); return c }
         #expect(state.addTransition(.crossDissolve, between: state.tracks[1].clips[0].id,

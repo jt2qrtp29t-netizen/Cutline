@@ -218,11 +218,12 @@ extension EditorController {
 
 // MARK: Transitions
 
-/// Where a dragged transition would land: the cut between two clips.
+/// Where a dragged transition would land: the cut between two clips, or a clip's
+/// open start (no outgoing clip) or end (no incoming clip).
 struct TransitionDropTarget: Equatable {
     let trackIndex: Int
-    let outgoingID: UUID
-    let incomingID: UUID
+    let outgoingID: UUID?
+    let incomingID: UUID?
     let cut: Time
 }
 
@@ -236,15 +237,15 @@ nonisolated struct TransitionDragItem: Codable, Transferable {
 }
 
 extension EditorController {
-    /// The cut nearest a timeline point on a track, if close enough to drop on.
+    /// The cut or open clip edge nearest a timeline point on a track, if close enough to drop on.
     func transitionTarget(onTrack index: Int, near time: Time, tolerance: Time) -> TransitionDropTarget? {
         guard state.tracks.indices.contains(index), state.tracks[index].kind.isVisual, !state.tracks[index].isLocked,
               let cut = state.cut(onTrack: index, near: time, tolerance: tolerance) else { return nil }
-        return TransitionDropTarget(trackIndex: index, outgoingID: cut.outgoing.id, incomingID: cut.incoming.id,
-                                    cut: cut.incoming.start)
+        return TransitionDropTarget(trackIndex: index, outgoingID: cut.outgoing?.id, incomingID: cut.incoming?.id,
+                                    cut: cut.time)
     }
 
-    /// Adds (or replaces) a transition on a cut and selects it.
+    /// Adds (or replaces) a transition on a cut or open edge and selects it.
     func addTransition(_ kind: TransitionKind, at target: TransitionDropTarget) {
         var id: UUID?
         store.edit("Add \(kind.title)") { state in

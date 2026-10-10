@@ -23,6 +23,7 @@ final class PlaybackController {
     @ObservationIgnored private var pendingSeek: Time?
     @ObservationIgnored private var frameDuration = Time.frame(fps: 30)
     @ObservationIgnored private var latestState: ProjectState?
+    @ObservationIgnored private var mediaObserver: (any NSObjectProtocol)?
     @ObservationIgnored private var startTask: Task<Void, Never>?
 
     /// Lead time so the video and audio can both be ready to start on the same host tick.
@@ -53,12 +54,28 @@ final class PlaybackController {
                 self.currentTime = self.duration
             }
         }
+        // Rebuild when files go missing or come back, so offline clips show their slate
+        // (and recovered ones their media) without any edit.
+        mediaObserver = NotificationCenter.default.addObserver(
+            forName: .mediaAvailabilityChanged, object: nil, queue: .main
+        ) { [weak self] notification in
+            let ids = notification.object as? Set<UUID> ?? []
+            MainActor.assumeIsolated { self?.reloadMedia(ids) }
+        }
+    }
+
+    /// Forgets prepared media for `ids` and rebuilds the composition.
+    func reloadMedia(_ ids: Set<UUID>) {
+        AudioSourceCache.shared.forget(ids)
+        installedTiming = nil
+        if let latestState { update(with: latestState, isLiveEdit: false) }
     }
 
     isolated deinit {
         audio.stop()
         if let timeObserver { player.removeTimeObserver(timeObserver) }
         if let endObserver { NotificationCenter.default.removeObserver(endObserver) }
+        if let mediaObserver { NotificationCenter.default.removeObserver(mediaObserver) }
         rebuildTask?.cancel()
     }
 

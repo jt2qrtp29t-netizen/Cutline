@@ -13,6 +13,7 @@ struct PreviewPanel: View {
                     RoundedRectangle(cornerRadius: 2).strokeBorder(Theme.border)
                 }
                 .shadow(color: Theme.shadow, radius: 12, y: 4)
+                .overlay(alignment: .top) { OfflineMediaBanner(editor: editor).padding(10) }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .padding(.horizontal, 24)
                 .padding(.top, 20)
@@ -117,5 +118,35 @@ struct MuteButton: View {
         .buttonStyle(.plain)
         .help(settings.isMuted ? "Unmute All Audio (⇧⌘M)" : "Mute All Audio (⇧⌘M)")
         .onHover { isHovering = $0 }
+    }
+}
+
+/// Warns that clips on the timeline use files that are missing, with a way to find them.
+private struct OfflineMediaBanner: View {
+    let editor: EditorController
+
+    var body: some View {
+        let offline = editor.offlineMedia
+        if let first = offline.first {
+            HStack(spacing: 8) {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .foregroundStyle(Theme.offlineBadge)
+                Text(offline.count == 1
+                     ? "“\(first.name)” is offline"
+                     : "\(offline.count) media files are offline")
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(Theme.textPrimary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                Button("Relink…") { editor.relinkMedia(first.id) }
+                    .controlSize(.small)
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
+            .background(Theme.raised.opacity(0.95), in: .capsule)
+            .overlay { Capsule().strokeBorder(Theme.offlineBadge.opacity(0.6)) }
+            .help(offline.map { "\($0.name): \($0.path)" }.joined(separator: "\n")
+                  + "\n\nThe files were moved, renamed or deleted, or are on a disk that isn’t connected.")
+        }
     }
 }

@@ -28,7 +28,7 @@ struct TransitionsSection: View {
                 }
             }
 
-            Text("Drag a transition onto a cut between two touching clips, or click one to use the cut nearest the playhead.")
+            Text("Drag a transition onto a cut between two touching clips, or onto the start or end of a clip to transition from or to black. Click one to use the cut or edge nearest the playhead.")
                 .font(.system(size: 10))
                 .foregroundStyle(Theme.textTertiary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -101,7 +101,7 @@ struct SelectedTransitionSection: View {
                         .font(.system(size: 10))
                         .foregroundStyle(Theme.textTertiary)
                 }
-                InspectorValueRow(title: "Between", value: "\(placed.outgoing.name) → \(placed.incoming.name)")
+                InspectorValueRow(title: placed.isEdge ? "On" : "Between", value: placed.description)
 
                 Button("Delete Transition", role: .destructive) { editor.deleteTransition(id) }
                     .controlSize(.small)
