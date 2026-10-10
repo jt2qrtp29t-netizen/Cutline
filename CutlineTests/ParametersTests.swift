@@ -76,6 +76,11 @@ import Testing
         }
     }
 
+    @Test func defaultTransitionLengthIsOneAndAQuarterSeconds() {
+        // Fresh installs and Restore Defaults use this value too.
+        #expect(Transition.defaultDuration == Time(seconds: 1.25))
+    }
+
     @Test func reversingSwapsTheTabDirection() {
         #expect(TabScrollGesture.direction(1, reversed: false) == 1)
         #expect(TabScrollGesture.direction(1, reversed: true) == -1)

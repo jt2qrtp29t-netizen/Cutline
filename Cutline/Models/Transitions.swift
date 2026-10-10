@@ -47,7 +47,7 @@ nonisolated struct Transition: Identifiable, Codable, Hashable, Sendable {
     var outgoingClipID: UUID?
     var incomingClipID: UUID?
 
-    static let defaultDuration = Time(seconds: 1)
+    static let defaultDuration = Time(seconds: 1.25)
     static let minimumDuration = Time.frame(fps: 60)
 }
 

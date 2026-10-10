@@ -23,8 +23,8 @@ struct EdgeTransitionTests {
 
         let placed = state.tracks[0].placedTransitions()
         #expect(placed.count == 2)
-        #expect(placed[0].range == TimeRange(start: Time(seconds: 1), end: Time(seconds: 2)), "plays inside the clip")
-        #expect(placed[1].range == TimeRange(start: Time(seconds: 8), end: Time(seconds: 9)))
+        #expect(placed[0].range == TimeRange(start: Time(seconds: 1), end: Time(seconds: 2.25)), "plays inside the clip")
+        #expect(placed[1].range == TimeRange(start: Time(seconds: 7.75), end: Time(seconds: 9)))
         #expect(placed[0].description == "Start of a" && placed[1].description == "End of b")
         #expect(state.tracks[0].transitionHandles(for: a.id) == (.zero, .zero), "no extra media needed")
     }

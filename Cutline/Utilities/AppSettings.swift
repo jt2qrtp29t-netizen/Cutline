@@ -65,7 +65,7 @@ final class AppSettings {
     // MARK: Effects
 
     /// Length of newly added transitions, in seconds.
-    var transitionLength: Double = value("transitions.duration", default: 1.0) {
+    var transitionLength: Double = value("transitions.duration", default: Transition.defaultDuration.seconds) {
         didSet { Self.defaults.set(transitionLength, forKey: "transitions.duration") }
     }
     static let transitionLengthRange = 0.1...3.0
@@ -96,7 +96,7 @@ final class AppSettings {
         followPlayhead = true
         fineScrubPointsPerFrame = 10
         scrubAudio = true
-        transitionLength = 1
+        transitionLength = Transition.defaultDuration.seconds
         scrollSwitchesTabs = true
         reverseTabScrolling = false
     }
