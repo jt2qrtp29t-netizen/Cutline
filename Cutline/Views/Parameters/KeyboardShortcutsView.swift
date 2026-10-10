@@ -61,6 +61,12 @@ enum ShortcutList {
             Item(keys: "Double-click a wheel", action: "Reset that color wheel"),
             Item(keys: "Click  /  double-click", action: "Add / remove a curve point"),
         ]),
+        Group(title: "Playground", symbolName: "flask", items: [
+            Item(keys: "⌘4", action: "Open the Playground (sandbox)"),
+            Item(keys: "Right-click a clip", action: "Send to Playground / Promote to Edit"),
+            Item(keys: "⌘Z  /  ⇧⌘Z", action: "Undo / Redo in the Playground’s own history"),
+            Item(keys: "⌘↩", action: "Run the Custom Shader’s code"),
+        ]),
         Group(title: "Markers", symbolName: "bookmark", items: [
             Item(keys: "⌘M", action: "Add Marker…"),
             Item(keys: "⌥⌘←  /  ⌥⌘→", action: "Previous / Next Marker"),

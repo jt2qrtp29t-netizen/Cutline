@@ -28,11 +28,13 @@ struct ClipView: View {
     }
 
     var body: some View {
-        let isOffline = !clip.isText && (media.map { !MediaURLCache.shared.isAvailable($0) } ?? true)
+        let isOffline = !clip.isText && clip.generator == nil && (media.map { !MediaURLCache.shared.isAvailable($0) } ?? true)
         VStack(spacing: 0) {
             label
             if let text = clip.text {
                 TextClipPreview(text: text.string, leading: max(0, visibleRange.lowerBound))
+            } else if let generator = clip.generator {
+                GeneratorClipPreview(generator: generator, leading: max(0, visibleRange.lowerBound))
             } else if let media, !isOffline {
                 Group {
                     if isAudio {
@@ -449,5 +451,30 @@ private struct PlaygroundClipMenuItems: View {
                 editor.sendToPlayground(targets)
             }
         }
+    }
+}
+
+/// A generator clip's body: its experiment's icon and name on a stripe.
+private struct GeneratorClipPreview: View {
+    let generator: LabEffect
+    let leading: CGFloat
+
+    var body: some View {
+        let experiment = ExperimentRegistry.experiment(generator.experimentID)
+        HStack(spacing: 5) {
+            Image(systemName: experiment?.symbolName ?? "flask")
+            Text(experiment?.name ?? generator.experimentID)
+                .lineLimit(1)
+            if LabStatus.shared.errors[generator.id] != nil {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .foregroundStyle(Theme.offlineBadge)
+            }
+        }
+        .font(.system(size: 10, weight: .medium))
+        .foregroundStyle(Theme.clipText.opacity(0.85))
+        .padding(.leading, 6 + leading)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+        .background(Theme.sandboxMuted)
+        .opacity(generator.isEnabled ? 1 : 0.5)
     }
 }

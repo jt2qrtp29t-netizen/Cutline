@@ -71,6 +71,11 @@ nonisolated final class LayerCompositor: NSObject, AVVideoCompositing, @unchecke
             guard let image = TextRenderer.image(for: text) else { return nil }
             return Self.process(image, layer: layer, renderSize: renderSize, at: time)
         }
+        if let generator = layer.clip.generator {
+            let canvas = CGRect(origin: .zero, size: renderSize)
+            guard let image = LabRenderer.generate(generator, canvas: canvas, time: (time - layer.clip.start).seconds) else { return nil }
+            return Self.process(image, layer: layer, renderSize: renderSize, at: time)
+        }
         if layer.isOffline {
             return Self.process(Self.offlineSlate(named: layer.clip.name, size: renderSize), layer: layer,
                                 renderSize: renderSize, at: time)
@@ -162,8 +167,8 @@ nonisolated final class LayerCompositor: NSObject, AVVideoCompositing, @unchecke
     /// Orients, flips, crops, fits, positions, rotates and grades one layer in
     /// render (Core Image, y-up) space.
     static func process(_ source: CIImage, layer: CompositorLayer, renderSize: CGSize, at time: Time) -> CIImage {
-        // Text is already upright and drawn at project-pixel size, so it isn't fitted.
-        let isText = layer.text != nil
+        // Text and generators are already upright and drawn at frame size, so they aren't fitted.
+        let isText = layer.text != nil || layer.clip.generator != nil
         var image = isText ? source : source.oriented(orientation(for: layer.sourceTransform))
         image = image.transformed(by: CGAffineTransform(translationX: -image.extent.minX, y: -image.extent.minY))
 
@@ -215,6 +220,10 @@ nonisolated final class LayerCompositor: NSObject, AVVideoCompositing, @unchecke
         let grade = clip.grade(at: time)
         if !grade.isNeutral {
             image = ColorPipeline.apply(grade, to: image, lut: LUTLibrary.shared.lut(for: grade.lut))
+        }
+        if !clip.labs.isEmpty {
+            image = LabRenderer.apply(clip.labs, to: image, canvas: CGRect(origin: .zero, size: renderSize),
+                                      time: (time - clip.start).seconds)
         }
         if values.opacity < 1 {
             image = image.applyingFilter("CIColorMatrix", parameters: [

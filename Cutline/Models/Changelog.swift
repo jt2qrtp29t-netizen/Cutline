@@ -19,6 +19,8 @@ enum Changelog {
             "Promote to Edit adds a Playground clip to your project as a new clip, or applies its settings to the original or the selected Edit clip, as one undo step.",
             "Variants: duplicate a clip into A, B, C… and compare them one at a time or side by side, then keep the best.",
             "Snapshots: save named checkpoints of the Playground and restore any of them.",
+            "Labs: experiments you can switch on and off. Generators (Solid Color, Gradient, Noise, Color Bars) and effects (RGB Split & Glitch, Wave Warp, and a Custom Shader with editable Metal code), all with keyframable parameters.",
+            "A failing experiment (like a shader that doesn’t compile) shows its error and the clip falls back to how it looked without it.",
         ]),
         Entry(version: "3.1", title: "Color keyframes on the timeline", changes: [
             "The Color tab shows its keyframes in a lane under the timeline, where they can be selected, dragged to retime and deleted.",

@@ -264,38 +264,57 @@ nonisolated struct ClipAnimation: Codable, Hashable, Sendable {
     func split(at offset: Time) -> (left: ClipAnimation, right: ClipAnimation) {
         var left = ClipAnimation(), right = ClipAnimation()
         for (property, frames) in keyframes where !frames.isEmpty {
-            guard let valueAtCut = value(of: property, atOffset: offset) else { continue }
-            func shiftedToCut(_ frame: Keyframe) -> Keyframe {
-                var f = frame
-                f.time = frame.time - offset
-                return f
-            }
-            var leftFrames: [Keyframe]
-            var rightFrames: [Keyframe]
-            if frames.contains(where: { $0.time == offset }) {
-                // The cut is on a keyframe: nothing to subdivide, both halves keep it.
-                leftFrames = frames.filter { $0.time <= offset }
-                rightFrames = frames.filter { $0.time >= offset }.map(shiftedToCut)
-            } else {
-                leftFrames = frames.filter { $0.time < offset }
-                rightFrames = frames.filter { $0.time > offset }.map(shiftedToCut)
-                var rightEasing = Easing.linear
-                // Subdivide the segment that crosses the cut.
-                if let a = leftFrames.last, let b = rightFrames.first {
-                    let bTime = b.time + offset
-                    let span = Double((bTime - a.time).ticks)
-                    let s = span > 0 ? Double((offset - a.time).ticks) / span : 0
-                    let (l, r) = a.easing.split(at: s)
-                    leftFrames[leftFrames.count - 1].easing = l
-                    rightEasing = r
-                }
-                leftFrames.append(Keyframe(time: offset, value: valueAtCut))
-                rightFrames.insert(Keyframe(time: .zero, value: valueAtCut, easing: rightEasing), at: 0)
-            }
-            left.keyframes[property] = leftFrames
-            right.keyframes[property] = rightFrames
+            let (l, r) = Self.split(frames, at: offset)
+            left.keyframes[property] = l
+            right.keyframes[property] = r
         }
         return (left, right)
+    }
+
+    /// Splits sorted keyframes at `offset` (shared with Labs parameters): the left part
+    /// ends at the value at the cut, the right part starts there re-timed to zero, and
+    /// the crossing segment's easing is subdivided so neither half changes shape.
+    static func split(_ frames: [Keyframe], at offset: Time) -> (left: [Keyframe], right: [Keyframe]) {
+        let valueAtCut = interpolate(frames, atOffset: offset)
+        func shiftedToCut(_ frame: Keyframe) -> Keyframe {
+            var f = frame
+            f.time = frame.time - offset
+            return f
+        }
+        var leftFrames: [Keyframe]
+        var rightFrames: [Keyframe]
+        if frames.contains(where: { $0.time == offset }) {
+            // The cut is on a keyframe: nothing to subdivide, both halves keep it.
+            leftFrames = frames.filter { $0.time <= offset }
+            rightFrames = frames.filter { $0.time >= offset }.map(shiftedToCut)
+        } else {
+            leftFrames = frames.filter { $0.time < offset }
+            rightFrames = frames.filter { $0.time > offset }.map(shiftedToCut)
+            var rightEasing = Easing.linear
+            // Subdivide the segment that crosses the cut.
+            if let a = leftFrames.last, let b = rightFrames.first {
+                let bTime = b.time + offset
+                let span = Double((bTime - a.time).ticks)
+                let s = span > 0 ? Double((offset - a.time).ticks) / span : 0
+                let (l, r) = a.easing.split(at: s)
+                leftFrames[leftFrames.count - 1].easing = l
+                rightEasing = r
+            }
+            leftFrames.append(Keyframe(time: offset, value: valueAtCut))
+            rightFrames.insert(Keyframe(time: .zero, value: valueAtCut, easing: rightEasing), at: 0)
+        }
+        return (leftFrames, rightFrames)
+    }
+
+    /// Adds or replaces the keyframe at `time` in a sorted list (keeping its easing).
+    static func setting(_ frames: [Keyframe], at time: Time, value: Double) -> [Keyframe] {
+        var frames = frames
+        if let index = frames.firstIndex(where: { $0.time == time }) {
+            frames[index].value = value
+        } else {
+            frames.append(Keyframe(time: time, value: value))
+        }
+        return frames.sorted { $0.time < $1.time }
     }
 
     /// Moves every keyframe by `delta` (used when the clip's start is trimmed, so the

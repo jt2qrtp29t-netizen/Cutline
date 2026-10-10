@@ -214,7 +214,9 @@ nonisolated enum CompositionBuilder {
         /// didn't make it into the composition (their file is missing) show a slate.
         func layer(for clip: Clip, onTrack index: Int) -> CompositorLayer? {
             guard state.isClipActive(clip, onTrack: index) else { return nil }
-            if clip.isText { return CompositorLayer(trackID: nil, clip: clip, sourceTransform: .identity) }
+            if clip.isText || clip.generator != nil {
+                return CompositorLayer(trackID: nil, clip: clip, sourceTransform: .identity)
+            }
             guard let trackID = clipTrackIDs[clip.id], let transform = sourceTransforms[clip.mediaID] else {
                 return CompositorLayer(trackID: nil, clip: clip, sourceTransform: .identity, isOffline: true)
             }

@@ -93,6 +93,8 @@ struct PlaygroundSidePanel: View {
                             .foregroundStyle(Theme.offlineBadge)
                             .fixedSize(horizontal: false, vertical: true)
                     }
+                    LabItemsSection(session: session)
+                    LabsListSection(session: session)
                     VariantsSection(session: session)
                     SnapshotsSection(session: session)
                     PromoteSection(session: session)

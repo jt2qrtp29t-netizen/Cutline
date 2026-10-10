@@ -142,6 +142,8 @@ nonisolated enum TimelineEditing {
         c.start = time
         // Keyframes are relative to the clip start; keep them where they were on the timeline.
         c.animation = clip.animation.shifted(by: clip.start - time)
+        c.labs = clip.labs.map { $0.shifted(by: clip.start - time) }
+        c.generator = clip.generator?.shifted(by: clip.start - time)
         return c
     }
 
@@ -288,9 +290,17 @@ nonisolated enum TimelineEditing {
                 let (leftAnimation, rightAnimation) = clip.animation.split(at: time - clip.start)
                 var left = trimmedEnd(clip, to: time)
                 left.animation = leftAnimation
-                result.append(left)
                 var right = trimmedStart(clip, to: time)
                 right.animation = rightAnimation
+                // Labs parameters split the same way.
+                let labs = clip.labs.map { $0.split(at: time - clip.start) }
+                left.labs = labs.map(\.left)
+                right.labs = labs.map(\.right)
+                if let generator = clip.generator?.split(at: time - clip.start) {
+                    left.generator = generator.left
+                    right.generator = generator.right
+                }
+                result.append(left)
                 right.id = UUID()
                 if let link = clip.linkID {
                     if relinked[link] == nil { relinked[link] = UUID() }
