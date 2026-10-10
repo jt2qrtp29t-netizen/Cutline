@@ -34,6 +34,7 @@ struct TransitionsSection: View {
                 .fixedSize(horizontal: false, vertical: true)
         }
         .onAppear { duration = editor.transitionDuration }
+        .onChange(of: AppSettings.shared.transitionLength) { _, length in duration = length }
     }
 
     private func setDuration(_ value: Double) {

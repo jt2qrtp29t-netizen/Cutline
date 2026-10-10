@@ -110,7 +110,7 @@ struct PlayheadFollower: View {
         Color.clear
             .frame(width: 0, height: 0)
             .onChange(of: playback.currentTime) { _, time in
-                guard playback.isPlaying, visibleRect.width > 0 else { return }
+                guard playback.isPlaying, AppSettings.shared.followPlayhead, visibleRect.width > 0 else { return }
                 let x = layout.x(for: time)
                 if x > visibleRect.maxX - 24 || x < visibleRect.minX {
                     scrollTo(max(0, x - 24))

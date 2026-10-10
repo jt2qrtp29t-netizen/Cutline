@@ -7,6 +7,8 @@ struct EditorTitleBar: View {
     let editor: EditorController
     let title: String
 
+    @Environment(\.openWindow) private var openWindow
+
     var body: some View {
         ZStack {
             HStack(spacing: 6) {
@@ -24,6 +26,9 @@ struct EditorTitleBar: View {
                     editor.addTextClip()
                 }
                 Spacer()
+                IconButton(systemImage: "keyboard", help: "Keyboard Shortcuts (⌘/)") {
+                    openWindow(id: WindowID.shortcuts)
+                }
                 Text(AppVersion.display)
                     .font(.system(size: 11, weight: .medium).monospacedDigit())
                     .foregroundStyle(Theme.textTertiary)

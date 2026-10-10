@@ -121,7 +121,6 @@ enum Theme {
         static let trackHeaderWidth: CGFloat = 124
         static let clipLabelHeight: CGFloat = 16
         static let trimHandleWidth: CGFloat = 7
-        static let snapThreshold: CGFloat = 8
         static let inspectorWidth: CGFloat = 310
         static let mediaBinWidth: CGFloat = 270
     }

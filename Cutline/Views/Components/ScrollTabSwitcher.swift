@@ -51,7 +51,7 @@ struct ScrollTabSwitcher: NSViewRepresentable {
             }
             let target = event.window
                 ?? NSApp.window(withWindowNumber: NSWindow.windowNumber(at: screenPoint, belowWindowWithWindowNumber: 0))
-            guard let window, target === window else { return false }
+            guard AppSettings.shared.scrollSwitchesTabs, let window, target === window else { return false }
             let location = event.window != nil ? event.locationInWindow : window.convertPoint(fromScreen: screenPoint)
             let dx = event.scrollingDeltaX, dy = event.scrollingDeltaY
             // Mostly-horizontal scrolling only, and not the coasting after a trackpad swipe.
@@ -59,7 +59,7 @@ struct ScrollTabSwitcher: NSViewRepresentable {
             guard !HorizontalScrollZone.contains(location, in: window) else { return false }
 
             let step = gesture.feed(dx: dx, precise: event.hasPreciseScrollingDeltas, at: event.timestamp)
-            if step != 0 { onStep?(step) }
+            if step != 0 { onStep?(TabScrollGesture.direction(step, reversed: AppSettings.shared.reverseTabScrolling)) }
             return true
         }
 
@@ -89,6 +89,9 @@ nonisolated struct TabScrollGesture {
     private var lastMagnitude: CGFloat = 0
     /// Set after a step, while the rest of that flick is being ignored.
     private var suppression: (since: TimeInterval, sign: CGFloat)?
+
+    /// The tab step for a scroll step, with the Parameters option to reverse it.
+    static func direction(_ step: Int, reversed: Bool) -> Int { reversed ? -step : step }
 
     /// Feeds one event; returns +1 to move a tab right, -1 left, or 0.
     mutating func feed(dx: CGFloat, precise: Bool, at time: TimeInterval) -> Int {

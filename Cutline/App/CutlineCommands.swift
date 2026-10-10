@@ -9,6 +9,16 @@ struct CutlineCommands: Commands {
     @Environment(\.openWindow) private var openWindow
 
     var body: some Commands {
+        // The standard Settings item, named Parameters here.
+        CommandGroup(replacing: .appSettings) {
+            ParametersMenuItem()
+        }
+
+        CommandGroup(replacing: .help) {
+            Button("Keyboard Shortcuts") { openWindow(id: WindowID.shortcuts) }
+                .keyboardShortcut("/")
+        }
+
         CommandGroup(replacing: .newItem) {
             Button("New Project…") { openWindow(id: WindowID.launch) }
                 .keyboardShortcut("n")
@@ -144,5 +154,15 @@ struct CutlineCommands: Commands {
             .keyboardShortcut(.rightArrow, modifiers: [])
             .disabled(editor == nil)
         }
+    }
+}
+
+/// Opens the Parameters (settings) window with ⌘,.
+private struct ParametersMenuItem: View {
+    @Environment(\.openSettings) private var openSettings
+
+    var body: some View {
+        Button("Parameters…") { openSettings() }
+            .keyboardShortcut(",")
     }
 }

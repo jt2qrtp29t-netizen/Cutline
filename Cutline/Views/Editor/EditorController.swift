@@ -14,7 +14,7 @@ final class EditorController {
     }
     /// Timeline zoom.
     var pixelsPerSecond: Double = 60
-    var snappingEnabled = true
+    var snappingEnabled = AppSettings.shared.snapByDefault
     var isImporting = false
     var alert: EditorAlert?
 
@@ -46,10 +46,10 @@ final class EditorController {
     /// Transition being dragged from the Effects tab, and the cut it would land on.
     var draggedTransition: TransitionKind?
     var transitionDropTarget: TransitionDropTarget?
-    /// Length used for new transitions (the last one chosen).
-    @ObservationIgnored var transitionDuration: Double {
-        get { UserDefaults.standard.object(forKey: "transitions.duration") as? Double ?? 1 }
-        set { UserDefaults.standard.set(newValue, forKey: "transitions.duration") }
+    /// Length used for new transitions (the last one chosen; also set in Parameters).
+    var transitionDuration: Double {
+        get { AppSettings.shared.transitionLength }
+        set { AppSettings.shared.transitionLength = newValue }
     }
 
     static let zoomRange: ClosedRange<Double> = 2...1200
@@ -110,7 +110,7 @@ final class EditorController {
     func snappedDropTime(_ time: Time, duration: Time?, layout: TimelineLayout) -> Time {
         let framed = time.snappedToFrame(fps: fps)
         guard snappingEnabled else { return framed }
-        let threshold = layout.duration(forWidth: Theme.Metrics.snapThreshold)
+        let threshold = layout.duration(forWidth: AppSettings.shared.snapDistance)
         let points = SnapEngine.points(in: state, playhead: snapPlayhead, excluding: [])
         let edges = [Time.zero] + (duration.map { [$0] } ?? [])
         if let snap = SnapEngine.snap(edges: edges.map { framed + $0 }, to: points, threshold: threshold) {
@@ -142,13 +142,13 @@ final class EditorController {
         if playback.isPlaying { playback.pause() }
         var target = max(time, .zero).snappedToFrame(fps: fps)
         if snappingEnabled {
-            let threshold = layout.duration(forWidth: Theme.Metrics.snapThreshold)
+            let threshold = layout.duration(forWidth: AppSettings.shared.snapDistance)
             let points = SnapEngine.points(in: state, playhead: nil, excluding: [])
             if let snap = SnapEngine.snap(edges: [target], to: points, threshold: threshold) {
                 target += snap.offset
             }
         }
-        playback.seek(to: target, audible: true)
+        playback.seek(to: target, audible: AppSettings.shared.scrubAudio)
     }
 
     /// Pointer position (relative to the visible left edge of the timeline) while the
@@ -158,8 +158,8 @@ final class EditorController {
     /// Where an Option (frame-by-frame) drag started: pointer position and playhead time.
     @ObservationIgnored private var fineScrubAnchor: (x: CGFloat, time: Time)?
     var isFineScrubbing: Bool { fineScrubAnchor != nil }
-    /// Pointer travel per frame while Option-dragging, whatever the zoom.
-    static let fineScrubPointsPerFrame: CGFloat = 10
+    /// Pointer travel per frame while Option-dragging, whatever the zoom (set in Parameters).
+    static var fineScrubPointsPerFrame: CGFloat { AppSettings.shared.fineScrubPointsPerFrame }
 
     /// Drags the playhead. `viewportX` is the pointer relative to the visible area,
     /// `contentX` its position on the timeline. Holding Option moves the playhead one
@@ -178,7 +178,7 @@ final class EditorController {
         fineScrubAnchor = anchor
         let frames = Int(((contentX - anchor.x) / Self.fineScrubPointsPerFrame).rounded(.towardZero))
         let target = anchor.time + Time(seconds: Double(frames) / Double(fps))
-        playback.seek(to: max(target, .zero).snappedToFrame(fps: fps), audible: true)
+        playback.seek(to: max(target, .zero).snappedToFrame(fps: fps), audible: AppSettings.shared.scrubAudio)
     }
 
     func endPlayheadDrag() {
@@ -218,7 +218,7 @@ final class EditorController {
         if snappingEnabled {
             let edges = moving.flatMap { [$0.start + delta, $0.end + delta] }
             let points = SnapEngine.points(in: base, playhead: playback.currentTime, excluding: ids)
-            let threshold = layout.duration(forWidth: Theme.Metrics.snapThreshold)
+            let threshold = layout.duration(forWidth: AppSettings.shared.snapDistance)
             if let snap = SnapEngine.snap(edges: edges, to: points, threshold: threshold) {
                 delta += snap.offset
                 snapGuide = snap.target
@@ -243,7 +243,7 @@ final class EditorController {
         snapGuide = nil
         if snappingEnabled {
             let points = SnapEngine.points(in: base, playhead: playback.currentTime, excluding: [clipID])
-            let threshold = layout.duration(forWidth: Theme.Metrics.snapThreshold)
+            let threshold = layout.duration(forWidth: AppSettings.shared.snapDistance)
             if let snap = SnapEngine.snap(edges: [target], to: points, threshold: threshold) {
                 target += snap.offset
                 snapGuide = snap.target

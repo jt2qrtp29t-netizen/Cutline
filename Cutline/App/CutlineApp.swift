@@ -2,6 +2,7 @@ import SwiftUI
 
 enum WindowID {
     static let launch = "launch"
+    static let shortcuts = "shortcuts"
 }
 
 /// True when the app is only hosting unit tests: no windows are opened then, so
@@ -20,7 +21,7 @@ struct CutlineApp: App {
         }
         .windowStyle(.hiddenTitleBar)
         .windowResizability(.contentSize)
-        .defaultLaunchBehavior(isRunningTests ? .suppressed : .presented)
+        .defaultLaunchBehavior(isRunningTests || !AppSettings.shared.showWelcomeAtLaunch ? .suppressed : .presented)
         .restorationBehavior(.disabled)
 
         DocumentGroup(allowCreating: false) { (document: CutlineDocument) in
@@ -33,5 +34,18 @@ struct CutlineApp: App {
         .defaultSize(width: 1440, height: 900)
         .windowStyle(.hiddenTitleBar)
         .commands { CutlineCommands() }
+
+        Window("Keyboard Shortcuts", id: WindowID.shortcuts) {
+            KeyboardShortcutsView()
+                .preferredColorScheme(.dark)
+                .tint(Theme.accent)
+        }
+        .defaultSize(width: 520, height: 640)
+        .defaultLaunchBehavior(.suppressed)
+        .restorationBehavior(.disabled)
+
+        Settings {
+            ParametersView()
+        }
     }
 }

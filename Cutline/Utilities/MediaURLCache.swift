@@ -36,7 +36,10 @@ final class MediaURLCache {
             workspace.addObserver(forName: name, object: nil, queue: .main, using: recheck)
         }
         timer = Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { _ in
-            MainActor.assumeIsolated { MediaURLCache.shared.recheck() }
+            MainActor.assumeIsolated {
+                guard AppSettings.shared.watchForOfflineMedia else { return }
+                MediaURLCache.shared.recheck()
+            }
         }
     }
 
