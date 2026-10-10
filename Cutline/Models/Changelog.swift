@@ -16,6 +16,7 @@ enum Changelog {
             "Custom settings for size, frame rate, codec (H.264, HEVC, ProRes 422), container, quality, hardware encoding and audio (AAC bitrate, sample rate, stereo or mono), saved with the project.",
             "Exports use the same renderer as the preview (grades, keyframes, text, transitions, Labs effects and shaders) and the same audio mix as playback, frame-exact and without drift.",
             "Files are written to a temporary file first and only moved into place when complete. A Labs effect that fails is left out with a warning instead of stopping the export.",
+            "An export queue that runs in the background from a frozen copy of the timeline, with progress, time remaining, Cancel (which removes the unfinished file), a notification when done, and no sleeping Mac mid-export. Quitting during an export asks first.",
         ]),
         Entry(version: "3.2", title: "Playground tab", changes: [
             "A sandbox for experiments: the Playground has its own timeline, undo history, selection and preview, and nothing in it can change your project.",
