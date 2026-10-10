@@ -163,58 +163,54 @@ nonisolated enum ExportRenderer {
         let rangeStart = snapshot.range.start.cmTime
         let audioEnd = snapshot.range.duration.cmTime
         let total = snapshot.frameCount
-        // The writer interleaves audio and video, so a stream that stops early leaves the
-        // other waiting. On a cancel or error, abort reading and writing so both let go.
+        // One loop offers the writer the next video frame and audio sample without ever
+        // blocking: it takes whichever it's ready for (it interleaves the two itself), and
+        // when it takes neither the loop waits a moment. Nothing can deadlock, and cancel
+        // is noticed within milliseconds.
         let pipeline = Pipeline(readers: [reader] + (audioReader.map { [$0] } ?? []), writer: writer)
+        let streams = Streams(video: video, audio: audioStream)
         do {
-            try await withThrowingTaskGroup(of: Void.self) { group in
-                group.addTask {
-                    do {
-                        var written = 0
-                        while written < total, let sample = try await video.provider.next() {
-                            if cancellation.isCancelled || Task.isCancelled { throw ExportError.cancelled }
-                            guard case .pixelBuffer(let pixels) = sample.content else { continue }
-                            let time = CMTimeSubtract(sample.presentationTimeStamp, rangeStart)
-                            try await video.receiver.append(pixels, with: time)
-                            written += 1
-                            progress(written)
-                        }
-                        video.receiver.finish()
-                    } catch {
-                        pipeline.abort()
-                        throw error
-                    }
-                }
-                if let audioStream {
-                    group.addTask {
-                        do {
-                            while let sample = try await audioStream.provider.next() {
-                                if cancellation.isCancelled || Task.isCancelled { throw ExportError.cancelled }
-                                guard CMTimeCompare(sample.presentationTimeStamp, audioEnd) < 0 else { break }
-                                try await audioStream.receiver.append(sample)
-                            }
-                            audioStream.receiver.finish()
-                        } catch {
-                            pipeline.abort()
-                            throw error
+            try await Task.detached {
+                var written = 0
+                func nextVideo() async throws -> (pixels: CVReadOnlyPixelBuffer, time: CMTime)? {
+                    while written < total, let sample = try await streams.video.provider.next() {
+                        if case .pixelBuffer(let pixels) = sample.content {
+                            return (pixels, CMTimeSubtract(sample.presentationTimeStamp, rangeStart))
                         }
                     }
+                    return nil
                 }
-                // Notices a cancel even while both streams are waiting on the writer.
-                group.addTask {
-                    while !pipeline.isFinished {
-                        if cancellation.isCancelled {
-                            pipeline.abort()
-                            throw ExportError.cancelled
-                        }
-                        try await Task.sleep(for: .milliseconds(50))
+                func nextAudio() async throws -> CMReadySampleBuffer<CMSampleBuffer.DynamicContent>? {
+                    guard let audio = streams.audio, let sample = try await audio.provider.next(),
+                          CMTimeCompare(sample.presentationTimeStamp, audioEnd) < 0 else { return nil }
+                    return sample
+                }
+                var pendingVideo = try await nextVideo()
+                var pendingAudio = try await nextAudio()
+                if pendingAudio == nil { streams.audio?.receiver.finish() }
+                while pendingVideo != nil || pendingAudio != nil {
+                    if cancellation.isCancelled || Task.isCancelled { throw ExportError.cancelled }
+                    var progressed = false
+                    if let frame = pendingVideo, try streams.video.receiver.appendImmediately(frame.pixels, with: frame.time) {
+                        written += 1
+                        progress(written)
+                        pendingVideo = try await nextVideo()
+                        if pendingVideo == nil { streams.video.receiver.finish() }
+                        progressed = true
+                    }
+                    if let sample = pendingAudio, let audio = streams.audio, try audio.receiver.appendImmediately(sample) {
+                        pendingAudio = try await nextAudio()
+                        if pendingAudio == nil { audio.receiver.finish() }
+                        progressed = true
+                    }
+                    if !progressed {
+                        if let failure = pipeline.writerError { throw ExportError.writingFailed(failure) }
+                        try await Task.sleep(for: .milliseconds(2))
                     }
                 }
-                for _ in 0..<(audioStream == nil ? 1 : 2) { try await group.next() }
-                pipeline.markFinished()
-                try await group.waitForAll()
-            }
+            }.value
         } catch {
+            pipeline.abort()
             reader.cancelReading()
             audioReader?.cancelReading()
             writer.cancelWriting()
@@ -267,29 +263,21 @@ nonisolated enum ExportRenderer {
         return result
     }
 
-    /// Lets any task stop the whole export at once.
+    /// Stops reading and writing at once (when an export fails or is canceled).
     private final class Pipeline: @unchecked Sendable {
         private let lock = NSLock()
         private let readers: [AVAssetReader]
         private let writer: AVAssetWriter
         private var aborted = false
-        private var finished = false
 
         init(readers: [AVAssetReader], writer: AVAssetWriter) {
             self.readers = readers
             self.writer = writer
         }
 
-        var isFinished: Bool {
-            lock.lock()
-            defer { lock.unlock() }
-            return finished || aborted
-        }
-
-        func markFinished() {
-            lock.lock()
-            finished = true
-            lock.unlock()
+        /// Why the writer stopped, if it failed.
+        var writerError: String? {
+            writer.status == .failed ? (writer.error?.localizedDescription ?? "the encoder stopped.") : nil
         }
 
         func abort() {
@@ -301,6 +289,12 @@ nonisolated enum ExportRenderer {
             readers.forEach { $0.cancelReading() }
             writer.cancelWriting()
         }
+    }
+
+    /// Both streams, handed to the task that writes them.
+    private struct Streams: @unchecked Sendable {
+        let video: VideoStream
+        let audio: AudioStream?
     }
 
     /// A stream's reader and writer ends, handed to the one task that uses them.
