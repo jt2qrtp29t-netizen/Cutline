@@ -11,6 +11,10 @@ enum Changelog {
     }
 
     static let entries: [Entry] = [
+        Entry(version: "3.3", title: "Export tab", changes: [
+            "Export presets: YouTube 4K 60, YouTube 1080p 60, Social Vertical and Square (crop or fit), Quick Preview, ProRes Master, and Custom.",
+            "Custom settings for size, frame rate, codec (H.264, HEVC, ProRes 422), container, quality, hardware encoding and audio (AAC bitrate, sample rate, stereo or mono), saved with the project.",
+        ]),
         Entry(version: "3.2", title: "Playground tab", changes: [
             "A sandbox for experiments: the Playground has its own timeline, undo history, selection and preview, and nothing in it can change your project.",
             "It’s saved on its own (not in the project file) and comes back when you reopen the project. Reset clears it after asking.",

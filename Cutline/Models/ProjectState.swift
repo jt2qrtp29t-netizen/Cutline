@@ -16,6 +16,8 @@ nonisolated struct ProjectState: Codable, Hashable, Sendable {
     var media: [MediaItem] = []
     var tracks: [Track]
     var markers: [Marker] = []
+    /// The last export settings used for this project.
+    var exportSettings = ExportSettings()
 
     init(settings: ProjectSettings = .default, videoTracks: Int = 1, audioTracks: Int = 1, textTracks: Int = 1) {
         self.settings = settings
@@ -32,6 +34,7 @@ nonisolated struct ProjectState: Codable, Hashable, Sendable {
         media = try c.decodeIfPresent([MediaItem].self, forKey: .media) ?? []
         tracks = try c.decodeIfPresent([Track].self, forKey: .tracks) ?? []
         markers = try c.decodeIfPresent([Marker].self, forKey: .markers) ?? []
+        exportSettings = try c.decodeIfPresent(ExportSettings.self, forKey: .exportSettings) ?? ExportSettings()
         if version < 2 { migrateSeparatingAudio() }
         if version < 3 { migrateTextToTextTracks() }
         version = Self.currentVersion
