@@ -17,6 +17,8 @@ enum Changelog {
             "Lift, Gamma, Gain and Offset color wheels in a 2×2 grid: drag to tint (⌥ for fine control), a master slider under each, double-click to reset, and one keyframe diamond per wheel.",
             "Basic controls: exposure, brightness, contrast, saturation, temperature, tint, highlights and shadows, each with keyframes.",
             "Exposure, brightness, contrast and saturation moved from the Edit tab to the Color tab.",
+            "RGB curves (master, red, green, blue) with draggable points, and a hue vs saturation curve.",
+            "LUTs: apply a .cube file with adjustable intensity. Invalid files show a clear error; a missing LUT shows a warning on the clip and the clip renders without it.",
         ]),
         Entry(version: "2.9", title: "Changelog", changes: [
             "New Changelog window listing what every version added. Open it with the list icon in the top bar or from the Help menu.",

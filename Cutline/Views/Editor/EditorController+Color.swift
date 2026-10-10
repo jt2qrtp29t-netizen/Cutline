@@ -1,4 +1,5 @@
 import AppKit
+import UniformTypeIdentifiers
 
 // MARK: Color grading
 
@@ -177,5 +178,79 @@ extension EditorController {
                 for property in wheel.allProperties { clip.animation.keyframes[property] = nil }
             }
         }
+    }
+}
+
+/// Which RGB curve is being edited.
+enum CurveChannel: String, CaseIterable, Identifiable {
+    case master, red, green, blue
+
+    var id: String { rawValue }
+    var title: String { self == .master ? "Master" : rawValue.capitalized }
+    var shortTitle: String { self == .master ? "RGB" : String(rawValue.prefix(1)).uppercased() }
+
+    var keyPath: WritableKeyPath<RGBCurves, ToneCurve> {
+        switch self {
+        case .master: \.master
+        case .red: \.red
+        case .green: \.green
+        case .blue: \.blue
+        }
+    }
+}
+
+extension EditorController {
+    /// Replaces one RGB curve. During a drag (live edit) each call replaces the last.
+    func setCurve(_ channel: CurveChannel, to curve: ToneCurve, of clipID: UUID, actionName: String = "Change Curve") {
+        adjustClip(clipID, actionName: actionName) { $0.color.curves[keyPath: channel.keyPath] = curve }
+    }
+
+    func setHueCurve(_ curve: HueCurve, of clipID: UUID, actionName: String = "Change Hue vs Saturation") {
+        adjustClip(clipID, actionName: actionName) { $0.color.hueSaturation = curve }
+    }
+
+    /// Asks for a .cube file and applies it to the clip.
+    func chooseLUT(for clipID: UUID) {
+        let panel = NSOpenPanel()
+        panel.title = "Choose a LUT"
+        panel.message = "Choose a 3D .cube LUT file."
+        panel.prompt = "Use LUT"
+        panel.allowedContentTypes = [.init(filenameExtension: "cube") ?? .data]
+        if let current = state.clip(clipID)?.color.lut {
+            panel.directoryURL = current.resolveURL().deletingLastPathComponent()
+        }
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        do {
+            try setLUT(url, for: clipID)
+        } catch {
+            alert = EditorAlert(title: "Couldn’t use “\(url.lastPathComponent)”",
+                                message: error.localizedDescription)
+        }
+    }
+
+    /// Validates a .cube file and makes it the clip's LUT. Throws (changing nothing) if
+    /// the file can't be read.
+    func setLUT(_ url: URL, for clipID: UUID) throws {
+        _ = try CubeLUT.load(from: url)
+        let bookmark = try? url.bookmarkData(options: [], includingResourceValuesForKeys: nil, relativeTo: nil)
+        let reference = LUTReference(name: url.deletingPathExtension().lastPathComponent, path: url.path, bookmark: bookmark)
+        adjustClip(clipID, actionName: "Apply LUT") { $0.color.lut = reference }
+    }
+
+    func removeLUT(from clipID: UUID) {
+        adjustClip(clipID, actionName: "Remove LUT") { clip in
+            clip.color.lut = nil
+            clip.color.lutIntensity = 1
+            clip.animation.keyframes[.lutIntensity] = nil
+        }
+    }
+
+    /// Whether a clip has a LUT whose file is missing or unreadable (it renders without it).
+    func lutProblem(of clip: Clip) -> String? {
+        guard let lut = clip.color.lut else { return nil }
+        if case .failure(let error) = LUTLibrary.shared.result(for: lut) {
+            return "LUT “\(lut.name)” can’t be used: \(error.localizedDescription) The clip shows without it."
+        }
+        return nil
     }
 }

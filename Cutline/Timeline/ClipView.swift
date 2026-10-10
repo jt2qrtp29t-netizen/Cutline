@@ -112,6 +112,16 @@ struct ClipView: View {
             if clip.isSoloed {
                 ClipBadge(text: "S", tint: Theme.soloTrack)
             }
+            if !clip.color.isNeutral || clip.animation.keyframes.keys.contains(where: \.isColor) {
+                Image(systemName: "camera.filters").font(.system(size: 8, weight: .bold))
+                    .help("Color graded")
+            }
+            if let problem = editor.lutProblem(of: clip) {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .font(.system(size: 9))
+                    .foregroundStyle(Theme.offlineBadge)
+                    .help(problem)
+            }
             Text(clip.name)
                 .lineLimit(1)
             if clip.speed != 1 {

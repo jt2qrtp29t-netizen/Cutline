@@ -66,6 +66,9 @@ enum Theme {
     static let curveGreen = Color(hex: 0x52D47A)
     static let curveBlue = Color(hex: 0x5A8FF0)
     static let toneCurveGrid = Color(hex: 0xFFFFFF).opacity(0.07)
+    static let curvePlot = Color(hex: 0x121211)
+    /// A hue (0...1) for the hue vs saturation strip.
+    static func hueStrip(_ hue: Double) -> Color { Color(hue: hue, saturation: 0.7, brightness: 0.85) }
     static let scopeTrace = Color(hex: 0xBFE8C8)
     static let scopeBackground = Color(hex: 0x0B0B0A)
     /// The viewer's "Media Offline" slate (drawn by the compositor, off the main actor).

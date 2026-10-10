@@ -41,6 +41,9 @@ struct ColorPanel: View {
                                     ParameterRow(editor: editor, clip: clip, property: property)
                                 }
                             }
+                            RGBCurvesSection(editor: editor, clip: clip)
+                            HueSaturationSection(editor: editor, clip: clip)
+                            LUTSection(editor: editor, clip: clip)
                         }
                         .disabled(clip.isLocked)
                     } else {
