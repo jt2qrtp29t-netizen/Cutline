@@ -16,6 +16,7 @@ nonisolated struct TimingSignature: Equatable, Sendable {
     }
 
     let entries: [Entry]
+    let transitions: [Transition]
     let mediaPaths: [UUID: String]
     let frameRate: Int
     let width: Int
@@ -28,6 +29,7 @@ nonisolated struct TimingSignature: Equatable, Sendable {
                       duration: $0.duration, sourceStart: $0.sourceStart, speed: $0.speed)
             }
         }
+        transitions = state.tracks.flatMap(\.transitions)
         mediaPaths = Dictionary(uniqueKeysWithValues: state.media.map { ($0.id, $0.path) })
         frameRate = state.settings.frameRate
         width = state.settings.width

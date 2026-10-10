@@ -36,6 +36,7 @@ final class ProjectStore {
         if isLiveEditing { cancelLiveEdit() }
         var next = state
         body(&next)
+        next.pruneTransitions()
         guard next != state else { return }
         let previous = state
         state = next
@@ -62,6 +63,7 @@ final class ProjectStore {
         guard isLiveEditing, let base = liveBase else { return }
         var next = base
         body(&next)
+        next.pruneTransitions()
         if next != state { state = next }
     }
 

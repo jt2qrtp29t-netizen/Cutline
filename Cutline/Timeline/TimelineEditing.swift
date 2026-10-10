@@ -298,6 +298,10 @@ nonisolated enum TimelineEditing {
                 }
                 created.append(right.id)
                 result.append(right)
+                // A transition after this clip now belongs to its right-hand piece.
+                for i in state.tracks[t].transitions.indices where state.tracks[t].transitions[i].outgoingClipID == clip.id {
+                    state.tracks[t].transitions[i].outgoingClipID = right.id
+                }
             }
             state.tracks[t].clips = result
         }

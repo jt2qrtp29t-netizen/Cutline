@@ -40,6 +40,8 @@ nonisolated struct Track: Identifiable, Codable, Hashable, Sendable {
     /// Lane height in points; nil uses the default for the track kind.
     var height: Double?
     var clips: [Clip] = []
+    /// Transitions on cuts between this track's clips.
+    var transitions: [Transition] = []
 
     static let heightRange: ClosedRange<Double> = 32...220
 
@@ -62,6 +64,7 @@ nonisolated struct Track: Identifiable, Codable, Hashable, Sendable {
         isSoloed = try c.decodeIfPresent(Bool.self, forKey: .isSoloed) ?? false
         height = try c.decodeIfPresent(Double.self, forKey: .height)
         clips = try c.decodeIfPresent([Clip].self, forKey: .clips) ?? []
+        transitions = try c.decodeIfPresent([Transition].self, forKey: .transitions) ?? []
     }
 
     mutating func sortClips() {
