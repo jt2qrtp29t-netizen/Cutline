@@ -1,0 +1,234 @@
+import AVFoundation
+import CoreImage
+import Foundation
+import Testing
+@testable import Cutline
+
+/// Reading exported files back.
+enum ExportProbe {
+    static func folder() -> URL {
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("export-\(UUID().uuidString)")
+        try? FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+        return url
+    }
+
+    static func frameCount(_ url: URL) async throws -> Int {
+        let asset = AVURLAsset(url: url)
+        let track = try #require(try await asset.loadTracks(withMediaType: .video).first)
+        let reader = try AVAssetReader(asset: asset)
+        let provider = reader.outputProvider(for: AVAssetReaderTrackOutput(track: track, outputSettings: nil))
+        try reader.start()
+        var count = 0
+        while let sample = try await provider.next() {
+            count += sample.withUnsafeSampleBuffer { CMSampleBufferGetNumSamples($0) }
+        }
+        return count
+    }
+
+    /// RMS of the decoded audio track (0 if there is none).
+    static func audioLevel(_ url: URL) async throws -> Double {
+        let asset = AVURLAsset(url: url)
+        guard let track = try await asset.loadTracks(withMediaType: .audio).first else { return 0 }
+        let reader = try AVAssetReader(asset: asset)
+        let provider = reader.outputProvider(for: AVAssetReaderTrackOutput(track: track, outputSettings: [
+            AVFormatIDKey: kAudioFormatLinearPCM, AVLinearPCMIsFloatKey: true, AVLinearPCMBitDepthKey: 32,
+            AVLinearPCMIsNonInterleaved: false,
+        ]))
+        try reader.start()
+        var sum = 0.0, count = 0
+        while let sample = try await provider.next() {
+            let values: [Float] = sample.withUnsafeSampleBuffer { buffer in
+                guard let block = CMSampleBufferGetDataBuffer(buffer) else { return [] }
+                let length = CMBlockBufferGetDataLength(block)
+                var floats = [Float](repeating: 0, count: length / 4)
+                _ = floats.withUnsafeMutableBytes { CMBlockBufferCopyDataBytes(block, atOffset: 0, dataLength: length, destination: $0.baseAddress!) }
+                return floats
+            }
+            for v in values { sum += Double(v * v) }
+            count += values.count
+        }
+        return count > 0 ? (sum / Double(count)).squareRoot() : 0
+    }
+
+    static func frame(_ url: URL, at seconds: Double) async throws -> CGImage {
+        let generator = AVAssetImageGenerator(asset: AVURLAsset(url: url))
+        generator.requestedTimeToleranceBefore = .zero
+        generator.requestedTimeToleranceAfter = .zero
+        return try await generator.image(at: CMTime(seconds: seconds, preferredTimescale: 600)).image
+    }
+
+    static func previewFrame(_ state: ProjectState, urls: [UUID: URL], at seconds: Double) async throws -> CGImage {
+        let output = try await CompositionBuilder.build(state, urls: urls)
+        let generator = AVAssetImageGenerator(asset: output.composition)
+        generator.videoComposition = output.videoComposition
+        generator.requestedTimeToleranceBefore = .zero
+        generator.requestedTimeToleranceAfter = .zero
+        return try await generator.image(at: CMTime(seconds: seconds, preferredTimescale: 600)).image
+    }
+
+    /// Mean difference per channel (0...255) over a grid of points.
+    static func difference(_ a: CGImage, _ b: CGImage) throws -> Double {
+        var total = 0.0, n = 0
+        for gx in 1...8 {
+            for gy in 1...6 {
+                let x = a.width * gx / 9, y = a.height * gy / 7
+                let p = try TextRenderTests.pixel(a, x: x, y: y)
+                let q = try TextRenderTests.pixel(b, x: b.width * gx / 9, y: b.height * gy / 7)
+                total += Double(abs(p.r - q.r) + abs(p.g - q.g) + abs(p.b - q.b)) / 3
+                n += 1
+            }
+        }
+        return total / Double(n)
+    }
+}
+
+@MainActor struct ExportTests {
+    let settings30 = ProjectSettings(name: "Export", width: 640, height: 360, frameRate: 30)
+
+    private func sunsetProject(seconds: Double = 2) async throws -> (ProjectState, [UUID: URL], Clip) {
+        let media = try await PlaybackTests.media("Sunset")
+        var state = ProjectState(settings: settings30, videoTracks: 1, audioTracks: 1, textTracks: 0)
+        state.media = [media]
+        let clip = Clip(id: UUID(), mediaID: media.id, name: "Sunset", start: .zero, duration: Time(seconds: seconds), sourceStart: .zero)
+        state.tracks[0].clips = [clip]
+        return (state, [media.id: media.fileURL], clip)
+    }
+
+    private func snapshot(_ state: ProjectState, urls: [UUID: URL], settings: ExportSettings = ExportSettings(),
+                          range: TimeRange? = nil) -> ExportSnapshot {
+        let fps = settings.frameRate(for: state.settings)
+        let r = ExportSnapshot.snapped(range ?? TimeRange(start: .zero, end: state.duration), fps: fps)
+        return ExportSnapshot(state: state, urls: urls, range: r, settings: settings)
+    }
+
+    private func export(_ snapshot: ExportSnapshot, name: String = "out") async throws -> ExportResult {
+        let url = ExportProbe.folder().appendingPathComponent("\(name).\(snapshot.settings.effectiveContainer.fileExtension)")
+        return try await ExportRunner.run(snapshot, to: url, cancellation: ExportCancellation()) { _, _ in }
+    }
+
+    @Test func frameCountAndDurationMatchTheTimeline() async throws {
+        let (state, urls, _) = try await sunsetProject(seconds: 2)
+        var settings = ExportPreset.quickPreview.applied(to: ExportSettings())
+        settings.frameRate = 30
+        let result = try await export(snapshot(state, urls: urls, settings: settings))
+        #expect(try await ExportProbe.frameCount(result.url) == 60)
+        let duration = try await AVURLAsset(url: result.url).load(.duration)
+        #expect(abs(duration.seconds - 2) < 0.001, "\(duration.seconds)")
+        #expect(result.frames == 60 && result.warnings.isEmpty)
+
+        // A different output rate renders every output frame (no drops or doubles).
+        settings.frameRate = 24
+        let at24 = try await export(snapshot(state, urls: urls, settings: settings), name: "24")
+        #expect(try await ExportProbe.frameCount(at24.url) == 48)
+        // An in/out range is exactly as long as asked, starting on a frame.
+        let ranged = try await export(snapshot(state, urls: urls, settings: settings,
+                                               range: TimeRange(start: Time(seconds: 0.5), end: Time(seconds: 1.25))), name: "range")
+        #expect(try await ExportProbe.frameCount(ranged.url) == 18)
+        let size = try await AVURLAsset(url: result.url).loadTracks(withMediaType: .video).first!.load(.naturalSize)
+        #expect(size == CGSize(width: 960, height: 540), "Quick Preview size")
+    }
+
+    @Test func theAudioMixIsInTheFile() async throws {
+        // A tone on A1 under a video clip.
+        let toneURL = FileManager.default.temporaryDirectory.appendingPathComponent("tone-\(UUID()).wav")
+        try PlaybackTests.writeTone(to: toneURL, format: kAudioFormatLinearPCM, seconds: 2)
+        let tone = try await MediaImporter.makeItem(for: toneURL)
+        var (state, urls, _) = try await sunsetProject(seconds: 2)
+        state.media.append(tone)
+        TimelineEditing.place(tone, at: .zero, onTrack: state.trackIndices(of: .audio)[0], in: &state)
+        urls[tone.id] = toneURL
+        let loud = try await export(snapshot(state, urls: urls, settings: ExportPreset.quickPreview.applied(to: ExportSettings())))
+        let level = try await ExportProbe.audioLevel(loud.url)
+        #expect(level > 0.05, "audible: \(level)")
+        let audioDuration = try await AVURLAsset(url: loud.url).loadTracks(withMediaType: .audio).first!.load(.timeRange).duration.seconds
+        #expect(abs(audioDuration - 2) < 0.05, "no audio drift: \(audioDuration)")
+
+        // Muted, it's silent but still there; mute is honored like in playback.
+        let toneClip = state.tracks[state.trackIndices(of: .audio)[0]].clips[0].id
+        state.updateClip(toneClip) { $0.isMuted = true }
+        let muted = try await export(snapshot(state, urls: urls, settings: ExportPreset.quickPreview.applied(to: ExportSettings())), name: "muted")
+        #expect(try await ExportProbe.audioLevel(muted.url) < 0.001)
+        #expect(try await AVURLAsset(url: muted.url).loadTracks(withMediaType: .audio).count == 1)
+    }
+
+    @Test func exportedFramesMatchThePreview() async throws {
+        var (state, urls, clip) = try await sunsetProject(seconds: 2)
+        state.updateClip(clip.id) { c in
+            c.color.offset.master = -0.1
+            c.color.gain = ColorWheel(x: 0.2, y: 0.1, master: 0.2)
+            c.color.curves.master = ToneCurve(points: [CurvePoint(x: 0, y: 0.05), CurvePoint(x: 0.5, y: 0.6), CurvePoint(x: 1, y: 1)])
+            c.animation.setKeyframe(.scale, at: .zero, value: 1)
+            c.animation.setKeyframe(.scale, at: Time(seconds: 2), value: 1.4)
+            c.animation.setKeyframe(.saturation, at: .zero, value: 1.4)
+            c.animation.setKeyframe(.saturation, at: Time(seconds: 2), value: 0.6)
+            c.labs = [LabEffect(experimentID: "rgbSplit", values: ["amount": 10, "glitch": 0.6, "speed": 6])]
+        }
+        var settings = ExportPreset.proRes.applied(to: ExportSettings())
+        settings.frameRate = 30
+        let result = try await export(snapshot(state, urls: urls, settings: settings))
+        for seconds in [0.5, 1.0, 1.5] {
+            let preview = try await ExportProbe.previewFrame(state, urls: urls, at: seconds)
+            let exported = try await ExportProbe.frame(result.url, at: seconds)
+            let diff = try ExportProbe.difference(preview, exported)
+            #expect(diff < 4, "frame at \(seconds) s differs by \(diff)")
+        }
+    }
+
+    @Test func aFailingShaderExportsWithAWarning() async throws {
+        var (state, urls, clip) = try await sunsetProject(seconds: 1)
+        var shader = LabEffect(experimentID: "customShader")
+        shader.source = "this is not metal"
+        state.updateClip(clip.id) { $0.labs = [shader] }
+        let result = try await export(snapshot(state, urls: urls, settings: ExportPreset.quickPreview.applied(to: ExportSettings())))
+        #expect(FileManager.default.fileExists(atPath: result.url.path))
+        #expect(result.warnings.count == 1 && result.warnings[0].contains("Custom Shader"), "\(result.warnings)")
+        // The frame is the clip without the shader.
+        var plain = state
+        plain.updateClip(clip.id) { $0.labs = [] }
+        let diff = try ExportProbe.difference(try await ExportProbe.previewFrame(plain, urls: urls, at: 0.5),
+                                              try await ExportProbe.frame(result.url, at: 0.5))
+        #expect(diff < 6)
+    }
+
+    @Test func theSnapshotIgnoresLaterEdits() async throws {
+        var (state, urls, clip) = try await sunsetProject(seconds: 1)
+        let frozen = snapshot(state, urls: urls, settings: ExportPreset.quickPreview.applied(to: ExportSettings()))
+        // Delete the clip (and its track) after pressing Export.
+        state.tracks.remove(at: 0)
+        _ = clip
+        let result = try await export(frozen)
+        let image = try await ExportProbe.frame(result.url, at: 0.5)
+        let p = try TextRenderTests.pixel(image, x: 100, y: 100)
+        #expect(p.r > 60, "the exported frame still shows the clip: \(p)")
+    }
+
+    @Test func emptyTimelinesGiveAClearError() async throws {
+        let state = ProjectState(settings: settings30)
+        let empty = ExportSnapshot(state: state, urls: [:], range: TimeRange(start: .zero, end: .zero), settings: ExportSettings())
+        await #expect(throws: ExportError.emptyTimeline) { try await self.export(empty) }
+        #expect(ExportSettings().timeRange(timelineDuration: state.duration, selection: []) == nil)
+    }
+
+    @Test func writingIsAtomicAndCancelLeavesNothingBehind() async throws {
+        let (state, urls, _) = try await sunsetProject(seconds: 2)
+        let folder = ExportProbe.folder()
+        let destination = folder.appendingPathComponent("keep.mp4")
+        try Data("the old file".utf8).write(to: destination)
+
+        // Canceled partway: the old file is untouched and nothing else is left in the folder.
+        let cancellation = ExportCancellation()
+        let snap = snapshot(state, urls: urls, settings: ExportPreset.quickPreview.applied(to: ExportSettings()))
+        await #expect(throws: ExportError.cancelled) {
+            _ = try await ExportRunner.run(snap, to: destination, cancellation: cancellation) { _, frames in
+                if frames >= 10 { cancellation.cancel() }
+            }
+        }
+        #expect(try String(contentsOf: destination, encoding: .utf8) == "the old file")
+        #expect(try FileManager.default.contentsOfDirectory(atPath: folder.path) == ["keep.mp4"])
+
+        // Finished: replaced in one step by a complete movie.
+        let result = try await ExportRunner.run(snap, to: destination, cancellation: ExportCancellation()) { _, _ in }
+        #expect(try await ExportProbe.frameCount(result.url) == 60)
+        #expect(try FileManager.default.contentsOfDirectory(atPath: folder.path) == ["keep.mp4"])
+    }
+}
