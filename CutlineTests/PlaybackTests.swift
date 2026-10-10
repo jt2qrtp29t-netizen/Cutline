@@ -268,8 +268,8 @@ struct PlaybackTests {
         clip.duration = Time(seconds: 10)
         clip.transform.scale = 0.25
         // Moves from the left side of the frame to the right over the clip.
-        clip.transform.positionX = -600
-        clip.transform.endPositionX = 600
+        clip.animation.keyframes[.positionX] = [Keyframe(time: .zero, value: -600),
+                                                Keyframe(time: Time(seconds: 10), value: 600)]
         TimelineEditing.insert(clip, onTrack: 0, in: &state)
 
         func frame(_ seconds: Double, _ state: ProjectState) async throws -> CGImage {
@@ -293,7 +293,7 @@ struct PlaybackTests {
         #expect(try isLit(middle, 960, 540), "halfway it's centered")
 
         // Flip: the white bar in the test clip sits near the bottom-left of the source.
-        state.updateClip(clip.id) { $0.transform = ClipTransform() }
+        state.updateClip(clip.id) { $0.transform = ClipTransform(); $0.animation = ClipAnimation() }
         let normal = try await frame(0.05, state)
         state.updateClip(clip.id) { $0.transform.flipVertical = true }
         let flipped = try await frame(0.05, state)

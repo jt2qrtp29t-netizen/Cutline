@@ -462,6 +462,42 @@ final class EditorController {
         }
     }
 
+    // MARK: Start / end animation
+
+    /// The first and (if animated) last keyframe values of a parameter, for the
+    /// start → end rows in the inspector.
+    func animationEnds(of property: AnimatableProperty, in clip: Clip) -> (start: Double, end: Double?) {
+        let frames = clip.animation.keyframes(for: property)
+        guard let first = frames.first else { return (clip[keyPath: property.keyPath], nil) }
+        return (first.value, frames.count > 1 ? frames.last?.value : nil)
+    }
+
+    func setAnimationStart(_ property: AnimatableProperty, of id: UUID, to value: Double, actionName: String) {
+        adjustClip(id, actionName: actionName) { clip in
+            if var frames = clip.animation.keyframes[property], !frames.isEmpty {
+                frames[0].value = value
+                clip.animation.keyframes[property] = frames
+            } else {
+                clip[keyPath: property.keyPath] = value
+            }
+        }
+    }
+
+    /// Sets the value at the clip's last frame, making a start → end animation; nil
+    /// removes the animation and keeps the start value.
+    func setAnimationEnd(_ property: AnimatableProperty, of id: UUID, to value: Double?, actionName: String) {
+        adjustClip(id, actionName: actionName) { clip in
+            let start = clip.animation.keyframes(for: property).first?.value ?? clip[keyPath: property.keyPath]
+            guard let value else {
+                clip.animation.keyframes[property] = nil
+                clip[keyPath: property.keyPath] = start
+                return
+            }
+            let last = max(clip.duration - Time(ticks: 1), .zero)
+            clip.animation.keyframes[property] = [Keyframe(time: .zero, value: start), Keyframe(time: last, value: value)]
+        }
+    }
+
     // MARK: Text
 
     /// A text clip whose text field should take focus when its panel appears.

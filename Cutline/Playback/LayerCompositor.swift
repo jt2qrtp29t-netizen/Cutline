@@ -39,10 +39,10 @@ nonisolated final class LayerCompositor: NSObject, AVVideoCompositing, @unchecke
         var sources: [CVReadOnlyPixelBuffer] = []
         if let instruction = request.videoCompositionInstruction as? CompositorInstruction {
             for layer in instruction.layers {
-                let progress = layer.progress(at: request.compositionTime.seconds)
+                let time = Time(request.compositionTime)
                 if let text = layer.text {
                     guard let image = TextRenderer.image(for: text) else { continue }
-                    output = Self.process(image, layer: layer, renderSize: renderSize, progress: progress)
+                    output = Self.process(image, layer: layer, renderSize: renderSize, at: time)
                         .composited(over: output)
                     continue
                 }
@@ -50,7 +50,7 @@ nonisolated final class LayerCompositor: NSObject, AVVideoCompositing, @unchecke
                       let buffer = request.sourceReadOnlyPixelBuffer(byTrackID: trackID) else { continue }
                 sources.append(buffer)
                 let image = buffer.withUnsafeBuffer { CIImage(cvPixelBuffer: $0) }
-                output = Self.process(image, layer: layer, renderSize: renderSize, progress: progress).composited(over: output)
+                output = Self.process(image, layer: layer, renderSize: renderSize, at: time).composited(over: output)
             }
         }
 
@@ -64,7 +64,7 @@ nonisolated final class LayerCompositor: NSObject, AVVideoCompositing, @unchecke
 
     /// Orients, flips, crops, fits, positions, rotates and grades one layer in
     /// render (Core Image, y-up) space.
-    static func process(_ source: CIImage, layer: CompositorLayer, renderSize: CGSize, progress: Double = 0) -> CIImage {
+    static func process(_ source: CIImage, layer: CompositorLayer, renderSize: CGSize, at time: Time) -> CIImage {
         // Text is already upright and drawn at project-pixel size, so it isn't fitted.
         let isText = layer.text != nil
         var image = isText ? source : source.oriented(orientation(for: layer.sourceTransform))
@@ -72,7 +72,10 @@ nonisolated final class LayerCompositor: NSObject, AVVideoCompositing, @unchecke
 
         let size = image.extent.size
         guard size.width > 0, size.height > 0 else { return CIImage.empty() }
-        let transform = layer.transform
+        let clip = layer.clip
+        let transform = clip.transform
+        // Every animated value comes from the one evaluation function.
+        let values = clip.parameters(at: time)
 
         // Flip around the frame center before cropping, so crop edges refer to what's on screen.
         if transform.flipHorizontal || transform.flipVertical {
@@ -84,7 +87,7 @@ nonisolated final class LayerCompositor: NSObject, AVVideoCompositing, @unchecke
 
         // Crop away edges but keep fitting/positioning based on the full frame, so
         // cropping reveals the layers below instead of re-framing the image.
-        let crop = layer.crop
+        let crop = clip.crop
         if !crop.isEmpty {
             let left = size.width * crop.left
             let right = size.width * crop.right
@@ -98,18 +101,21 @@ nonisolated final class LayerCompositor: NSObject, AVVideoCompositing, @unchecke
         }
 
         let fit = isText ? 1 : min(renderSize.width / size.width, renderSize.height / size.height)
-        let scale = fit * transform.scale
-        let position = transform.position(at: progress)
-        let tx = (renderSize.width - size.width * scale) / 2 + position.x
-        // Inspector +Y moves the image down; Core Image's y axis points up.
-        let ty = (renderSize.height - size.height * scale) / 2 - position.y
-        image = image.transformed(by: CGAffineTransform(scaleX: scale, y: scale).concatenating(CGAffineTransform(translationX: tx, y: ty)))
+        let scale = fit * values.scale
+        // Scale and rotate around the image's center, then place that center on the
+        // canvas. Inspector +Y moves the image down; Core Image's y axis points up.
+        let center = CGPoint(x: renderSize.width / 2 + values.positionX, y: renderSize.height / 2 - values.positionY)
+        let placement = CGAffineTransform(translationX: -size.width / 2, y: -size.height / 2)
+            .concatenating(CGAffineTransform(scaleX: scale, y: scale))
+            .concatenating(CGAffineTransform(rotationAngle: -values.rotation * .pi / 180))
+            .concatenating(CGAffineTransform(translationX: center.x, y: center.y))
+        image = image.transformed(by: placement)
 
-        if transform.yaw != 0 || transform.pitch != 0 {
-            image = rotated3D(image, yaw: transform.yaw, pitch: transform.pitch, renderSize: renderSize)
+        if values.yaw != 0 || values.pitch != 0 {
+            image = rotated3D(image, yaw: values.yaw, pitch: values.pitch, renderSize: renderSize)
         }
 
-        let color = layer.color
+        let color = clip.color
         if color.exposure != 0 {
             image = image.applyingFilter("CIExposureAdjust", parameters: [kCIInputEVKey: color.exposure])
         }
@@ -120,9 +126,9 @@ nonisolated final class LayerCompositor: NSObject, AVVideoCompositing, @unchecke
                 kCIInputSaturationKey: color.saturation,
             ])
         }
-        if layer.opacity < 1 {
+        if values.opacity < 1 {
             image = image.applyingFilter("CIColorMatrix", parameters: [
-                "inputAVector": CIVector(x: 0, y: 0, z: 0, w: CGFloat(max(layer.opacity, 0))),
+                "inputAVector": CIVector(x: 0, y: 0, z: 0, w: CGFloat(max(values.opacity, 0))),
             ])
         }
         return image

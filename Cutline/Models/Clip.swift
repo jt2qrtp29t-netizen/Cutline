@@ -4,12 +4,10 @@ nonisolated struct ClipTransform: Codable, Hashable, Sendable {
     /// Offset from the canvas center in project pixels. +y moves the image down.
     var positionX: Double = 0
     var positionY: Double = 0
-    /// When set, the position moves linearly from `positionX/Y` at the clip's
-    /// first frame to these values at its last frame. Nil = no movement on that axis.
-    var endPositionX: Double?
-    var endPositionY: Double?
     /// Zoom; 1.0 = fit to canvas.
     var scale: Double = 1
+    /// Rotation in degrees, clockwise.
+    var rotation: Double = 0
     var flipHorizontal = false
     var flipVertical = false
     /// 3D rotation in degrees around the vertical (yaw) and horizontal (pitch) axes,
@@ -25,24 +23,19 @@ nonisolated struct ClipTransform: Codable, Hashable, Sendable {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         positionX = try c.decodeIfPresent(Double.self, forKey: .positionX) ?? 0
         positionY = try c.decodeIfPresent(Double.self, forKey: .positionY) ?? 0
-        endPositionX = try c.decodeIfPresent(Double.self, forKey: .endPositionX)
-        endPositionY = try c.decodeIfPresent(Double.self, forKey: .endPositionY)
         scale = try c.decodeIfPresent(Double.self, forKey: .scale) ?? 1
+        rotation = try c.decodeIfPresent(Double.self, forKey: .rotation) ?? 0
         flipHorizontal = try c.decodeIfPresent(Bool.self, forKey: .flipHorizontal) ?? false
         flipVertical = try c.decodeIfPresent(Bool.self, forKey: .flipVertical) ?? false
         yaw = try c.decodeIfPresent(Double.self, forKey: .yaw) ?? 0
         pitch = try c.decodeIfPresent(Double.self, forKey: .pitch) ?? 0
     }
+}
 
-    /// Position at a point in the clip, `progress` running from 0 (first frame) to 1 (last).
-    func position(at progress: Double) -> (x: Double, y: Double) {
-        let p = progress.clamped(to: 0...1)
-        let x = endPositionX.map { positionX + ($0 - positionX) * p } ?? positionX
-        let y = endPositionY.map { positionY + ($0 - positionY) * p } ?? positionY
-        return (x, y)
-    }
-
-    var isAnimated: Bool { endPositionX != nil || endPositionY != nil }
+/// The start/end position animation from v1.3–v2.0 files, read only for conversion.
+nonisolated private struct LegacyPositionEnds: Decodable {
+    var endPositionX: Double?
+    var endPositionY: Double?
 }
 
 /// Fraction of the source image removed from each edge (0...1).
@@ -106,6 +99,8 @@ nonisolated struct Clip: Identifiable, Codable, Hashable, Sendable {
     var isSoloed = false
     /// Set for text clips, which draw text instead of showing a media file.
     var text: TextStyle?
+    /// Keyframes for animated parameters.
+    var animation = ClipAnimation()
 
     init(id: UUID, mediaID: UUID, name: String, start: Time, duration: Time, sourceStart: Time) {
         self.id = id
@@ -139,6 +134,21 @@ nonisolated struct Clip: Identifiable, Codable, Hashable, Sendable {
         isMuted = try c.decodeIfPresent(Bool.self, forKey: .isMuted) ?? false
         isSoloed = try c.decodeIfPresent(Bool.self, forKey: .isSoloed) ?? false
         text = try c.decodeIfPresent(TextStyle.self, forKey: .text)
+        animation = try c.decodeIfPresent(ClipAnimation.self, forKey: .animation) ?? ClipAnimation()
+
+        // Older files stored one end position per axis: load it as a two-keyframe
+        // animation from the clip's first frame to its last.
+        if animation.isEmpty, let legacy = try c.decodeIfPresent(LegacyPositionEnds.self, forKey: .transform) {
+            let last = max(duration - Time(ticks: 1), .zero)
+            if let end = legacy.endPositionX {
+                animation.keyframes[.positionX] = [Keyframe(time: .zero, value: transform.positionX),
+                                                   Keyframe(time: last, value: end)]
+            }
+            if let end = legacy.endPositionY {
+                animation.keyframes[.positionY] = [Keyframe(time: .zero, value: transform.positionY),
+                                                   Keyframe(time: last, value: end)]
+            }
+        }
     }
 
     /// Media ID used by clips that don't come from a file (text).

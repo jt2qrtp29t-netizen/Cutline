@@ -140,6 +140,8 @@ nonisolated enum TimelineEditing {
         c.sourceStart = clip.sourceTime(at: time)
         c.duration = clip.end - time
         c.start = time
+        // Keyframes are relative to the clip start; keep them where they were on the timeline.
+        c.animation = clip.animation.shifted(by: clip.start - time)
         return c
     }
 
@@ -282,8 +284,13 @@ nonisolated enum TimelineEditing {
                     result.append(clip)
                     continue
                 }
-                result.append(trimmedEnd(clip, to: time))
+                // Split the animation exactly at the cut so neither half jumps.
+                let (leftAnimation, rightAnimation) = clip.animation.split(at: time - clip.start)
+                var left = trimmedEnd(clip, to: time)
+                left.animation = leftAnimation
+                result.append(left)
                 var right = trimmedStart(clip, to: time)
+                right.animation = rightAnimation
                 right.id = UUID()
                 if let link = clip.linkID {
                     if relinked[link] == nil { relinked[link] = UUID() }

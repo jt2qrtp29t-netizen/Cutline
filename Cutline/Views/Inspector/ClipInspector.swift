@@ -89,11 +89,11 @@ struct ClipInspector: View {
             Rectangle().fill(Theme.border).frame(height: 1)
             // 1 px per point dragged (0.1 px with ⌥). The second field is the end
             // position; unlock it to move the clip across its duration.
-            positionRow("Position X", start: \.transform.positionX, end: \.transform.endPositionX,
+            positionRow("Position X", .positionX,
                         limit: Double(editor.settings.width))
-            positionRow("Position Y", start: \.transform.positionY, end: \.transform.endPositionY,
+            positionRow("Position Y", .positionY,
                         limit: Double(editor.settings.height))
-            Text(clip.transform.isAnimated
+            Text(clip.isAnimated(.positionX) || clip.isAnimated(.positionY)
                  ? "Moves from the first value at the clip's start to the second at its end."
                  : "Unlock 🔒 to set an end position and move the clip over its duration.")
                 .font(.system(size: 10))
@@ -207,27 +207,21 @@ struct ClipInspector: View {
         )
     }
 
-    private func positionRow(
-        _ title: String,
-        start: WritableKeyPath<Clip, Double>,
-        end: WritableKeyPath<Clip, Double?>,
-        limit: Double
-    ) -> some View {
+    private func positionRow(_ title: String, _ property: AnimatableProperty, limit: Double) -> some View {
         let id = clip.id
         let action = "Move Clip Position"
+        let ends = editor.animationEnds(of: property, in: clip)
         return AnimatedValueRow(
             title: title,
-            start: clip[keyPath: start],
-            end: clip[keyPath: end],
+            start: ends.start,
+            end: ends.end,
             range: -limit...limit,
             onBegin: editor.beginAdjustment,
             onEnd: { editor.endAdjustment(action) },
-            onChangeStart: { value in editor.adjustClip(id, actionName: action) { $0[keyPath: start] = value } },
-            onChangeEnd: { value in editor.adjustClip(id, actionName: action) { $0[keyPath: end] = value } },
-            onSetStart: { value in editor.adjustClip(id, actionName: action) { $0[keyPath: start] = value } },
-            onSetEnd: { value in
-                editor.adjustClip(id, actionName: value == nil ? "Lock End Position" : action) { $0[keyPath: end] = value }
-            }
+            onChangeStart: { editor.setAnimationStart(property, of: id, to: $0, actionName: action) },
+            onChangeEnd: { editor.setAnimationEnd(property, of: id, to: $0, actionName: action) },
+            onSetStart: { editor.setAnimationStart(property, of: id, to: $0, actionName: action) },
+            onSetEnd: { editor.setAnimationEnd(property, of: id, to: $0, actionName: $0 == nil ? "Remove Animation" : action) }
         )
     }
 

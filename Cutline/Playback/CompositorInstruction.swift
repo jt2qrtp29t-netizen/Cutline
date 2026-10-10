@@ -1,24 +1,15 @@
 import AVFoundation
 
-/// One clip's contribution to a frame.
+/// One clip's contribution to a frame. Animated values are evaluated per frame
+/// from the clip with `Clip.parameters(at:)`.
 nonisolated struct CompositorLayer: Sendable, Equatable {
     /// Source track for media clips; nil for text clips, which are drawn instead.
     var trackID: CMPersistentTrackID?
-    var text: TextStyle?
-    var transform: ClipTransform
-    var crop: CropInsets
-    var opacity: Double
-    var color: ColorAdjustments
+    var clip: Clip
     /// The source track's preferred transform (rotation metadata from cameras).
     var sourceTransform: CGAffineTransform
-    /// Clip timing on the timeline in seconds, for position animation.
-    var clipStart: Double
-    var clipDuration: Double
 
-    /// 0 at the clip's first frame, 1 at its end.
-    func progress(at seconds: Double) -> Double {
-        clipDuration > 0 ? ((seconds - clipStart) / clipDuration).clamped(to: 0...1) : 0
-    }
+    var text: TextStyle? { clip.text }
 }
 
 /// A time span during which the same set of clips is visible.

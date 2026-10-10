@@ -179,17 +179,12 @@ nonisolated enum CompositionBuilder {
                 guard let clip = state.tracks[index].clips.first(where: { $0.range.overlaps(span) }),
                       state.isClipActive(clip, onTrack: index)
                 else { continue }
-                let timing = (clip.start.seconds, clip.duration.seconds)
-                if let text = clip.text {
-                    layers.append(CompositorLayer(trackID: nil, text: text, transform: clip.transform, crop: clip.crop,
-                                                  opacity: clip.opacity, color: clip.color, sourceTransform: .identity,
-                                                  clipStart: timing.0, clipDuration: timing.1))
+                if clip.isText {
+                    layers.append(CompositorLayer(trackID: nil, clip: clip, sourceTransform: .identity))
                     continue
                 }
                 guard let trackID = trackIDs[index], let transform = sourceTransforms[clip.mediaID] else { continue }
-                layers.append(CompositorLayer(trackID: trackID, text: nil, transform: clip.transform, crop: clip.crop,
-                                              opacity: clip.opacity, color: clip.color, sourceTransform: transform,
-                                              clipStart: timing.0, clipDuration: timing.1))
+                layers.append(CompositorLayer(trackID: trackID, clip: clip, sourceTransform: transform))
             }
             instructions.append(CompositorInstruction(timeRange: span.cmTimeRange, layers: layers))
         }
