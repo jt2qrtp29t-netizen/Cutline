@@ -201,6 +201,30 @@ private struct ClipContextMenu: View {
             get: { editor.areSoloed(targets) },
             set: { _ in editor.toggleSolo(targets) }
         ))
+        if editor.state.track(ofClip: clip.id)?.kind.isVisual == true {
+            Divider()
+            Menu("Animate In") {
+                ForEach(AnimationPreset.inOutPresets) { preset in
+                    Button(preset.title(for: .animateIn)) {
+                        editor.applyPreset(preset, placement: .animateIn, duration: preset.defaultDuration, to: targets)
+                    }
+                }
+            }
+            Menu("Animate Out") {
+                ForEach(AnimationPreset.inOutPresets) { preset in
+                    Button(preset.title(for: .animateOut)) {
+                        editor.applyPreset(preset, placement: .animateOut, duration: preset.defaultDuration, to: targets)
+                    }
+                }
+            }
+            Menu("Gameplay at Playhead") {
+                ForEach(AnimationPreset.gameplayPresets) { preset in
+                    Button(preset.title(for: .animateIn)) {
+                        editor.applyPreset(preset, placement: .at(.zero), duration: preset.defaultDuration, to: targets)
+                    }
+                }
+            }
+        }
         Divider()
         Menu("Speed") {
             ForEach(Self.speedPresets, id: \.self) { speed in

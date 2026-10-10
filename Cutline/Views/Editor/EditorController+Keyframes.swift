@@ -183,3 +183,35 @@ extension EditorController {
         if valid != selectedKeyframes { selectedKeyframes = valid }
     }
 }
+
+// MARK: Presets
+
+extension EditorController {
+    /// Applies a preset to the given clips (video and text only) as one undo step.
+    /// Gameplay presets start at the playhead and skip clips the playhead isn't over.
+    func applyPreset(_ preset: AnimationPreset, placement: AnimationPreset.Placement,
+                     duration: Double, to ids: Set<UUID>) {
+        let targets = ids.filter { id in
+            guard let track = state.track(ofClip: id) else { return false }
+            return track.kind.isVisual && !state.isClipLocked(id)
+        }
+        guard !targets.isEmpty else { NSSound.beep(); return }
+        let playhead = playback.currentTime
+        var applied = false
+        store.edit(preset.title(for: placement)) { state in
+            for id in targets {
+                guard let clip = state.clip(id) else { continue }
+                var where_ = placement
+                if case .at = placement {
+                    let offset = playhead - clip.start
+                    guard offset >= .zero, offset < clip.duration else { continue }
+                    where_ = .at(offset)
+                }
+                let updated = preset.apply(to: clip, placement: where_, duration: duration, settings: state.settings)
+                state.updateClip(id) { $0 = updated }
+                applied = true
+            }
+        }
+        if !applied { NSSound.beep() }
+    }
+}

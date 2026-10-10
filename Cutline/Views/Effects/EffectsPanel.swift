@@ -28,6 +28,8 @@ struct EffectsPanel: View {
                                 .fixedSize(horizontal: false, vertical: true)
                         }
                         .disabled(clip.isLocked)
+                        PresetsSection(editor: editor, clip: clip)
+                            .disabled(clip.isLocked)
                         SelectedKeyframeSection(editor: editor, clip: clip)
                     } else {
                         InspectorSection(title: "Animate") {
@@ -180,5 +182,91 @@ private struct SelectedKeyframeSection: View {
                     .controlSize(.small)
             }
         }
+    }
+}
+
+/// Animate in/out presets and gameplay presets. Each writes keyframes onto the clip.
+private struct PresetsSection: View {
+    let editor: EditorController
+    let clip: Clip
+
+    @AppStorage("presets.placementIsIn") private var placementIsIn = true
+    @AppStorage("presets.duration") private var duration = 0.5
+    @AppStorage("presets.gameplayDuration") private var gameplayDuration = 0.45
+
+    private let columns = [GridItem(.adaptive(minimum: 64), spacing: 6)]
+
+    var body: some View {
+        InspectorSection(title: "Presets") {
+            Picker("Placement", selection: $placementIsIn) {
+                Text("Animate In").tag(true)
+                Text("Animate Out").tag(false)
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+
+            InspectorSlider(title: "Length", value: duration, range: 0.1...3, unit: "s", fractionDigits: 2,
+                            unitsPerPoint: 0.01, onBegin: {}, onChange: { duration = $0 }, onEnd: {},
+                            onSet: { duration = $0 })
+
+            LazyVGrid(columns: columns, spacing: 6) {
+                ForEach(AnimationPreset.inOutPresets) { preset in
+                    let placement: AnimationPreset.Placement = placementIsIn ? .animateIn : .animateOut
+                    PresetButton(preset: preset, title: preset.shortTitle,
+                                 help: "\(preset.title(for: placement)) (\(String(format: "%.2f", duration)) s)") {
+                        editor.applyPreset(preset, placement: placement, duration: duration, to: [clip.id])
+                    }
+                }
+            }
+
+            Rectangle().fill(Theme.border).frame(height: 1)
+            SectionLabel("Gameplay · at playhead")
+            InspectorSlider(title: "Length", value: gameplayDuration, range: 0.1...2, unit: "s", fractionDigits: 2,
+                            unitsPerPoint: 0.01, onBegin: {}, onChange: { gameplayDuration = $0 }, onEnd: {},
+                            onSet: { gameplayDuration = $0 })
+            HStack(spacing: 6) {
+                ForEach(AnimationPreset.gameplayPresets) { preset in
+                    PresetButton(preset: preset, title: preset.shortTitle, help: "\(preset.title(for: .animateIn)) at the playhead") {
+                        editor.applyPreset(preset, placement: .at(.zero), duration: gameplayDuration, to: [clip.id])
+                    }
+                }
+            }
+            .disabled(editor.playheadOffset(in: clip) == nil)
+
+            Text("Presets add ordinary keyframes on top of what the clip already does, so you can fine-tune them afterwards.")
+                .font(.system(size: 10))
+                .foregroundStyle(Theme.textTertiary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+}
+
+private struct PresetButton: View {
+    let preset: AnimationPreset
+    let title: String
+    let help: String
+    let action: () -> Void
+
+    @State private var isHovering = false
+
+    var body: some View {
+        Button(action: action) {
+            VStack(spacing: 3) {
+                Image(systemName: preset.symbolName)
+                    .font(.system(size: 13, weight: .medium))
+                Text(title)
+                    .font(.system(size: 9.5, weight: .medium))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
+            }
+            .foregroundStyle(isHovering ? Theme.textPrimary : Theme.textSecondary)
+            .frame(maxWidth: .infinity)
+            .frame(height: 44)
+            .background(isHovering ? Theme.raisedHover : Theme.raised, in: .rect(cornerRadius: 6))
+            .contentShape(.rect)
+        }
+        .buttonStyle(.plain)
+        .help(help)
+        .onHover { isHovering = $0 }
     }
 }
