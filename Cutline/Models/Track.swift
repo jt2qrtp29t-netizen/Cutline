@@ -1,0 +1,74 @@
+import Foundation
+
+nonisolated enum TrackKind: String, Codable, Sendable, CaseIterable {
+    case video, audio, text
+
+    var prefix: String {
+        switch self {
+        case .video: "V"
+        case .audio: "A"
+        case .text: "T"
+        }
+    }
+
+    var title: String { rawValue.capitalized }
+
+    var symbolName: String {
+        switch self {
+        case .video: "film"
+        case .audio: "waveform"
+        case .text: "textformat"
+        }
+    }
+
+    /// Video and text tracks draw into the picture; muting them hides them.
+    var isVisual: Bool { self != .audio }
+}
+
+/// A video or audio track. Clips on one track never overlap and are kept sorted by start time.
+/// Among video tracks, array order is layer order: the first video track is the bottom layer.
+nonisolated struct Track: Identifiable, Codable, Hashable, Sendable {
+    var id: UUID
+    var name: String
+    var kind: TrackKind = .video
+    /// Locked tracks ignore selection, moves, trims, cuts, deletions and drops.
+    var isLocked = false
+    /// Muted audio tracks are silent; muted video tracks are hidden.
+    var isMuted = false
+    /// When any track of a kind is soloed, only soloed tracks of that kind play.
+    var isSoloed = false
+    /// Lane height in points; nil uses the default for the track kind.
+    var height: Double?
+    var clips: [Clip] = []
+
+    static let heightRange: ClosedRange<Double> = 32...220
+
+    init(id: UUID, name: String, kind: TrackKind = .video, isLocked: Bool = false, clips: [Clip] = []) {
+        self.id = id
+        self.name = name
+        self.kind = kind
+        self.isLocked = isLocked
+        self.clips = clips
+    }
+
+    // Older project files have no `kind` / `isLocked`.
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(UUID.self, forKey: .id)
+        name = try c.decode(String.self, forKey: .name)
+        kind = try c.decodeIfPresent(TrackKind.self, forKey: .kind) ?? .video
+        isLocked = try c.decodeIfPresent(Bool.self, forKey: .isLocked) ?? false
+        isMuted = try c.decodeIfPresent(Bool.self, forKey: .isMuted) ?? false
+        isSoloed = try c.decodeIfPresent(Bool.self, forKey: .isSoloed) ?? false
+        height = try c.decodeIfPresent(Double.self, forKey: .height)
+        clips = try c.decodeIfPresent([Clip].self, forKey: .clips) ?? []
+    }
+
+    mutating func sortClips() {
+        clips.sort { $0.start < $1.start }
+    }
+
+    func clip(at time: Time) -> Clip? {
+        clips.first { $0.range.contains(time) }
+    }
+}

@@ -1,0 +1,37 @@
+import SwiftUI
+
+enum WindowID {
+    static let launch = "launch"
+}
+
+/// True when the app is only hosting unit tests: no windows are opened then, so
+/// mouse activity over a test-host window can't interfere with a test run.
+let isRunningTests = ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
+
+@main
+struct CutlineApp: App {
+    @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
+
+    var body: some Scene {
+        Window("Welcome to Cutline", id: WindowID.launch) {
+            LaunchView()
+                .preferredColorScheme(.dark)
+                .tint(Theme.accent)
+        }
+        .windowStyle(.hiddenTitleBar)
+        .windowResizability(.contentSize)
+        .defaultLaunchBehavior(isRunningTests ? .suppressed : .presented)
+        .restorationBehavior(.disabled)
+
+        DocumentGroup(allowCreating: false) { (document: CutlineDocument) in
+            EditorView(document: document)
+                .preferredColorScheme(.dark)
+                .tint(Theme.accent)
+        } makeDocument: { _, _ in
+            CutlineDocument()
+        }
+        .defaultSize(width: 1440, height: 900)
+        .windowStyle(.hiddenTitleBar)
+        .commands { CutlineCommands() }
+    }
+}
