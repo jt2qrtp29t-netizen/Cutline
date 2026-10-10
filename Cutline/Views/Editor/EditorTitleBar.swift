@@ -52,9 +52,10 @@ struct EditorTitleBar: View {
         .frame(height: Theme.Metrics.titleBarHeight)
         .frame(maxWidth: .infinity)
         .background {
+            // The double-click needs priority, or the drag gesture swallows it.
             Theme.background
+                .highPriorityGesture(TapGesture(count: 2).onEnded { NSApp.keyWindow?.performZoom(nil) })
                 .gesture(WindowDragGesture())
-                .onTapGesture(count: 2) { NSApp.keyWindow?.performZoom(nil) }
         }
         .overlay(alignment: .bottom) {
             Rectangle().fill(Theme.border).frame(height: 1)

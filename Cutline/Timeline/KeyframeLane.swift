@@ -1,0 +1,122 @@
+import SwiftUI
+
+/// Keyframes of the selected clip under the timeline (Effects tab): one row per
+/// parameter, aligned with the timeline above. Click a diamond to select it (⇧ adds),
+/// drag to retime (selected keyframes move together), Delete removes.
+struct KeyframeLane: View {
+    let editor: EditorController
+    let layout: TimelineLayout
+    let visibleRect: CGRect
+
+    static let rowHeight: CGFloat = 18
+
+    var body: some View {
+        if let clip = editor.effectsClip {
+            let rows = AnimatableProperty.allCases.filter { clip.isAnimated($0) || $0 == editor.effectsProperty }
+            HStack(spacing: 0) {
+                VStack(spacing: 0) {
+                    ForEach(rows) { property in
+                        Button {
+                            editor.effectsProperty = property
+                        } label: {
+                            Text(property.title)
+                                .font(.system(size: 10, weight: property == editor.effectsProperty ? .semibold : .regular))
+                                .foregroundStyle(property == editor.effectsProperty ? Theme.accent : Theme.textSecondary)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .padding(.leading, 10)
+                                .frame(height: Self.rowHeight)
+                                .contentShape(.rect)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                .frame(width: Theme.Metrics.trackHeaderWidth)
+                Rectangle().fill(Theme.border).frame(width: 1)
+                VStack(spacing: 0) {
+                    ForEach(rows) { property in
+                        KeyframeRow(editor: editor, clip: clip, property: property, layout: layout, originX: visibleRect.minX)
+                            .frame(height: Self.rowHeight)
+                    }
+                }
+                .clipped()
+            }
+            .padding(.vertical, 4)
+            .background(Theme.background)
+        } else {
+            Text("Select a video or text clip to see its keyframes here.")
+                .font(.system(size: 10))
+                .foregroundStyle(Theme.textTertiary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.leading, Theme.Metrics.trackHeaderWidth + 10)
+                .frame(height: 26)
+                .background(Theme.background)
+        }
+    }
+}
+
+private struct KeyframeRow: View {
+    let editor: EditorController
+    let clip: Clip
+    let property: AnimatableProperty
+    let layout: TimelineLayout
+    let originX: CGFloat
+
+    var body: some View {
+        let start = layout.x(for: clip.start) - originX
+        let end = layout.x(for: clip.end) - originX
+        ZStack(alignment: .leading) {
+            Theme.recessed
+            // The clip's span on this row.
+            Rectangle()
+                .fill(property == editor.effectsProperty ? Theme.accentMuted : Theme.raised)
+                .frame(width: max(end - start, 1), height: KeyframeLane.rowHeight - 6)
+                .offset(x: start)
+            ForEach(clip.animation.keyframes(for: property)) { frame in
+                let ref = KeyframeRef(clipID: clip.id, property: property, keyframeID: frame.id)
+                KeyframeDiamond(isFilled: true, isSelected: editor.selectedKeyframes.contains(ref), size: 10)
+                    .frame(width: 16, height: KeyframeLane.rowHeight)
+                    .contentShape(.rect)
+                    .offset(x: layout.x(for: clip.start + frame.time) - originX - 8)
+                    .onTapGesture { select(ref) }
+                    .gesture(
+                        DragGesture(minimumDistance: 2)
+                            .onChanged { drag in
+                                if !editor.selectedKeyframes.contains(ref) { editor.selectedKeyframes = [ref] }
+                                editor.effectsProperty = property
+                                editor.dragKeyframes(editor.selectedKeyframes, by: layout.duration(forWidth: drag.translation.width))
+                            }
+                            .onEnded { _ in
+                                editor.endGesture(editor.selectedKeyframes.count > 1 ? "Move Keyframes" : "Move Keyframe")
+                            }
+                    )
+                    .contextMenu {
+                        Menu("Easing") {
+                            ForEach(Easing.presets, id: \.self) { easing in
+                                Button(easing.title) { editor.setEasing(easing, for: ref) }
+                            }
+                        }
+                        Button("Delete Keyframe", role: .destructive) { editor.deleteKeyframes([ref]) }
+                    }
+                    .help("\(property.title): \(property.formatted(frame.value))")
+            }
+        }
+    }
+
+    private func select(_ ref: KeyframeRef) {
+        editor.effectsProperty = ref.property
+        if NSEvent.modifierFlags.contains(.shift) || NSEvent.modifierFlags.contains(.command) {
+            if editor.selectedKeyframes.contains(ref) {
+                editor.selectedKeyframes.remove(ref)
+            } else {
+                editor.selectedKeyframes.insert(ref)
+            }
+        } else {
+            editor.selectedKeyframes = [ref]
+        }
+        // Jump the playhead to the keyframe, like clicking a marker.
+        if let frame = editor.keyframe(ref) {
+            editor.playback.pause()
+            editor.playback.seek(to: clip.start + frame.time)
+        }
+    }
+}

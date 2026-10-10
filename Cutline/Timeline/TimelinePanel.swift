@@ -72,6 +72,11 @@ struct TimelinePanel: View {
             }
             .scrollIndicators(.never)
             .background(Theme.background)
+
+            if editor.workspace == .effects {
+                Rectangle().fill(Theme.border).frame(height: 1)
+                KeyframeLane(editor: editor, layout: layout, visibleRect: visibleRect)
+            }
         }
         .background(Theme.background)
         .onChange(of: editor.pixelsPerSecond) { oldValue, newValue in

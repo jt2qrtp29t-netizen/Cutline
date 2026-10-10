@@ -11,6 +11,7 @@ struct EditorView: View {
     @AppStorage("layout.inspectorWidth") private var inspectorWidth = Double(Theme.Metrics.inspectorWidth)
     @AppStorage("layout.binWidth") private var binWidth = Double(Theme.Metrics.mediaBinWidth)
     @AppStorage("layout.timelineHeight") private var timelineHeight = 300.0
+    @AppStorage("layout.curveWidth") private var curveWidth = 360.0
 
     init(document: CutlineDocument) {
         self.document = document
@@ -25,22 +26,14 @@ struct EditorView: View {
     var body: some View {
         VStack(spacing: 0) {
             EditorTitleBar(editor: editor, title: title)
-            HStack(spacing: 0) {
-                InspectorPanel(editor: editor)
-                    .frame(width: inspectorWidth)
-                PanelDivider(axis: .vertical, size: $inspectorWidth, range: 260...460)
-                PreviewPanel(editor: editor)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                PanelDivider(axis: .vertical, size: $binWidth, range: 200...460, direction: -1)
-                MediaBinPanel(editor: editor)
-                    .frame(width: binWidth)
-            }
-            .frame(maxHeight: .infinity)
-            // Files dropped anywhere above the timeline go into the media bin.
-            .dropDestination(for: URL.self) { urls, _ in
-                editor.importMedia(urls)
-                return true
-            }
+            WorkspaceTabBar(editor: editor)
+            workspaceContent
+                .frame(maxHeight: .infinity)
+                // Files dropped anywhere above the timeline go into the media bin.
+                .dropDestination(for: URL.self) { urls, _ in
+                    editor.importMedia(urls)
+                    return true
+                }
             PanelDivider(axis: .horizontal, size: $timelineHeight, range: 180...640, direction: -1)
             TimelinePanel(editor: editor)
                 .frame(height: timelineHeight)
@@ -85,9 +78,42 @@ struct EditorView: View {
             let ids = editor.selectableClipIDs
             if !editor.selection.isSubset(of: ids) { editor.selection.formIntersection(ids) }
             editor.playback.update(with: state, isLiveEdit: editor.store.isLiveEditing)
+            editor.pruneKeyframeSelection()
         }
+        .onChange(of: editor.selection) { editor.pruneKeyframeSelection() }
         .onChange(of: editor.store.isLiveEditing) { _, isLive in
             if !isLive { editor.playback.update(with: editor.state, isLiveEdit: false) }
+        }
+    }
+
+    /// The area above the timeline for the current workspace tab.
+    @ViewBuilder
+    private var workspaceContent: some View {
+        switch editor.workspace {
+        case .edit:
+            HStack(spacing: 0) {
+                InspectorPanel(editor: editor)
+                    .frame(width: inspectorWidth)
+                PanelDivider(axis: .vertical, size: $inspectorWidth, range: 260...460)
+                PreviewPanel(editor: editor)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                PanelDivider(axis: .vertical, size: $binWidth, range: 200...460, direction: -1)
+                MediaBinPanel(editor: editor)
+                    .frame(width: binWidth)
+            }
+        case .effects:
+            HStack(spacing: 0) {
+                EffectsPanel(editor: editor)
+                    .frame(width: inspectorWidth)
+                PanelDivider(axis: .vertical, size: $inspectorWidth, range: 260...460)
+                PreviewPanel(editor: editor)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                PanelDivider(axis: .vertical, size: $curveWidth, range: 260...620, direction: -1)
+                CurveEditorPanel(editor: editor)
+                    .frame(width: curveWidth)
+            }
+        case .color, .playground, .export:
+            WorkspacePlaceholder(workspace: editor.workspace)
         }
     }
 }

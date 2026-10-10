@@ -17,9 +17,9 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+		C0DE00000000000000000005 /* Cutline-Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = "Cutline-Info.plist"; sourceTree = "<group>"; };
 		C0DE00000000000000000011 /* Cutline.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Cutline.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		C0DE00000000000000000021 /* CutlineTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = CutlineTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
-		C0DE00000000000000000005 /* Cutline-Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = "Cutline-Info.plist"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */

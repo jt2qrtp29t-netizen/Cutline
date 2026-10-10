@@ -33,6 +33,11 @@ final class EditorController {
     var newTrackHint: TrackKind?
     /// Speed / duration dialog for a clip.
     var clipDialog: ClipDialog?
+    /// Which workspace tab is showing.
+    var workspace: Workspace = .edit
+    /// The parameter shown in the curve editor and highlighted in the Effects panel.
+    var effectsProperty: AnimatableProperty = .positionX
+    var selectedKeyframes: Set<KeyframeRef> = []
 
     static let zoomRange: ClosedRange<Double> = 2...1200
 
@@ -264,6 +269,11 @@ final class EditorController {
     }
 
     func deleteSelection() {
+        // In the Effects tab, Delete removes selected keyframes first.
+        if workspace == .effects, !selectedKeyframes.isEmpty {
+            deleteKeyframes(selectedKeyframes)
+            return
+        }
         let ids = selection
         guard !ids.isEmpty else { NSSound.beep(); return }
         store.edit(ids.count == 1 ? "Delete Clip" : "Delete Clips") { state in

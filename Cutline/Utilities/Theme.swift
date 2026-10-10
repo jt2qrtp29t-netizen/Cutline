@@ -68,6 +68,14 @@ enum Theme {
     static let textClipLabelStrip = Color(hex: 0x4F3B86)
     static let textClipGhost = Color(hex: 0x6E54B5).opacity(0.45)
 
+    // MARK: Keyframes
+
+    static let keyframe = Color(hex: 0xE8C547)
+    static let keyframeSelected = Color(hex: 0xFFFFFF)
+    static let curve = Color(hex: 0x3BD473)
+    static let curveHandle = Color(hex: 0x6FB7F0)
+    static let curveGrid = Color(hex: 0x2A2A28)
+
     // MARK: Locking
 
     /// Diagonal hatching drawn over locked lanes.

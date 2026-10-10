@@ -27,6 +27,15 @@ struct CutlineCommands: Commands {
                 .disabled(editor == nil)
         }
 
+        CommandGroup(before: .toolbar) {
+            ForEach(Array(Workspace.allCases.enumerated()), id: \.element) { index, workspace in
+                Button(workspace.title) { editor?.workspace = workspace }
+                    .keyboardShortcut(KeyEquivalent(Character("\(index + 1)")))
+                    .disabled(editor == nil)
+            }
+            Divider()
+        }
+
         CommandGroup(after: .toolbar) {
             Button("Zoom In") { editor?.zoomIn() }
                 .keyboardShortcut("+")
