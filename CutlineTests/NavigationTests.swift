@@ -48,3 +48,47 @@ import Testing
         editor.endPlayheadDrag()
     }
 }
+
+struct TabScrollGestureTests {
+    /// Feeds deltas 16 ms apart starting at `start`; returns the steps taken and the end time.
+    private func play(_ deltas: [CGFloat], precise: Bool = true, into gesture: inout TabScrollGesture,
+                      start: TimeInterval, interval: TimeInterval = 0.016) -> (steps: [Int], end: TimeInterval) {
+        var steps: [Int] = []
+        var t = start
+        for d in deltas {
+            let step = gesture.feed(dx: d, precise: precise, at: t)
+            if step != 0 { steps.append(step) }
+            t += interval
+        }
+        return (steps, t)
+    }
+
+    let flick: [CGFloat] = [-2, -5, -10, -16, -14, -10, -7, -5, -4, -3, -3, -2, -2, -2]
+    let coast = [CGFloat](repeating: -1, count: 40)
+
+    @Test func eachSmoothFlickMovesOneTabEvenWhileTheLastOneIsStillCoasting() {
+        var gesture = TabScrollGesture()
+        // Three flicks back to back, each starting while the previous one coasts.
+        let result = play(flick + coast + flick + coast + flick + coast, into: &gesture, start: 100)
+        #expect(result.steps == [1, 1, 1])
+    }
+
+    @Test func coastingAloneNeverStepsAgain() {
+        var gesture = TabScrollGesture()
+        let result = play(flick + [CGFloat](repeating: -1, count: 200), into: &gesture, start: 100)
+        #expect(result.steps == [1])
+    }
+
+    @Test func notchedWheelsStepPerNotchBurstAndReverse() {
+        var gesture = TabScrollGesture()
+        var t: TimeInterval = 100
+        var steps: [Int] = []
+        // Continuous spinning is one flick; pauses separate flicks; scrolling left steps left.
+        for burst: [CGFloat] in [[-1, -1, -1, -1], [-1, -1], [1, 1, 1]] {
+            let r = play(burst, precise: false, into: &gesture, start: t, interval: 0.03)
+            steps += r.steps
+            t = r.end + 0.4
+        }
+        #expect(steps == [1, 1, -1])
+    }
+}

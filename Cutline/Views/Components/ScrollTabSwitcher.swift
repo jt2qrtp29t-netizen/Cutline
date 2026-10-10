@@ -21,10 +21,7 @@ struct ScrollTabSwitcher: NSViewRepresentable {
     final class SwitcherView: NSView {
         var onStep: ((Int) -> Void)?
         private var monitor: Any?
-        private var accumulated: CGFloat = 0
-        private var lastEvent: TimeInterval = 0
-        /// After switching, the rest of that flick is ignored so one flick moves one tab.
-        private var cooldownUntil: TimeInterval = 0
+        private var gesture = TabScrollGesture()
 
         override func viewDidMoveToWindow() {
             super.viewDidMoveToWindow()
@@ -42,35 +39,85 @@ struct ScrollTabSwitcher: NSViewRepresentable {
 
         override func hitTest(_ point: NSPoint) -> NSView? { nil }
 
-        /// Returns true if the event switched tabs (or belongs to a flick that did).
+        /// Returns true if the event was used for switching tabs (and so isn’t passed on).
         private func handle(_ event: NSEvent) -> Bool {
-            guard event.window === window, let window else { return false }
+            // The window the event is for: its own, or (for events without one) the
+            // window under the pointer. Scroll events go there, whichever window is key.
+            let screenPoint: NSPoint
+            if let cg = event.cgEvent?.location, let primary = NSScreen.screens.first {
+                screenPoint = NSPoint(x: cg.x, y: primary.frame.maxY - cg.y)
+            } else {
+                screenPoint = NSEvent.mouseLocation
+            }
+            let target = event.window
+                ?? NSApp.window(withWindowNumber: NSWindow.windowNumber(at: screenPoint, belowWindowWithWindowNumber: 0))
+            guard let window, target === window else { return false }
+            let location = event.window != nil ? event.locationInWindow : window.convertPoint(fromScreen: screenPoint)
             let dx = event.scrollingDeltaX, dy = event.scrollingDeltaY
             // Mostly-horizontal scrolling only, and not the coasting after a trackpad swipe.
             guard abs(dx) > abs(dy) * 1.5, event.momentumPhase.isEmpty else { return false }
-            guard !HorizontalScrollZone.contains(event.locationInWindow, in: window) else { return false }
+            guard !HorizontalScrollZone.contains(location, in: window) else { return false }
 
-            let now = event.timestamp
-            if now < cooldownUntil {
-                cooldownUntil = now + 0.25
-                return true
-            }
-            if now - lastEvent > 0.3 { accumulated = 0 }
-            lastEvent = now
-            accumulated += dx
-            // Wheel notches are line-sized; trackpads and smooth wheels send points.
-            let threshold: CGFloat = event.hasPreciseScrollingDeltas ? 30 : 1
-            guard abs(accumulated) >= threshold else { return true }
-            // Negative deltaX scrolls content toward the right, as in a browser.
-            onStep?(accumulated < 0 ? 1 : -1)
-            accumulated = 0
-            cooldownUntil = now + 0.25
+            let step = gesture.feed(dx: dx, precise: event.hasPreciseScrollingDeltas, at: event.timestamp)
+            if step != 0 { onStep?(step) }
             return true
         }
 
         isolated deinit {
             if let monitor { NSEvent.removeMonitor(monitor) }
         }
+    }
+}
+
+/// Turns horizontal scroll events into tab steps: one step per flick of the wheel.
+///
+/// Smooth-scrolling mice (e.g. with Logi Options+) keep sending small, fading deltas
+/// for a while after each flick. Those are ignored, but a new flick is recognised
+/// even while the last one is still coasting: by a pause, a change of direction,
+/// or deltas suddenly growing again.
+nonisolated struct TabScrollGesture {
+    /// Points (smooth) or lines (notched wheels) needed to step.
+    static let preciseThreshold: CGFloat = 30
+    static let lineThreshold: CGFloat = 1
+    /// After a step, the same flick can't step again for at least this long.
+    static let minimumSuppression: TimeInterval = 0.3
+    /// A pause this long starts a new flick.
+    static let newFlickGap: TimeInterval = 0.12
+
+    private var accumulated: CGFloat = 0
+    private var lastTime: TimeInterval?
+    private var lastMagnitude: CGFloat = 0
+    /// Set after a step, while the rest of that flick is being ignored.
+    private var suppression: (since: TimeInterval, sign: CGFloat)?
+
+    /// Feeds one event; returns +1 to move a tab right, -1 left, or 0.
+    mutating func feed(dx: CGFloat, precise: Bool, at time: TimeInterval) -> Int {
+        guard dx != 0 else { return 0 }
+        let magnitude = abs(dx)
+        let sign: CGFloat = dx < 0 ? -1 : 1
+        let gap = lastTime.map { time - $0 } ?? .infinity
+        lastTime = time
+        defer { lastMagnitude = magnitude }
+
+        if let suppressed = suppression {
+            let paused = gap > Self.newFlickGap
+            let reversed = sign != suppressed.sign
+            let growing = time - suppressed.since >= Self.minimumSuppression
+                && magnitude > max(lastMagnitude * 1.6, lastMagnitude + 2)
+            guard paused || reversed || growing else { return 0 }
+            suppression = nil
+            accumulated = 0
+        } else if gap > Self.newFlickGap * 2.5 || (accumulated != 0 && (accumulated < 0) != (dx < 0)) {
+            accumulated = 0
+        }
+
+        accumulated += dx
+        guard abs(accumulated) >= (precise ? Self.preciseThreshold : Self.lineThreshold) else { return 0 }
+        // Negative deltaX scrolls content toward the right, as in a browser.
+        let step = accumulated < 0 ? 1 : -1
+        accumulated = 0
+        suppression = (time, sign)
+        return step
     }
 }
 
