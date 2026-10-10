@@ -17,6 +17,7 @@ struct CutlineCommands: Commands {
         CommandGroup(replacing: .help) {
             Button("Keyboard Shortcuts") { openWindow(id: WindowID.shortcuts) }
                 .keyboardShortcut("/")
+            Button("Changelog") { openWindow(id: WindowID.changelog) }
         }
 
         CommandGroup(replacing: .newItem) {

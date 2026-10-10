@@ -26,6 +26,9 @@ struct EditorTitleBar: View {
                     editor.addTextClip()
                 }
                 Spacer()
+                IconButton(systemImage: "list.bullet", help: "Changelog") {
+                    openWindow(id: WindowID.changelog)
+                }
                 IconButton(systemImage: "keyboard", help: "Keyboard Shortcuts (⌘/)") {
                     openWindow(id: WindowID.shortcuts)
                 }

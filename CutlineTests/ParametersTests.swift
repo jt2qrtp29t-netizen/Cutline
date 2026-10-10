@@ -93,4 +93,15 @@ import Testing
             #expect(keys.contains(shortcut), "\(shortcut) is missing from the Keyboard Shortcuts window")
         }
     }
+
+    @Test func changelogCoversEveryVersionUpToThisOne() {
+        let versions = Changelog.entries.map(\.version)
+        // Newest first, one entry per version from 1.0 up to the version being built.
+        let built = Bundle(for: EditorController.self).object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String
+        #expect(versions.first == built, "add a Changelog entry for v\(built ?? "?")")
+        let numbers = versions.compactMap(Double.init)
+        #expect(numbers == numbers.sorted(by: >) && numbers.last == 1.0)
+        #expect(Set(versions).count == versions.count)
+        #expect(Changelog.entries.allSatisfy { !$0.changes.isEmpty })
+    }
 }

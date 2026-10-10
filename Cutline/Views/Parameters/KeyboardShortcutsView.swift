@@ -26,6 +26,7 @@ enum ShortcutList {
             Item(keys: "⌘W", action: "Close Window"),
             Item(keys: "⌘,", action: "Parameters…"),
             Item(keys: "⌘/", action: "Keyboard Shortcuts"),
+            Item(keys: "Help menu", action: "Changelog"),
         ]),
         Group(title: "Workspace", symbolName: "rectangle.3.group", items: [
             Item(keys: "⌘1 – ⌘5", action: "Edit, Effects, Color, Playground, Export"),

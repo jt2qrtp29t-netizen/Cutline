@@ -3,6 +3,7 @@ import SwiftUI
 enum WindowID {
     static let launch = "launch"
     static let shortcuts = "shortcuts"
+    static let changelog = "changelog"
 }
 
 /// True when the app is only hosting unit tests: no windows are opened then, so
@@ -41,6 +42,15 @@ struct CutlineApp: App {
                 .tint(Theme.accent)
         }
         .defaultSize(width: 520, height: 640)
+        .defaultLaunchBehavior(.suppressed)
+        .restorationBehavior(.disabled)
+
+        Window("Changelog", id: WindowID.changelog) {
+            ChangelogView()
+                .preferredColorScheme(.dark)
+                .tint(Theme.accent)
+        }
+        .defaultSize(width: 540, height: 680)
         .defaultLaunchBehavior(.suppressed)
         .restorationBehavior(.disabled)
 
