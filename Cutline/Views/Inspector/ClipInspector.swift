@@ -138,7 +138,9 @@ struct ClipInspector: View {
                     .font(.system(size: 11))
                     .foregroundStyle(Theme.textSecondary)
                 Spacer()
-                Button("Open Color Tab") { editor.workspace = .color }
+                Button(editor.isSandbox ? "Show Color" : "Open Color Tab") {
+                    if editor.isSandbox { editor.sandboxPanel = .color } else { editor.workspace = .color }
+                }
                     .controlSize(.small)
             }
             Text("Exposure, contrast, saturation and the rest of the grade are in the Color tab (⌘3).")

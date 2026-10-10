@@ -254,7 +254,9 @@ struct LaunchView: View {
         }
         do {
             try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-            try ProjectState(settings: settings).encoded().write(to: url, options: .atomic)
+            var project = ProjectState(settings: settings)
+            project.id = UUID()
+            try project.encoded().write(to: url, options: .atomic)
         } catch {
             errorMessage = error.localizedDescription
             return

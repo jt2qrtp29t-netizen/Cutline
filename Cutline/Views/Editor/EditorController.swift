@@ -37,7 +37,43 @@ final class EditorController {
     /// Speed / duration dialog for a clip.
     var clipDialog: ClipDialog?
     /// Which workspace tab is showing.
-    var workspace: Workspace = .edit
+    var workspace: Workspace = .edit {
+        didSet {
+            guard !isSandbox, workspace != oldValue else { return }
+            if workspace == .playground {
+                // Only one preview plays at a time.
+                playback.pause()
+                isHoldingBefore = false
+                _ = ensurePlayground()
+            } else if oldValue == .playground {
+                playground?.deactivate()
+            }
+        }
+    }
+    /// True for the Playground's editor, which works on scratch state only.
+    @ObservationIgnored var isSandbox = false
+    /// Which adjustments the Playground's left panel shows.
+    var sandboxPanel: SandboxPanel = .adjust
+    /// This project's Playground, created the first time it's needed.
+    var playground: PlaygroundSession?
+    /// The project's file, used to find its Playground (set by the window).
+    @ObservationIgnored var projectFileURL: URL?
+    /// Where Playgrounds are saved (tests use a temporary folder).
+    @ObservationIgnored var playgroundFolder = PlaygroundFile.folder
+
+    /// The editor that commands act on: the Playground's while its tab is showing.
+    var activeEditor: EditorController {
+        workspace == .playground ? (playground?.editor ?? self) : self
+    }
+
+    /// Opens (or creates) this project's Playground.
+    func ensurePlayground() -> PlaygroundSession {
+        if let playground { return playground }
+        let key = PlaygroundFile.key(projectID: state.id, fileURL: projectFileURL)
+        let session = PlaygroundSession(key: key, projectSettings: state.settings, folder: playgroundFolder)
+        playground = session
+        return session
+    }
     /// The parameter shown in the curve editor and highlighted in the Effects panel.
     var effectsProperty: AnimatableProperty = .positionX
     var selectedKeyframes: Set<KeyframeRef> = []
@@ -312,7 +348,7 @@ final class EditorController {
             deleteTransition(transition)
             return
         }
-        if workspace == .effects || workspace == .color, !selectedKeyframes.isEmpty {
+        if workspace == .effects || workspace == .color || isSandbox, !selectedKeyframes.isEmpty {
             deleteKeyframes(selectedKeyframes)
             return
         }

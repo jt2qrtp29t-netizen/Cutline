@@ -8,7 +8,20 @@ struct CutlineCommands: Commands {
     @FocusedValue(\.editor) private var editor
     @Environment(\.openWindow) private var openWindow
 
+    /// What commands act on: the Playground's editor while its tab is showing.
+    private var target: EditorController? { editor?.activeEditor }
+
     var body: some Commands {
+        // Undo and redo follow the active editor, so the Playground has its own history.
+        CommandGroup(replacing: .undoRedo) {
+            let undoManager = target?.store.undoManager
+            let _ = target?.store.undoRevision
+            Button(undoManager?.canUndo == true ? undoManager!.undoMenuItemTitle : "Undo") { undo(redo: false) }
+                .keyboardShortcut("z")
+            Button(undoManager?.canRedo == true ? undoManager!.redoMenuItemTitle : "Redo") { undo(redo: true) }
+                .keyboardShortcut("z", modifiers: [.command, .shift])
+        }
+
         // The standard Settings item, named Parameters here.
         CommandGroup(replacing: .appSettings) {
             ParametersMenuItem()
@@ -27,13 +40,13 @@ struct CutlineCommands: Commands {
 
         CommandGroup(after: .newItem) {
             Divider()
-            Button("Import Media…") { editor?.showImportPanel() }
+            Button("Import Media…") { target?.showImportPanel() }
                 .keyboardShortcut("i")
                 .disabled(editor == nil)
         }
 
         CommandGroup(replacing: .importExport) {
-            Button("Export…") { editor?.showExportPlaceholder() }
+            Button("Export…") { target?.showExportPlaceholder() }
                 .keyboardShortcut("e", modifiers: [.command, .shift])
                 .disabled(editor == nil)
         }
@@ -48,73 +61,73 @@ struct CutlineCommands: Commands {
         }
 
         CommandGroup(after: .toolbar) {
-            Button("Zoom In") { editor?.zoomIn() }
+            Button("Zoom In") { target?.zoomIn() }
                 .keyboardShortcut("+")
                 .disabled(editor == nil)
-            Button("Zoom Out") { editor?.zoomOut() }
+            Button("Zoom Out") { target?.zoomOut() }
                 .keyboardShortcut("-")
                 .disabled(editor == nil)
             Divider()
         }
 
         CommandMenu("Clip") {
-            Button("Blade at Playhead") { editor?.bladeAtPlayhead() }
+            Button("Blade at Playhead") { target?.bladeAtPlayhead() }
                 .keyboardShortcut("b")
                 .disabled(editor == nil)
             Button("Delete") {
                 if TextInputForwarding.forward(#selector(NSResponder.deleteBackward(_:))) { return }
-                editor?.deleteSelection()
+                target?.deleteSelection()
             }
             .keyboardShortcut(.delete, modifiers: [])
             .disabled(editor == nil)
 
             Divider()
 
-            Button("Link / Unlink Clips") { editor?.toggleLinkSelection() }
+            Button("Link / Unlink Clips") { target?.toggleLinkSelection() }
                 .keyboardShortcut("l", modifiers: [.command, .option])
                 .disabled(editor == nil)
-            Button("Lock / Unlock Clips") { editor?.toggleLockSelection() }
+            Button("Lock / Unlock Clips") { target?.toggleLockSelection() }
                 .keyboardShortcut("l", modifiers: [.command, .shift])
                 .disabled(editor == nil)
-            Button("Copy Grade") { editor?.copyGrade() }
+            Button("Copy Grade") { target?.copyGrade() }
                 .keyboardShortcut("c", modifiers: [.command, .option])
                 .disabled(editor == nil)
-            Button("Paste Grade") { editor?.pasteGrade() }
+            Button("Paste Grade") { target?.pasteGrade() }
                 .keyboardShortcut("v", modifiers: [.command, .option])
                 .disabled(editor == nil)
-            Button("Speed…") { editor?.showClipDialogForSelection(.speed) }
+            Button("Speed…") { target?.showClipDialogForSelection(.speed) }
                 .disabled(editor == nil)
-            Button("Duration…") { editor?.showClipDialogForSelection(.duration) }
+            Button("Duration…") { target?.showClipDialogForSelection(.duration) }
                 .disabled(editor == nil)
 
             Divider()
 
             Toggle("Snapping", isOn: Binding(
-                get: { editor?.snappingEnabled ?? false },
-                set: { editor?.snappingEnabled = $0 }
+                get: { target?.snappingEnabled ?? false },
+                set: { target?.snappingEnabled = $0 }
             ))
             .keyboardShortcut("n", modifiers: [.command, .shift])
             .disabled(editor == nil)
-            Button("Add Text") { editor?.addTextClip() }
+            Button("Add Text") { target?.addTextClip() }
                 .keyboardShortcut("t", modifiers: [.command, .shift])
                 .disabled(editor == nil)
-            Button("Add Video Track") { editor?.addTrack(.video) }
+            Button("Add Video Track") { target?.addTrack(.video) }
                 .disabled(editor == nil)
-            Button("Add Audio Track") { editor?.addTrack(.audio) }
+            Button("Add Audio Track") { target?.addTrack(.audio) }
                 .disabled(editor == nil)
-            Button("Add Text Track") { editor?.addTrack(.text) }
+            Button("Add Text Track") { target?.addTrack(.text) }
                 .disabled(editor == nil)
         }
 
         CommandMenu("Marker") {
-            Button("Add Marker…") { editor?.addMarkerAtPlayhead() }
+            Button("Add Marker…") { target?.addMarkerAtPlayhead() }
                 .keyboardShortcut("m")
                 .disabled(editor == nil)
             Divider()
-            Button("Previous Marker") { editor?.goToMarker(next: false) }
+            Button("Previous Marker") { target?.goToMarker(next: false) }
                 .keyboardShortcut(.leftArrow, modifiers: [.command, .option])
                 .disabled(editor == nil)
-            Button("Next Marker") { editor?.goToMarker(next: true) }
+            Button("Next Marker") { target?.goToMarker(next: true) }
                 .keyboardShortcut(.rightArrow, modifiers: [.command, .option])
                 .disabled(editor == nil)
         }
@@ -129,7 +142,7 @@ struct CutlineCommands: Commands {
         CommandMenu("Playback") {
             Button("Play/Pause") {
                 if TextInputForwarding.forwardSpace() { return }
-                editor?.togglePlayback()
+                target?.togglePlayback()
             }
             .keyboardShortcut(.space, modifiers: [])
             .disabled(editor == nil)
@@ -142,24 +155,38 @@ struct CutlineCommands: Commands {
 
             Divider()
 
-            Button("Go to Start") { editor?.goToStart() }
+            Button("Go to Start") { target?.goToStart() }
                 .keyboardShortcut(.home, modifiers: [])
                 .disabled(editor == nil)
-            Button("Go to End") { editor?.goToEnd() }
+            Button("Go to End") { target?.goToEnd() }
                 .keyboardShortcut(.end, modifiers: [])
                 .disabled(editor == nil)
             Button("Previous Frame") {
                 if TextInputForwarding.forward(#selector(NSResponder.moveLeft(_:))) { return }
-                editor?.playback.step(frames: -1)
+                target?.playback.step(frames: -1)
             }
             .keyboardShortcut(.leftArrow, modifiers: [])
             .disabled(editor == nil)
             Button("Next Frame") {
                 if TextInputForwarding.forward(#selector(NSResponder.moveRight(_:))) { return }
-                editor?.playback.step(frames: 1)
+                target?.playback.step(frames: 1)
             }
             .keyboardShortcut(.rightArrow, modifiers: [])
             .disabled(editor == nil)
+        }
+    }
+
+    /// Text being edited undoes its typing; otherwise the active editor's history.
+    private func undo(redo: Bool) {
+        let action = Selector(redo ? "redo:" : "undo:")
+        guard let undoManager = target?.store.undoManager, !(NSApp.keyWindow?.firstResponder is NSText) else {
+            NSApp.sendAction(action, to: nil, from: nil)
+            return
+        }
+        if redo ? undoManager.canRedo : undoManager.canUndo {
+            redo ? undoManager.redo() : undoManager.undo()
+        } else {
+            NSSound.beep()
         }
     }
 }

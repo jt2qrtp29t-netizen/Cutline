@@ -51,6 +51,12 @@ enum Theme {
     static let clipOffline = Color(hex: 0x6B2E30)
     static let offlineBadge = Color(hex: 0xE5484D)
 
+    // MARK: Playground
+
+    /// The Playground's sandbox cue: amber instead of the usual green.
+    static let sandbox = Color(hex: 0xF2A93B)
+    static let sandboxMuted = Color(hex: 0xF2A93B).opacity(0.16)
+
     // MARK: Color tab
 
     /// The hue under a wheel position (x = Cb, y = Cr), as a vectorscope shows it.

@@ -14,6 +14,10 @@ struct KeyframeLane: View {
     /// The rows for this tab: animated parameters (and, in Effects, the one shown in
     /// the curve editor).
     func rows(for clip: Clip) -> [AnimatableProperty] {
+        if editor.isSandbox {
+            // The Playground shows every keyframe of the clip.
+            return AnimatableProperty.allCases.filter { clip.isAnimated($0) }
+        }
         if editor.workspace == .color {
             return AnimatableProperty.grade.filter { clip.isAnimated($0) }
         }
@@ -54,6 +58,7 @@ struct KeyframeLane: View {
             .background(Theme.background)
         } else {
             Text(editor.effectsClip == nil ? "Select a video or text clip to see its keyframes here."
+                 : editor.isSandbox ? "No keyframes yet. Click ◆ next to a control to add one at the playhead."
                  : "No color keyframes yet. Click ◆ next to a color control to add one at the playhead.")
                 .font(.system(size: 10))
                 .foregroundStyle(Theme.textTertiary)

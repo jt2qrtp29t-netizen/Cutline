@@ -16,7 +16,12 @@ final class ProjectStore {
     /// True while a gesture is mutating the state without registering undo.
     private(set) var isLiveEditing = false
 
-    @ObservationIgnored weak var undoManager: UndoManager?
+    @ObservationIgnored weak var undoManager: UndoManager? {
+        didSet { if undoManager !== oldValue { observeUndoManager() } }
+    }
+    /// Bumped whenever the undo history changes, so menus can refresh their titles.
+    private(set) var undoRevision = 0
+    @ObservationIgnored private var undoObservers: [any NSObjectProtocol] = []
     /// The last coalescible edit, so a run of them (typing, dragging a color well)
     /// becomes a single undo step.
     @ObservationIgnored private var lastCoalesced: (key: String, time: Date)?
@@ -26,6 +31,21 @@ final class ProjectStore {
 
     init(state: ProjectState = ProjectState()) {
         self.state = state
+    }
+
+    isolated deinit {
+        undoObservers.forEach(NotificationCenter.default.removeObserver)
+    }
+
+    private func observeUndoManager() {
+        undoObservers.forEach(NotificationCenter.default.removeObserver)
+        undoObservers = []
+        guard let undoManager else { return }
+        for name in [Notification.Name.NSUndoManagerDidCloseUndoGroup, .NSUndoManagerDidUndoChange, .NSUndoManagerDidRedoChange] {
+            undoObservers.append(NotificationCenter.default.addObserver(forName: name, object: undoManager, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated { self?.undoRevision &+= 1 }
+            })
+        }
     }
 
     /// Applies an undoable edit. No-op edits register nothing.

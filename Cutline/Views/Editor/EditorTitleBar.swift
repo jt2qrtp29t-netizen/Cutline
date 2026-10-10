@@ -14,16 +14,16 @@ struct EditorTitleBar: View {
             HStack(spacing: 6) {
                 Color.clear.frame(width: Theme.Metrics.trafficLightInset)
                 IconButton(systemImage: "square.and.arrow.down", help: "Import Media… (⌘I)") {
-                    editor.showImportPanel()
+                    editor.activeEditor.showImportPanel()
                 }
                 IconButton(systemImage: "scissors", help: "Blade at Playhead (⌘B)") {
-                    editor.bladeAtPlayhead()
+                    editor.activeEditor.bladeAtPlayhead()
                 }
                 IconButton(systemImage: "bookmark", help: "Add Marker (⌘M)") {
-                    editor.addMarkerAtPlayhead()
+                    editor.activeEditor.addMarkerAtPlayhead()
                 }
                 IconButton(systemImage: "textformat", help: "Add Text (⇧⌘T)") {
-                    editor.addTextClip()
+                    editor.activeEditor.addTextClip()
                 }
                 Spacer()
                 IconButton(systemImage: "list.bullet", help: "Changelog") {

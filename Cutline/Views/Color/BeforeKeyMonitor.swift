@@ -39,7 +39,10 @@ struct BeforeKeyMonitor: NSViewRepresentable {
             // Letting go outside the window (or switching apps) mustn't leave it stuck on Before.
             resignObserver = NotificationCenter.default.addObserver(forName: NSWindow.didResignKeyNotification,
                                                                     object: window, queue: .main) { [weak self] _ in
-                MainActor.assumeIsolated { self?.editor?.isHoldingBefore = false }
+                MainActor.assumeIsolated {
+                    self?.editor?.isHoldingBefore = false
+                    self?.editor?.playground?.editor.isHoldingBefore = false
+                }
             }
         }
 
@@ -50,8 +53,8 @@ struct BeforeKeyMonitor: NSViewRepresentable {
             // Typing a "b" in a text field stays typing.
             if window?.firstResponder is NSText { return false }
             switch event.type {
-            case .keyDown: if !event.isARepeat { editor.isHoldingBefore = true }
-            case .keyUp: editor.isHoldingBefore = false
+            case .keyDown: if !event.isARepeat { editor.activeEditor.isHoldingBefore = true }
+            case .keyUp: editor.activeEditor.isHoldingBefore = false
             default: return false
             }
             return true

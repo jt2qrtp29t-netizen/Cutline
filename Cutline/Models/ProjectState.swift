@@ -9,6 +9,9 @@ nonisolated struct ProjectState: Codable, Hashable, Sendable {
     static let currentVersion = 3
 
     var version = ProjectState.currentVersion
+    /// Identifies the project (e.g. to find its Playground). Projects made before v3.2
+    /// have none and are identified by their file location instead.
+    var id: UUID?
     var settings: ProjectSettings
     var media: [MediaItem] = []
     var tracks: [Track]
@@ -24,6 +27,7 @@ nonisolated struct ProjectState: Codable, Hashable, Sendable {
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         version = try c.decodeIfPresent(Int.self, forKey: .version) ?? 1
+        id = try c.decodeIfPresent(UUID.self, forKey: .id)
         settings = try c.decode(ProjectSettings.self, forKey: .settings)
         media = try c.decodeIfPresent([MediaItem].self, forKey: .media) ?? []
         tracks = try c.decodeIfPresent([Track].self, forKey: .tracks) ?? []

@@ -18,6 +18,13 @@ extension EditorController {
     }
 }
 
+/// The Playground's left panel.
+enum SandboxPanel: String, CaseIterable, Identifiable {
+    case adjust, effects, color
+    var id: String { rawValue }
+    var title: String { self == .adjust ? "Adjust" : rawValue.capitalized }
+}
+
 enum Workspace: String, CaseIterable, Identifiable {
     case edit, effects, color, playground, export
 

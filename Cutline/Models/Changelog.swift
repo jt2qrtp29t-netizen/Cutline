@@ -11,6 +11,11 @@ enum Changelog {
     }
 
     static let entries: [Entry] = [
+        Entry(version: "3.2", title: "Playground tab", changes: [
+            "A sandbox for experiments: the Playground has its own timeline, undo history, selection and preview, and nothing in it can change your project.",
+            "It’s saved on its own (not in the project file) and comes back when you reopen the project. Reset clears it after asking.",
+            "Adjust, Effects and Color panels work on Playground clips, with an amber Sandbox badge so it’s never mistaken for the real timeline.",
+        ]),
         Entry(version: "3.1", title: "Color keyframes on the timeline", changes: [
             "The Color tab shows its keyframes in a lane under the timeline, where they can be selected, dragged to retime and deleted.",
             "Each tab now lists its own keyframes: motion in Effects, color in Color.",

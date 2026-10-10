@@ -33,19 +33,27 @@ struct EditorView: View {
                 .frame(maxHeight: .infinity)
                 // Files dropped anywhere above the timeline go into the media bin.
                 .dropDestination(for: URL.self) { urls, _ in
-                    editor.importMedia(urls)
+                    editor.activeEditor.importMedia(urls)
                     return true
                 }
             PanelDivider(axis: .horizontal, size: $timelineHeight, range: 180...640, direction: -1)
-            TimelinePanel(editor: editor)
-                .frame(height: timelineHeight)
+            // The Playground has its own scratch timeline.
+            if editor.workspace == .playground, let playground = editor.playground {
+                TimelinePanel(editor: playground.editor)
+                    .id(ObjectIdentifier(playground.editor))
+                    .frame(height: timelineHeight)
+                    .overlay(alignment: .topTrailing) { SandboxBadge().padding(.top, 7).padding(.trailing, 200) }
+            } else {
+                TimelinePanel(editor: editor)
+                    .frame(height: timelineHeight)
+            }
         }
         // The system title bar is hidden; our own bar sits under the window buttons.
         .ignoresSafeArea(.container, edges: .top)
         .frame(minWidth: 1080, minHeight: 680)
         .background {
             // ⌘= is what most keyboards send for "⌘+"; the menu item shows ⌘+.
-            Button("Zoom In") { editor.zoomIn() }
+            Button("Zoom In") { editor.activeEditor.zoomIn() }
                 .keyboardShortcut("=")
                 .opacity(0)
                 .allowsHitTesting(false)
@@ -55,38 +63,20 @@ struct EditorView: View {
         .containerBackground(Theme.background, for: .window)
         .navigationTitle(title)
         .focusedSceneValue(\.editor, editor)
-        .sheet(item: $editor.clipDialog) { dialog in
-            ClipDialogView(editor: editor, dialog: dialog)
-        }
-        .onChange(of: AppSettings.shared.isMuted, initial: true) { _, muted in
-            editor.playback.setMuted(muted)
-        }
+        .editorSync(editor)
         .background(ScrollTabSwitcher(editor: editor))
         .background(BeforeKeyMonitor(editor: editor))
-        .alert(item: $editor.alert) { alert in
-            Alert(title: Text(alert.title), message: Text(alert.message))
-        }
         .onAppear {
             editor.store.undoManager = undoManager
-            editor.playback.update(with: editor.state, isLiveEdit: false)
+            editor.projectFileURL = documentConfiguration?.fileURL
             if let url = documentConfiguration?.fileURL { RecentProjects.note(url) }
         }
         .onDisappear {
             editor.playback.pause()
+            editor.playground?.deactivate()
         }
         .onChange(of: undoManager) { _, newValue in
             editor.store.undoManager = newValue
-        }
-        .onChange(of: editor.store.state) { _, state in
-            // Drop selections that no longer exist or became locked (after undo, delete, etc.).
-            let ids = editor.selectableClipIDs
-            if !editor.selection.isSubset(of: ids) { editor.selection.formIntersection(ids) }
-            editor.playback.update(with: state, isLiveEdit: editor.store.isLiveEditing)
-            editor.pruneKeyframeSelection()
-        }
-        .onChange(of: editor.selection) { editor.pruneKeyframeSelection() }
-        .onChange(of: editor.store.isLiveEditing) { _, isLive in
-            if !isLive { editor.playback.update(with: editor.state, isLiveEdit: false) }
         }
     }
 
@@ -127,7 +117,11 @@ struct EditorView: View {
                 ScopesPanel(editor: editor)
                     .frame(width: scopesWidth)
             }
-        case .playground, .export:
+        case .playground:
+            if let playground = editor.playground {
+                PlaygroundWorkspace(main: editor, session: playground)
+            }
+        case .export:
             WorkspacePlaceholder(workspace: editor.workspace)
         }
     }
