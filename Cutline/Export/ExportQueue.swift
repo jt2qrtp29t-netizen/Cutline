@@ -147,6 +147,15 @@ final class ExportQueue {
             job.framesDone = result.frames
             job.warnings = result.warnings
             job.status = .done
+            // Learn how fast exports run on this Mac, for the next estimate.
+            if let start = job.startDate {
+                let seconds = Date().timeIntervalSince(start)
+                let (w, h) = job.snapshot.settings.resolution.size(for: job.snapshot.state.settings)
+                let pixels = Double(w * h) / (1920 * 1080)
+                if seconds > 0.5, result.frames > 30 {
+                    ExportTimeEstimate.measured1080pFramesPerSecond = Double(result.frames) / seconds * pixels
+                }
+            }
         } catch ExportError.cancelled {
             job.status = .canceled
         } catch {

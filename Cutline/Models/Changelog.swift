@@ -18,6 +18,7 @@ enum Changelog {
             "Files are written to a temporary file first and only moved into place when complete. A Labs effect that fails is left out with a warning instead of stopping the export.",
             "An export queue that runs in the background from a frozen copy of the timeline, with progress, time remaining, Cancel (which removes the unfinished file), a notification when done, and no sleeping Mac mid-export. Quitting during an export asks first.",
             "Export the Playground too: its own settings, a “-playground” file name, and each variant alone or as separate files. Missing media or LUTs are flagged before starting.",
+            "The Export tab: source, range (whole timeline, in/out or selected clips) and presets on the left, the frame being exported in the middle, and settings, size and time estimates, Save As and the queue on the right. Show in Finder, Open and Add to Media when done.",
         ]),
         Entry(version: "3.2", title: "Playground tab", changes: [
             "A sandbox for experiments: the Playground has its own timeline, undo history, selection and preview, and nothing in it can change your project.",

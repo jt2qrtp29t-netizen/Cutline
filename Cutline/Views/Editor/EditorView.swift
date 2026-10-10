@@ -38,7 +38,7 @@ struct EditorView: View {
                 }
             PanelDivider(axis: .horizontal, size: $timelineHeight, range: 180...640, direction: -1)
             // The Playground has its own scratch timeline.
-            if editor.workspace == .playground, let playground = editor.playground {
+            if editor.showsPlaygroundTimeline, let playground = editor.playground {
                 TimelinePanel(editor: playground.editor)
                     .id(ObjectIdentifier(playground.editor))
                     .frame(height: timelineHeight)
@@ -122,7 +122,7 @@ struct EditorView: View {
                 PlaygroundWorkspace(main: editor, session: playground)
             }
         case .export:
-            WorkspacePlaceholder(workspace: editor.workspace)
+            ExportWorkspace(editor: editor)
         }
     }
 }

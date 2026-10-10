@@ -147,38 +147,3 @@ struct WorkspaceTabBar: View {
     }
 }
 
-/// Stand-in for workspaces that aren't built yet.
-struct WorkspacePlaceholder: View {
-    let workspace: Workspace
-
-    private var message: String {
-        switch workspace {
-        case .color: "Color grading tools will live here."
-        case .playground: "A space for experiments will live here."
-        case .export: "Exporting your timeline to a movie will live here."
-        default: ""
-        }
-    }
-
-    var body: some View {
-        VStack(spacing: 10) {
-            Image(systemName: workspace.symbolName)
-                .font(.system(size: 34, weight: .light))
-                .foregroundStyle(Theme.textTertiary)
-            Text(workspace.title)
-                .font(.system(size: 16, weight: .semibold))
-                .foregroundStyle(Theme.textSecondary)
-            Text(message)
-                .font(.system(size: 12))
-                .foregroundStyle(Theme.textTertiary)
-            Text("Coming soon")
-                .font(.system(size: 10, weight: .semibold))
-                .foregroundStyle(Theme.textOnAccent)
-                .padding(.horizontal, 8)
-                .padding(.vertical, 2)
-                .background(Theme.accent, in: .capsule)
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Theme.recessed)
-    }
-}

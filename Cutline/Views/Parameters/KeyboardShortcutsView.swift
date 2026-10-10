@@ -22,7 +22,7 @@ enum ShortcutList {
             Item(keys: "⌘O", action: "Open…"),
             Item(keys: "⌘S", action: "Save"),
             Item(keys: "⌘I", action: "Import Media…"),
-            Item(keys: "⇧⌘E", action: "Export…"),
+            Item(keys: "⇧⌘E", action: "Export… (opens the Export tab)"),
             Item(keys: "⌘W", action: "Close Window"),
             Item(keys: "⌘,", action: "Parameters…"),
             Item(keys: "⌘/", action: "Keyboard Shortcuts"),

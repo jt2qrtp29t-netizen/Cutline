@@ -40,12 +40,13 @@ final class EditorController {
     var workspace: Workspace = .edit {
         didSet {
             guard !isSandbox, workspace != oldValue else { return }
-            if workspace == .playground {
+            let wasPlayground = oldValue == .playground || (oldValue == .export && exportSource == .playground)
+            if showsPlaygroundTimeline {
                 // Only one preview plays at a time.
                 playback.pause()
                 isHoldingBefore = false
                 _ = ensurePlayground()
-            } else if oldValue == .playground {
+            } else if wasPlayground {
                 playground?.deactivate()
             }
         }
@@ -63,9 +64,23 @@ final class EditorController {
     /// Where Playgrounds are saved (tests use a temporary folder).
     @ObservationIgnored var playgroundFolder = PlaygroundFile.folder
 
-    /// The editor that commands act on: the Playground's while its tab is showing.
+    /// The timeline the Export tab exports.
+    var exportSource: ExportSource = .edit {
+        didSet {
+            if exportSource == .playground { _ = ensurePlayground() }
+            // Only the source being looked at plays.
+            if exportSource != oldValue { (oldValue == .edit ? playback : playground?.editor.playback)?.pause() }
+        }
+    }
+
+    /// Whether the Playground's timeline is the one on screen.
+    var showsPlaygroundTimeline: Bool {
+        workspace == .playground || (workspace == .export && exportSource == .playground)
+    }
+
+    /// The editor that commands act on: the Playground's while its timeline is showing.
     var activeEditor: EditorController {
-        workspace == .playground ? (playground?.editor ?? self) : self
+        showsPlaygroundTimeline ? (playground?.editor ?? self) : self
     }
 
     /// Opens (or creates) this project's Playground.
@@ -625,14 +640,6 @@ final class EditorController {
 
     func beginAdjustment() { store.beginLiveEdit() }
     func endAdjustment(_ actionName: String) { store.commitLiveEdit(actionName) }
-
-    // MARK: Export
-
-    /// Export is out of scope for now; the menu item exists so the flow is discoverable.
-    func showExportPlaceholder() {
-        alert = EditorAlert(title: "Export isn’t available yet",
-                            message: "Exporting the timeline to a movie file will arrive in a future version.")
-    }
 
     // MARK: Tracks
 

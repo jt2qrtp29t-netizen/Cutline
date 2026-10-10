@@ -46,7 +46,7 @@ struct CutlineCommands: Commands {
         }
 
         CommandGroup(replacing: .importExport) {
-            Button("Export…") { target?.showExportPlaceholder() }
+            Button("Export…") { editor?.workspace = .export }
                 .keyboardShortcut("e", modifiers: [.command, .shift])
                 .disabled(editor == nil)
         }
