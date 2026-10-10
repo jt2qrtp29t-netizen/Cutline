@@ -8,6 +8,16 @@ struct KeyframeRef: Hashable {
 }
 
 /// The workspaces in the tab bar under the title bar.
+extension EditorController {
+    /// Moves to the tab `step` places to the right (negative: left), stopping at the ends.
+    func switchWorkspace(by step: Int) {
+        let all = Workspace.allCases
+        guard let index = all.firstIndex(of: workspace) else { return }
+        let next = (index + step).clamped(to: 0...(all.count - 1))
+        if next != index { workspace = all[next] }
+    }
+}
+
 enum Workspace: String, CaseIterable, Identifiable {
     case edit, effects, color, playground, export
 

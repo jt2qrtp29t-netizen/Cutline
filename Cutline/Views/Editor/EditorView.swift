@@ -59,6 +59,7 @@ struct EditorView: View {
         .onChange(of: AppSettings.shared.isMuted, initial: true) { _, muted in
             editor.playback.setMuted(muted)
         }
+        .background(ScrollTabSwitcher(editor: editor))
         .alert(item: $editor.alert) { alert in
             Alert(title: Text(alert.title), message: Text(alert.message))
         }

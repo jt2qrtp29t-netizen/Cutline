@@ -155,16 +155,35 @@ final class EditorController {
     /// playhead is being dragged; the timeline auto-scrolls when it nears an edge.
     var playheadDragX: CGFloat?
 
+    /// Where an Option (frame-by-frame) drag started: pointer position and playhead time.
+    @ObservationIgnored private var fineScrubAnchor: (x: CGFloat, time: Time)?
+    var isFineScrubbing: Bool { fineScrubAnchor != nil }
+    /// Pointer travel per frame while Option-dragging, whatever the zoom.
+    static let fineScrubPointsPerFrame: CGFloat = 10
+
     /// Drags the playhead. `viewportX` is the pointer relative to the visible area,
-    /// `contentX` its position on the timeline.
-    func dragPlayhead(viewportX: CGFloat, contentX: CGFloat, layout: TimelineLayout) {
+    /// `contentX` its position on the timeline. Holding Option moves the playhead one
+    /// frame per few points of pointer travel instead of following the pointer.
+    func dragPlayhead(viewportX: CGFloat, contentX: CGFloat, layout: TimelineLayout,
+                      modifiers: NSEvent.ModifierFlags = NSEvent.modifierFlags) {
         if playheadDragX == nil { endTextEditing() }
         playheadDragX = viewportX
-        scrub(to: layout.time(forX: contentX), layout: layout)
+        guard modifiers.contains(.option) else {
+            fineScrubAnchor = nil
+            scrub(to: layout.time(forX: contentX), layout: layout)
+            return
+        }
+        if playback.isPlaying { playback.pause() }
+        let anchor = fineScrubAnchor ?? (contentX, playback.currentTime.snappedToFrame(fps: fps))
+        fineScrubAnchor = anchor
+        let frames = Int(((contentX - anchor.x) / Self.fineScrubPointsPerFrame).rounded(.towardZero))
+        let target = anchor.time + Time(seconds: Double(frames) / Double(fps))
+        playback.seek(to: max(target, .zero).snappedToFrame(fps: fps), audible: true)
     }
 
     func endPlayheadDrag() {
         playheadDragX = nil
+        fineScrubAnchor = nil
     }
 
     // MARK: Clip gestures

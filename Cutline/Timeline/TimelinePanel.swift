@@ -82,6 +82,8 @@ struct TimelinePanel: View {
         .onChange(of: editor.pixelsPerSecond) { oldValue, newValue in
             keepAnchorInPlace(oldPixelsPerSecond: oldValue, newPixelsPerSecond: newValue)
         }
+        // Horizontal scrolling here scrolls the timeline instead of switching tabs.
+        .horizontalScrollZone()
         .task(id: editor.playheadDragX != nil) {
             await autoScrollWhileDraggingPlayhead()
         }
@@ -99,7 +101,8 @@ struct TimelinePanel: View {
             } else if pointer < edge, visibleRect.minX > 0 {
                 step = -min((edge - pointer) * 0.4 + 3, 80)
             }
-            if step != 0 {
+            // Frame-by-frame (Option) dragging moves the playhead relative to the pointer.
+            if step != 0, !editor.isFineScrubbing {
                 let originX = max(0, visibleRect.minX + step)
                 scrubExtent = max(scrubExtent, layout.time(forX: originX + width))
                 scrollPosition.scrollTo(x: originX)
