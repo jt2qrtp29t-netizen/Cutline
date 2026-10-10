@@ -52,6 +52,8 @@ final class EditorController {
     }
     /// True for the Playground's editor, which works on scratch state only.
     @ObservationIgnored var isSandbox = false
+    /// For the Playground's editor: the project editor it belongs to.
+    @ObservationIgnored weak var owner: EditorController?
     /// Which adjustments the Playground's left panel shows.
     var sandboxPanel: SandboxPanel = .adjust
     /// This project's Playground, created the first time it's needed.
@@ -71,6 +73,7 @@ final class EditorController {
         if let playground { return playground }
         let key = PlaygroundFile.key(projectID: state.id, fileURL: projectFileURL)
         let session = PlaygroundSession(key: key, projectSettings: state.settings, folder: playgroundFolder)
+        session.editor.owner = self
         playground = session
         return session
     }

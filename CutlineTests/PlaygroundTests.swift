@@ -124,3 +124,95 @@ import Testing
         #expect(!playground.editor.playback.isPlaying && !playground.editor.playback.providesFrames)
     }
 }
+
+@MainActor struct SendAndPromoteTests {
+    @Test func sentClipsAreIndependentSnapshots() {
+        let (editor, undo, original) = PlaygroundTests.makeProject()
+        editor.sendToPlayground([original.id])
+        let playground = editor.playground!
+        #expect(editor.workspace == .playground)
+        let copy = playground.editor.state.allClips.first!
+        #expect(copy.id != original.id && copy.color == original.color, "a copy with its own ID and the same look")
+        #expect(playground.origins[copy.id] == original.id)
+        #expect(!undo.canUndo, "sending doesn't touch the project's history")
+
+        // Editing the copy leaves the original alone.
+        playground.editor.store.edit("Grade") { $0.updateClip(copy.id) { $0.color.gain.master = -0.7 } }
+        #expect(editor.state.clip(original.id)!.color.gain.master == 0.2)
+
+        // Deleting the original (or its whole track) doesn't affect the copy.
+        PlaygroundTests.step(undo) { editor.selection = [original.id]; editor.deleteSelection() }
+        #expect(playground.editor.state.clip(copy.id)?.color.gain.master == -0.7)
+        #expect(playground.editor.originalInProject(of: copy.id) == nil)
+        PlaygroundTests.step(undo) { editor.deleteTrack(at: 0) }
+        #expect(playground.editor.state.clip(copy.id) != nil)
+    }
+
+    @Test func linkedClipsAndMediaTravelTogether() {
+        var state = ProjectState()
+        let media = MediaItem(id: UUID(), name: "m", path: "/tmp/m.mov", duration: Time(seconds: 10), width: 1920, height: 1080,
+                              frameRate: 30, hasVideo: true, hasAudio: true)
+        state.media = [media]
+        let link = UUID()
+        var video = Clip(id: UUID(), mediaID: media.id, name: "v", start: Time(seconds: 2), duration: Time(seconds: 3), sourceStart: .zero)
+        var audio = video
+        audio.id = UUID()
+        video.linkID = link
+        audio.linkID = link
+        state.tracks[0].clips = [video]
+        state.tracks[1].clips = [audio]
+        let editor = EditorController(store: ProjectStore(state: state))
+        editor.playgroundFolder = FileManager.default.temporaryDirectory.appendingPathComponent("pg-\(UUID().uuidString)")
+        editor.sendToPlayground([video.id])
+        let scratch = editor.playground!.editor.state
+        #expect(scratch.allClips.count == 2 && scratch.media.map(\.id) == [media.id])
+        let copies = scratch.allClips
+        #expect(copies[0].linkID != nil && copies[0].linkID == copies[1].linkID && copies[0].linkID != link)
+        #expect(copies.allSatisfy { $0.start == .zero }, "placed at the start of an empty Playground")
+    }
+
+    @Test func promotingAddsANewClipAsOneUndoStep() {
+        let (editor, undo, original) = PlaygroundTests.makeProject()
+        editor.sendToPlayground([original.id])
+        let sandbox = editor.playground!.editor
+        let copy = sandbox.state.allClips[0]
+        sandbox.store.edit("Tweak") { $0.updateClip(copy.id) { $0.transform.scale = 1.5 } }
+
+        editor.playback.seek(to: Time(seconds: 1))   // overlaps the original on V1
+        let clipsBefore = editor.state.allClips.count
+        PlaygroundTests.step(undo) { sandbox.promoteToEdit([copy.id]) }
+        #expect(editor.state.allClips.count == clipsBefore + 1)
+        let promoted = editor.state.allClips.first { $0.id != original.id }!
+        #expect(promoted.transform.scale == 1.5 && promoted.start == Time(seconds: 1))
+        #expect(editor.state.track(ofClip: promoted.id)?.id != editor.state.track(ofClip: original.id)?.id,
+                "a new track rather than overwriting the original")
+        #expect(editor.workspace == .edit && editor.selection == [promoted.id])
+        #expect(editor.state.clip(original.id)!.transform.scale == 1, "the original isn't touched")
+        undo.undo()
+        #expect(editor.state.allClips.count == clipsBefore && !undo.canUndo, "one undo step")
+    }
+
+    @Test func applyingSettingsKeepsTheTargetsFootageAndTiming() {
+        let (editor, undo, original) = PlaygroundTests.makeProject()
+        editor.sendToPlayground([original.id])
+        let sandbox = editor.playground!.editor
+        let copy = sandbox.state.allClips[0]
+        sandbox.store.edit("Tweak") { state in
+            state.updateClip(copy.id) { clip in
+                clip.color.offset.master = 0.3
+                clip.opacity = 0.5
+                clip.duration = Time(seconds: 1)   // timing changes stay in the Playground
+                clip.animation.setKeyframe(.rotation, at: .zero, value: 0)
+                clip.animation.setKeyframe(.rotation, at: Time(seconds: 3), value: 90)
+                clip.animation.setKeyframe(.rotation, at: Time(seconds: 9), value: 0)   // beyond the original's end
+            }
+        }
+        PlaygroundTests.step(undo) { sandbox.applySettingsToProject(from: copy.id, onto: original.id) }
+        let updated = editor.state.clip(original.id)!
+        #expect(updated.color.offset.master == 0.3 && updated.opacity == 0.5)
+        #expect(updated.duration == Time(seconds: 4) && updated.mediaID == original.mediaID, "footage and timing kept")
+        #expect(updated.animation.keyframes(for: .rotation).count == 2)
+        undo.undo()
+        #expect(editor.state.clip(original.id) == original)
+    }
+}

@@ -89,6 +89,17 @@ struct CutlineCommands: Commands {
             Button("Lock / Unlock Clips") { target?.toggleLockSelection() }
                 .keyboardShortcut("l", modifiers: [.command, .shift])
                 .disabled(editor == nil)
+            Button("Send to Playground") { editor?.sendToPlayground(editor?.selection ?? []) }
+                .disabled(editor == nil)
+            Button("Promote to Edit") {
+                if let sandbox = editor?.playground?.editor, editor?.workspace == .playground {
+                    sandbox.promoteToEdit(sandbox.selection)
+                } else {
+                    NSSound.beep()
+                }
+            }
+            .disabled(editor == nil)
+            Divider()
             Button("Copy Grade") { target?.copyGrade() }
                 .keyboardShortcut("c", modifiers: [.command, .option])
                 .disabled(editor == nil)

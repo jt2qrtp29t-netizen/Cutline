@@ -88,6 +88,10 @@ nonisolated struct Clip: Identifiable, Codable, Hashable, Sendable {
     var text: TextStyle?
     /// Keyframes for animated parameters.
     var animation = ClipAnimation()
+    /// Labs experiments applied to the clip, in order.
+    var labs: [LabEffect] = []
+    /// Set for generator clips, which draw a Labs generator instead of a media file.
+    var generator: LabEffect?
 
     init(id: UUID, mediaID: UUID, name: String, start: Time, duration: Time, sourceStart: Time) {
         self.id = id
@@ -122,6 +126,8 @@ nonisolated struct Clip: Identifiable, Codable, Hashable, Sendable {
         isSoloed = try c.decodeIfPresent(Bool.self, forKey: .isSoloed) ?? false
         text = try c.decodeIfPresent(TextStyle.self, forKey: .text)
         animation = try c.decodeIfPresent(ClipAnimation.self, forKey: .animation) ?? ClipAnimation()
+        labs = try c.decodeIfPresent([LabEffect].self, forKey: .labs) ?? []
+        generator = try c.decodeIfPresent(LabEffect.self, forKey: .generator)
 
         // Older files stored one end position per axis: load it as a two-keyframe
         // animation from the clip's first frame to its last.

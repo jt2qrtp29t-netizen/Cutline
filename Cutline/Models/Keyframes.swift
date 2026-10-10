@@ -224,7 +224,13 @@ nonisolated struct ClipAnimation: Codable, Hashable, Sendable {
     /// Before the first keyframe it holds the first value; after the last, the last.
     func value(of property: AnimatableProperty, atOffset offset: Time) -> Double? {
         let frames = keyframes(for: property)
-        guard let first = frames.first, let last = frames.last else { return nil }
+        guard !frames.isEmpty else { return nil }
+        return Self.interpolate(frames, atOffset: offset)
+    }
+
+    /// The value of sorted keyframes at an offset (shared with Labs parameters).
+    static func interpolate(_ frames: [Keyframe], atOffset offset: Time) -> Double {
+        guard let first = frames.first, let last = frames.last else { return 0 }
         if offset <= first.time { return first.value }
         if offset >= last.time { return last.value }
         for (a, b) in zip(frames, frames.dropFirst()) where offset >= a.time && offset <= b.time {

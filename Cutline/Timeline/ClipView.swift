@@ -197,6 +197,8 @@ private struct ClipContextMenu: View {
 
     var body: some View {
         let targets = editor.contextTargets(for: clip.id)
+        PlaygroundClipMenuItems(editor: editor, clip: clip, targets: targets)
+        Divider()
         if !clip.isText, let media = editor.state.mediaItem(clip.mediaID), editor.isOffline(media) {
             Button("Relink “\(media.name)”…") { editor.relinkMedia(media.id) }
             Divider()
@@ -416,6 +418,36 @@ private struct Filmstrip: View {
             let source = ThumbnailCache.quantize(clip.sourceTime(at: timelineTime), step: step)
                 .clamped(.zero, max(lastFrame, .zero))
             return Tile(x: x, request: .init(mediaID: media.id, url: url, time: source))
+        }
+    }
+}
+
+/// Send to Playground (in Edit), or Promote to Edit and Apply Settings (in the Playground).
+private struct PlaygroundClipMenuItems: View {
+    let editor: EditorController
+    let clip: Clip
+    let targets: Set<UUID>
+
+    var body: some View {
+        if editor.isSandbox {
+            Button("Promote to Edit as New Clip") { editor.promoteToEdit(targets) }
+            if let original = editor.originalInProject(of: clip.id) {
+                Button("Apply Settings to “\(original.name)” in Edit") {
+                    editor.applySettingsToProject(from: clip.id, onto: original.id)
+                }
+            } else {
+                Button("Apply Settings to Original in Edit") {}
+                    .disabled(true)
+            }
+            if let selected = editor.selectedClipInProject {
+                Button("Apply Settings to Selected Edit Clip (“\(selected.name)”)") {
+                    editor.applySettingsToProject(from: clip.id, onto: selected.id)
+                }
+            }
+        } else {
+            Button(targets.count > 1 ? "Send \(targets.count) Clips to Playground" : "Send to Playground") {
+                editor.sendToPlayground(targets)
+            }
         }
     }
 }

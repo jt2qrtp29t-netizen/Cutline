@@ -92,6 +92,7 @@ struct PlaygroundSidePanel: View {
                             .foregroundStyle(Theme.offlineBadge)
                             .fixedSize(horizontal: false, vertical: true)
                     }
+                    PromoteSection(session: session)
                     InspectorSection(title: "About") {
                         Text("Experiment freely here: this timeline, its undo history and everything on it are separate from your project. Right-click clips in Edit and choose Send to Playground to bring copies in.")
                             .font(.system(size: 11))
@@ -107,6 +108,47 @@ struct PlaygroundSidePanel: View {
             Button("Reset Playground", role: .destructive) { session.reset() }
         } message: {
             Text("This clears the scratch timeline, its variants, snapshots and Labs settings. Your project isn’t affected. This can’t be undone.")
+        }
+    }
+}
+
+/// Taking the selected Playground clips back to the project — always on request.
+private struct PromoteSection: View {
+    let session: PlaygroundSession
+    private var sandbox: EditorController { session.editor }
+
+    var body: some View {
+        let selected = sandbox.selectedClips
+        InspectorSection(title: "Promote to Edit") {
+            if let clip = selected.first {
+                Button(selected.count == 1 ? "Add “\(clip.name)” to Edit as a New Clip" : "Add \(selected.count) Clips to Edit") {
+                    sandbox.promoteToEdit(sandbox.selection)
+                }
+                .controlSize(.small)
+                if selected.count == 1 {
+                    let original = sandbox.originalInProject(of: clip.id)
+                    Button(original.map { "Apply Settings to “\($0.name)” in Edit" } ?? "Apply Settings to Original (not in Edit)") {
+                        if let original { sandbox.applySettingsToProject(from: clip.id, onto: original.id) }
+                    }
+                    .controlSize(.small)
+                    .disabled(original == nil)
+                    if let target = sandbox.selectedClipInProject, target.id != original?.id {
+                        Button("Apply Settings to “\(target.name)” (selected in Edit)") {
+                            sandbox.applySettingsToProject(from: clip.id, onto: target.id)
+                        }
+                        .controlSize(.small)
+                    }
+                }
+                Text("New clips go at Edit’s playhead. Applying settings copies position, crop, opacity, grade, keyframes and Labs effects, and keeps the Edit clip’s footage and timing. Either is one step you can undo in Edit.")
+                    .font(.system(size: 10))
+                    .foregroundStyle(Theme.textTertiary)
+                    .fixedSize(horizontal: false, vertical: true)
+            } else {
+                Text("Select a clip in the Playground timeline to bring it, or its settings, into your project.")
+                    .font(.system(size: 11))
+                    .foregroundStyle(Theme.textTertiary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         }
     }
 }
