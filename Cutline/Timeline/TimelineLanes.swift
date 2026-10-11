@@ -80,6 +80,25 @@ struct TimelineLanes: View {
                 .offset(x: x, y: placed.row.y)
             }
 
+            // Caption tracks show their captions (worked out from the transcripts).
+            ForEach(layout.rows.filter { $0.kind == .caption }, id: \.trackID) { row in
+                let window = renderWindow
+                let isActive = editor.state.isTrackActive(row.trackIndex)
+                ForEach(editor.state.captions(onTrack: row.trackIndex).filter {
+                    layout.x(for: $0.end) >= window.lowerBound && layout.x(for: $0.start) <= window.upperBound
+                }) { caption in
+                    CaptionBlock(caption: caption)
+                        .frame(width: max(layout.width(for: caption.end - caption.start), 2), height: row.height)
+                        .opacity(isActive ? 1 : 0.45)
+                        .offset(x: layout.x(for: caption.start), y: row.y)
+                        .onTapGesture {
+                            editor.playback.pause()
+                            editor.playback.seek(to: caption.start)
+                        }
+                        .help(caption.text)
+                }
+            }
+
             // Transitions sit over the middle of their cut, on top of the clips.
             ForEach(layout.rows, id: \.trackID) { row in
                 let track = editor.state.tracks[row.trackIndex]
@@ -142,6 +161,24 @@ struct TimelineLanes: View {
 }
 
 /// Empty lane space: clicking deselects, dragging scrubs the playhead.
+/// One caption on a caption track: its words, in a block as long as it's on screen.
+private struct CaptionBlock: View {
+    let caption: Caption
+
+    var body: some View {
+        Text(caption.text)
+            .font(.system(size: 10, weight: .semibold))
+            .foregroundStyle(Theme.captionText)
+            .lineLimit(1)
+            .padding(.horizontal, 5)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+            .background(Theme.captionFill, in: .rect(cornerRadius: 4))
+            .overlay { RoundedRectangle(cornerRadius: 4).strokeBorder(Theme.captionBorder) }
+            .clipped()
+            .contentShape(.rect)
+    }
+}
+
 private struct LaneBackground: View {
     let editor: EditorController
     let layout: TimelineLayout
@@ -229,11 +266,13 @@ private struct DropGhost: View {
             case .video: Theme.clipGhost
             case .audio: Theme.audioClipGhost
             case .text: Theme.textClipGhost
+            case .caption: Theme.captionGhost
             }
             let ghostBorder = switch placement.kind {
             case .video: Theme.clipBorderSelected
             case .audio: Theme.audioClipBorderSelected
             case .text: Theme.textClipBorderSelected
+            case .caption: Theme.captionBorderSelected
             }
             if preview.isLocked {
                 Image(systemName: "lock.fill")

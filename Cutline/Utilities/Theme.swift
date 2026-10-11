@@ -104,6 +104,13 @@ enum Theme {
     static let textClipLabelStrip = Color(hex: 0x4F3B86)
     static let textClipGhost = Color(hex: 0x6E54B5).opacity(0.45)
 
+    // Caption tracks.
+    static let captionFill = Color(hex: 0xB8862E)
+    static let captionBorder = Color(hex: 0x96701F)
+    static let captionBorderSelected = Color(hex: 0xF2C46B)
+    static let captionText = Color(hex: 0xFFF6E3)
+    static let captionGhost = Color(hex: 0xB8862E).opacity(0.45)
+
     // MARK: Keyframes
 
     static let keyframe = Color(hex: 0xE8C547)
@@ -163,6 +170,7 @@ enum Theme {
         static let laneHeight: CGFloat = 64
         static let audioLaneHeight: CGFloat = 48
         static let textLaneHeight: CGFloat = 40
+        static let captionLaneHeight: CGFloat = 34
         static let titleBarHeight: CGFloat = 40
         /// Room for the window's close / minimize / zoom buttons.
         static let trafficLightInset: CGFloat = 78

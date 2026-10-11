@@ -714,7 +714,7 @@ final class EditorController {
     func toggleMute(trackAt index: Int) {
         guard state.tracks.indices.contains(index) else { return }
         let track = state.tracks[index]
-        let name = track.kind.isVisual ? (track.isMuted ? "Show Track" : "Hide Track")
+        let name = track.kind != .audio ? (track.isMuted ? "Show Track" : "Hide Track")
                                         : (track.isMuted ? "Unmute Track" : "Mute Track")
         store.edit(name) { $0.tracks[index].isMuted.toggle() }
     }

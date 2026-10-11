@@ -2,27 +2,35 @@ import Foundation
 
 nonisolated enum TrackKind: String, Codable, Sendable, CaseIterable {
     case video, audio, text
+    /// Captions worked out from transcripts (the track holds settings, not clips).
+    case caption
 
     var prefix: String {
         switch self {
         case .video: "V"
         case .audio: "A"
         case .text: "T"
+        case .caption: "CC"
         }
     }
 
-    var title: String { rawValue.capitalized }
+    var title: String { self == .caption ? "Captions" : rawValue.capitalized }
 
     var symbolName: String {
         switch self {
         case .video: "film"
         case .audio: "waveform"
         case .text: "textformat"
+        case .caption: "captions.bubble"
         }
     }
 
-    /// Video and text tracks draw into the picture; muting them hides them.
-    var isVisual: Bool { self != .audio }
+    /// Video and text tracks hold clips that draw into the picture; muting them hides them.
+    /// (Caption tracks draw too, but have no clips of their own.)
+    var isVisual: Bool { self == .video || self == .text }
+
+    /// Clips can be placed on the track (caption tracks are worked out, not edited clip by clip).
+    var holdsClips: Bool { self != .caption }
 }
 
 /// A video or audio track. Clips on one track never overlap and are kept sorted by start time.
@@ -44,6 +52,8 @@ nonisolated struct Track: Identifiable, Codable, Hashable, Sendable {
     var transitions: [Transition] = []
     /// Audio tracks: fader, pan and effects.
     var audio = TrackAudio.neutral
+    /// Caption tracks: what they caption, how words are grouped, and their style.
+    var captions: CaptionSettings?
 
     static let heightRange: ClosedRange<Double> = 32...220
 
@@ -68,6 +78,8 @@ nonisolated struct Track: Identifiable, Codable, Hashable, Sendable {
         clips = try c.decodeIfPresent([Clip].self, forKey: .clips) ?? []
         transitions = try c.decodeIfPresent([Transition].self, forKey: .transitions) ?? []
         audio = try c.decodeIfPresent(TrackAudio.self, forKey: .audio) ?? .neutral
+        captions = try c.decodeIfPresent(CaptionSettings.self, forKey: .captions)
+        if kind == .caption && captions == nil { captions = CaptionSettings() }
     }
 
     mutating func sortClips() {

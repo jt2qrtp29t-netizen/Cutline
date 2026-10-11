@@ -282,6 +282,7 @@ private struct TrackHeaderContent: View {
         case .video: Theme.Metrics.laneHeight
         case .audio: Theme.Metrics.audioLaneHeight
         case .text: Theme.Metrics.textLaneHeight
+        case .caption: Theme.Metrics.captionLaneHeight
         }
     }
 
@@ -328,12 +329,12 @@ private struct TrackHeaderContent: View {
     }
 
     private var muteTitle: String {
-        track.kind.isVisual ? (track.isMuted ? "Show Track" : "Hide Track") : (track.isMuted ? "Unmute" : "Mute")
+        track.kind != .audio ? (track.isMuted ? "Show Track" : "Hide Track") : (track.isMuted ? "Unmute" : "Mute")
     }
 
     private var buttons: some View {
         HStack(spacing: 1) {
-            if track.kind.isVisual {
+            if track.kind != .audio {
                 TrackToggle(systemImage: track.isMuted ? "eye.slash.fill" : "eye", isOn: track.isMuted,
                             tint: Theme.mutedTrack, help: muteTitle) { editor.toggleMute(trackAt: index) }
             } else {

@@ -27,25 +27,28 @@ nonisolated struct TimelineLayout: Sendable {
     private(set) var rows: [Row] = []
     private(set) var zones: [NewTrackZone] = []
     private(set) var lanesHeight: CGFloat = 0
-    private let metrics: (video: CGFloat, audio: CGFloat, text: CGFloat, spacing: CGFloat, zone: CGFloat)
+    private let metrics: (video: CGFloat, audio: CGFloat, text: CGFloat, caption: CGFloat, spacing: CGFloat, zone: CGFloat)
 
     init(pixelsPerSecond: Double, tracks: [Track],
-         videoHeight: CGFloat = 64, audioHeight: CGFloat = 48, textHeight: CGFloat = 40,
+         videoHeight: CGFloat = 64, audioHeight: CGFloat = 48, textHeight: CGFloat = 40, captionHeight: CGFloat = 34,
          spacing: CGFloat = 2, zoneHeight: CGFloat = 22) {
         self.pixelsPerSecond = pixelsPerSecond
-        metrics = (videoHeight, audioHeight, textHeight, spacing, zoneHeight)
+        metrics = (videoHeight, audioHeight, textHeight, captionHeight, spacing, zoneHeight)
         var y: CGFloat = 0
         for kind in TrackKind.allCases {
             let defaultHeight = switch kind {
             case .video: videoHeight
             case .audio: audioHeight
             case .text: textHeight
+            case .caption: captionHeight
             }
             for index in tracks.indices where tracks[index].kind == kind {
                 let height = tracks[index].height.map { CGFloat($0) } ?? defaultHeight
                 rows.append(Row(trackIndex: index, trackID: tracks[index].id, kind: kind, y: y, height: height))
                 y += height + spacing
             }
+            // Caption tracks are added from the Captions tab, not by dropping clips.
+            guard kind.holdsClips else { continue }
             zones.append(NewTrackZone(kind: kind, y: y, height: zoneHeight))
             y += zoneHeight + spacing
         }
@@ -56,7 +59,7 @@ nonisolated struct TimelineLayout: Sendable {
     /// against the state at the start of a gesture).
     func with(tracks: [Track]) -> TimelineLayout {
         TimelineLayout(pixelsPerSecond: pixelsPerSecond, tracks: tracks, videoHeight: metrics.video,
-                       audioHeight: metrics.audio, textHeight: metrics.text,
+                       audioHeight: metrics.audio, textHeight: metrics.text, captionHeight: metrics.caption,
                        spacing: metrics.spacing, zoneHeight: metrics.zone)
     }
 

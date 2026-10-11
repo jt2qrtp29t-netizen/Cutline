@@ -65,3 +65,35 @@ extension EditorController {
         while transcriptionTask != nil { try? await Task.sleep(for: .milliseconds(50)) }
     }
 }
+
+// MARK: Caption tracks
+
+extension EditorController {
+    var captionTrackIndices: [Int] { state.trackIndices(of: .caption) }
+
+    /// Adds a caption track captioning every audio track; returns its ID.
+    @discardableResult
+    func addCaptionTrack() -> UUID? {
+        var id: UUID?
+        store.edit("Add Caption Track") { state in
+            let index = state.appendCaptionTrack()
+            id = state.tracks[index].id
+        }
+        return id
+    }
+
+    /// Changes a caption track's settings (inside a begin/end pair it's one live change).
+    func adjustCaptions(_ trackID: UUID, actionName: String, _ body: @escaping (inout CaptionSettings) -> Void) {
+        guard let index = state.tracks.firstIndex(where: { $0.id == trackID }), state.tracks[index].captions != nil,
+              !state.tracks[index].isLocked else { return }
+        let apply: (inout ProjectState) -> Void = { state in
+            guard let i = state.tracks.firstIndex(where: { $0.id == trackID }), var settings = state.tracks[i].captions else { return }
+            body(&settings)
+            settings.maxWords = settings.maxWords.clamped(to: CaptionSettings.wordRange)
+            settings.maxDuration = settings.maxDuration.clamped(to: CaptionSettings.durationRange)
+            settings.pauseSplit = settings.pauseSplit.clamped(to: CaptionSettings.pauseRange)
+            state.tracks[i].captions = settings
+        }
+        if store.isLiveEditing { store.liveEdit(apply) } else { store.edit(actionName, apply) }
+    }
+}

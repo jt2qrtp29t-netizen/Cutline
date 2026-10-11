@@ -484,6 +484,7 @@ private struct TrimHandle: View {
         case .video: Theme.clipBorderSelected
         case .audio: Theme.audioClipBorderSelected
         case .text: Theme.textClipBorderSelected
+        case .caption: Theme.captionBorderSelected
         }
     }
 
