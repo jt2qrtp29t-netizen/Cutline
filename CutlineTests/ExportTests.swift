@@ -12,6 +12,21 @@ enum ExportProbe {
         return url
     }
 
+    /// The file's top-level boxes in order ("ftyp", "moov", "mdat"…).
+    static func topLevelBoxes(_ url: URL) throws -> [String] {
+        let data = try Data(contentsOf: url)
+        var offset = 0
+        var names: [String] = []
+        while offset + 8 <= data.count {
+            var size = data[offset..<offset + 4].reduce(0) { $0 << 8 | Int($1) }
+            names.append(String(decoding: data[offset + 4..<offset + 8], as: UTF8.self))
+            if size == 1 { size = data[offset + 8..<offset + 16].reduce(0) { $0 << 8 | Int($1) } }
+            if size == 0 { break }
+            offset += size
+        }
+        return names
+    }
+
     static func frameCount(_ url: URL) async throws -> Int {
         let asset = AVURLAsset(url: url)
         let track = try #require(try await asset.loadTracks(withMediaType: .video).first)
@@ -207,6 +222,65 @@ enum ExportProbe {
         let empty = ExportSnapshot(state: state, urls: [:], range: TimeRange(start: .zero, end: .zero), settings: ExportSettings())
         await #expect(throws: ExportError.emptyTimeline) { try await self.export(empty) }
         #expect(ExportSettings().timeRange(timelineDuration: state.duration, selection: []) == nil)
+    }
+
+    /// Regression: many frames rendering at once (several exports, or exporting while
+    /// playing) once exhausted the shared worker threads and froze every export.
+    @Test func manySimultaneousExportsAllFinish() async throws {
+        let (state, urls, clip) = try await sunsetProject(seconds: 1)
+        var graded = state
+        graded.updateClip(clip.id) { $0.color.saturation = 1.4 }
+        let snapshots = (0..<12).map { i in snapshot(i.isMultiple(of: 2) ? state : graded, urls: urls) }
+        let folder = ExportProbe.folder()
+        let finished = try await withThrowingTaskGroup(of: Int.self) { group in
+            for (i, snapshot) in snapshots.enumerated() {
+                group.addTask {
+                    try await ExportRunner.run(snapshot, to: folder.appendingPathComponent("many\(i).mp4"),
+                                               cancellation: ExportCancellation()) { _, _ in }.frames
+                }
+            }
+            // A deadline instead of hanging the whole test run.
+            group.addTask {
+                try await Task.sleep(for: .seconds(60))
+                return -1
+            }
+            var done = 0
+            for try await frames in group {
+                if frames < 0 { break }
+                #expect(frames == 30)
+                done += 1
+                if done == snapshots.count { break }
+            }
+            group.cancelAll()
+            return done
+        }
+        #expect(finished == 12, "every export finished")
+    }
+
+    @Test func networkOptimizationPutsTheIndexFirst() async throws {
+        let toneURL = FileManager.default.temporaryDirectory.appendingPathComponent("tone-\(UUID()).wav")
+        try PlaybackTests.writeTone(to: toneURL, format: kAudioFormatLinearPCM, seconds: 1)
+        let tone = try await MediaImporter.makeItem(for: toneURL)
+        var (state, urls, _) = try await sunsetProject(seconds: 1)
+        state.media.append(tone)
+        TimelineEditing.place(tone, at: .zero, onTrack: state.trackIndices(of: .audio)[0], in: &state)
+        urls[tone.id] = toneURL
+        var settings = ExportPreset.quickPreview.applied(to: ExportSettings())
+        settings.frameRate = 30
+        var optimizedFrame: CGImage?, plainFrame: CGImage?
+        for optimized in [true, false] {
+            settings.networkOptimized = optimized
+            let result = try await export(snapshot(state, urls: urls, settings: settings), name: "net\(optimized)")
+            let atoms = try ExportProbe.topLevelBoxes(result.url)
+            let moov = try #require(atoms.firstIndex(of: "moov")), mdat = try #require(atoms.firstIndex(of: "mdat"))
+            #expect((moov < mdat) == optimized, "\(atoms)")
+            // Moving the index keeps every frame and sample where it belongs.
+            #expect(try await ExportProbe.frameCount(result.url) == 30)
+            #expect(try await ExportProbe.audioLevel(result.url) > 0.001)
+            if optimized { optimizedFrame = try await ExportProbe.frame(result.url, at: 0.6) }
+            else { plainFrame = try await ExportProbe.frame(result.url, at: 0.6) }
+        }
+        #expect(try ExportProbe.difference(try #require(optimizedFrame), try #require(plainFrame)) < 1)
     }
 
     @Test func writingIsAtomicAndCancelLeavesNothingBehind() async throws {

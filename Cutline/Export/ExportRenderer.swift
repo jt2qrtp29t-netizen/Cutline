@@ -36,6 +36,20 @@ nonisolated struct ExportSnapshot: Sendable {
     }
 }
 
+/// A thread of its own for an export's reading and writing. AVFoundation's sample
+/// providers wait for each sample synchronously, so on Swift's shared threads (one per
+/// core) a few exports at once could block all of them, including threads the samples
+/// they're waiting for need. A dedicated serial queue can wait without starving anything.
+nonisolated final class ExportThread: TaskExecutor {
+    private let queue = DispatchQueue(label: "app.cutline.export", qos: .userInitiated)
+
+    func enqueue(_ job: consuming ExecutorJob) {
+        let job = UnownedJob(job)
+        let executor = asUnownedTaskExecutor()
+        queue.async { job.runSynchronously(on: executor) }
+    }
+}
+
 /// Stops a running export from any thread.
 nonisolated final class ExportCancellation: @unchecked Sendable {
     private let lock = NSLock()
@@ -120,6 +134,8 @@ nonisolated enum ExportRenderer {
         do { writer = try AVAssetWriter(outputURL: output, fileType: fileType) } catch {
             throw ExportError.setupFailed(error.localizedDescription)
         }
+        // Network optimization: the movie's index goes at the start of the file.
+        writer.shouldOptimizeForNetworkUse = settings.networkOptimized
         let (width, height) = settings.resolution.size(for: state.settings)
         let videoInput = AVAssetWriterInput(mediaType: .video, outputSettings: videoSettings(settings, width: width, height: height,
                                                                                             project: state.settings))
@@ -170,7 +186,8 @@ nonisolated enum ExportRenderer {
         let pipeline = Pipeline(readers: [reader] + (audioReader.map { [$0] } ?? []), writer: writer)
         let streams = Streams(video: video, audio: audioStream)
         do {
-            try await Task.detached {
+            // On the export's own thread: the providers wait for samples synchronously.
+            try await Task.detached(executorPreference: ExportThread()) {
                 var written = 0
                 func nextVideo() async throws -> (pixels: CVReadOnlyPixelBuffer, time: CMTime)? {
                     while written < total, let sample = try await streams.video.provider.next() {
@@ -258,7 +275,7 @@ nonisolated enum ExportRenderer {
                 AVVideoMaxKeyFrameIntervalKey: fps * 2,
             ]
             if settings.codec == .h264 { compression[AVVideoProfileLevelKey] = AVVideoProfileLevelH264HighAutoLevel }
-            if settings.hardwareEncoding && settings.fastEncoding {
+            if settings.usesFastEncoding {
                 compression[kVTCompressionPropertyKey_PrioritizeEncodingSpeedOverQuality as String] = true
             }
             result[AVVideoCompressionPropertiesKey] = compression
@@ -358,7 +375,16 @@ enum ExportAudioMixer {
         while done < total {
             if cancellation.isCancelled { throw ExportError.cancelled }
             let frames = AVAudioFrameCount(min(AVAudioFramePosition(chunk), total - done))
-            let status = try engine.renderOffline(frames, to: buffer)
+            // When the Mac is busy the players may not have read their files ahead yet;
+            // that's "try again", not an error.
+            var status = try engine.renderOffline(frames, to: buffer)
+            var retries = 0
+            while status == .cannotDoInCurrentContext && retries < 2_000 {
+                if cancellation.isCancelled { throw ExportError.cancelled }
+                Thread.sleep(forTimeInterval: 0.002)
+                status = try engine.renderOffline(frames, to: buffer)
+                retries += 1
+            }
             guard status == .success else { throw ExportError.writingFailed("the audio mix stopped early.") }
             try file.write(from: buffer)
             done += AVAudioFramePosition(buffer.frameLength)

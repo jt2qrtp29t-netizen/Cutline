@@ -111,5 +111,71 @@ struct ExportSettingsTests {
         json.removeValue(forKey: "fastEncoding")
         let old = try! JSONDecoder().decode(ExportSettings.self, from: JSONSerialization.data(withJSONObject: json))
         #expect(old.fastEncoding)
+        #expect(old.networkOptimized)
+
+        // The faster mode gets 20% more bitrate to keep the same quality, and only HEVC has it.
+        var hevc = ExportPreset.youTube4K.applied(to: ExportSettings())
+        let fastRate = hevc.videoBitrate(for: project)
+        hevc.fastEncoding = false
+        #expect(abs(fastRate / hevc.videoBitrate(for: project) - ExportSettings.fastEncodingBitrateFactor) < 0.001)
+        var h264 = ExportPreset.youTube1080.applied(to: ExportSettings())
+        h264.fastEncoding = true
+        #expect(!h264.usesFastEncoding && !asksForSpeed(h264))
+    }
+
+    @Test func timeEstimatesFollowTheEncoderAndTheWork() {
+        let project4K = ProjectSettings(name: "P", width: 3840, height: 2160, frameRate: 60)
+        var settings = ExportPreset.youTube4K.applied(to: ExportSettings())
+        func estimate(_ s: ExportSettings, complexity: Double = 1) -> Double {
+            ExportTimeEstimate.predicted(frames: 18_000, width: 3840, height: 2160, project: project4K,
+                                         encoder: .init(s), complexity: complexity)
+        }
+        // Five minutes of 4K60 HEVC: about three minutes in the faster mode, five without
+        // (measured on an M4), not half an hour.
+        #expect((150...210).contains(estimate(settings)), "\(estimate(settings))")
+        settings.fastEncoding = false
+        #expect((290...360).contains(estimate(settings)), "\(estimate(settings))")
+        settings.hardwareEncoding = false
+        #expect(estimate(settings) > 3_000, "software HEVC is far slower")
+        settings = ExportPreset.proRes.applied(to: ExportSettings())
+        #expect(estimate(settings) < estimate(ExportPreset.youTube4K.applied(to: ExportSettings())))
+        // Heavy frames make drawing the slower stage.
+        #expect(estimate(settings, complexity: 6) > estimate(settings) * 2)
+
+        // Complexity grows with layers, grades and Labs effects in the range.
+        let media = MediaItem(id: UUID(), name: "m", path: "/m.mov", duration: Time(seconds: 10), width: 3840, height: 2160, frameRate: 60, hasAudio: false)
+        var state = ProjectState(settings: project4K, videoTracks: 2, audioTracks: 0, textTracks: 0)
+        state.media = [media]
+        var clip = Clip(id: UUID(), mediaID: media.id, name: "A", start: .zero, duration: Time(seconds: 10), sourceStart: .zero)
+        state.tracks[0].clips = [clip]
+        let range = TimeRange(start: .zero, end: Time(seconds: 10))
+        let plain = ExportTimeEstimate.complexity(of: state, in: range)
+        clip.color.saturation = 1.3
+        clip.labs = [LabEffect(experimentID: "noise")]
+        state.tracks[0].clips = [clip]
+        let graded = ExportTimeEstimate.complexity(of: state, in: range)
+        clip.id = UUID()
+        state.tracks[1].clips = [clip]
+        let layered = ExportTimeEstimate.complexity(of: state, in: range)
+        #expect(plain < graded && graded < layered)
+        #expect(ExportTimeEstimate.complexity(of: state, in: TimeRange(start: Time(seconds: 20), end: Time(seconds: 30))) == 1)
+    }
+
+    @Test func estimatesLearnFromRealExports() throws {
+        let defaults = try #require(UserDefaults(suiteName: "cutline.tests.estimate"))
+        defer { defaults.removePersistentDomain(forName: "cutline.tests.estimate") }
+        ExportTimeEstimate.resetLearning(defaults: defaults)
+        #expect(ExportTimeEstimate.correction(for: .hevcFast, defaults: defaults) == 1)
+        // An export that took twice as long as predicted moves that encoder's estimates.
+        ExportTimeEstimate.learn(encoder: .hevcFast, predicted: 60, actual: 120, defaults: defaults)
+        #expect(ExportTimeEstimate.correction(for: .hevcFast, defaults: defaults) == 2)
+        ExportTimeEstimate.learn(encoder: .hevcFast, predicted: 60, actual: 60, defaults: defaults)
+        #expect(ExportTimeEstimate.correction(for: .hevcFast, defaults: defaults) == 1.5)
+        #expect(ExportTimeEstimate.correction(for: .proRes, defaults: defaults) == 1, "other encoders unaffected")
+        // Tiny exports (mostly overhead) and wild outliers can't throw it far off.
+        ExportTimeEstimate.learn(encoder: .h264, predicted: 0.4, actual: 1.5, defaults: defaults)
+        #expect(ExportTimeEstimate.correction(for: .h264, defaults: defaults) == 1)
+        ExportTimeEstimate.learn(encoder: .h264, predicted: 10, actual: 1_000, defaults: defaults)
+        #expect(ExportTimeEstimate.correction(for: .h264, defaults: defaults) == 4)
     }
 }

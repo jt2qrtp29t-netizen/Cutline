@@ -5,7 +5,13 @@ import CoreVideo
 /// Custom compositor that stacks every visible clip with Core Image, applying
 /// each clip's transform, opacity and color adjustments.
 nonisolated final class LayerCompositor: NSObject, AVVideoCompositing, @unchecked Sendable {
-    private let renderQueue = DispatchQueue(label: "app.cutline.compositor", qos: .userInteractive, attributes: .concurrent)
+    /// Frames render on a few serial lanes in turn, so several are drawn at once (much
+    /// faster exports). Lanes are dedicated serial queues rather than one concurrent
+    /// queue: a render waits for the GPU, and blocking the shared worker pool with many
+    /// renders at once can starve the work they wait on.
+    private let lanes = (0..<3).map { DispatchQueue(label: "app.cutline.compositor.\($0)", qos: .userInteractive) }
+    private let laneLock = NSLock()
+    private var nextLane = 0
     private let context = CIContext(options: [.cacheIntermediates: false])
     private let outputColorSpace = CGColorSpace(name: CGColorSpace.itur_709) ?? CGColorSpaceCreateDeviceRGB()
 
@@ -20,7 +26,11 @@ nonisolated final class LayerCompositor: NSObject, AVVideoCompositing, @unchecke
     func renderContextChanged(_ newRenderContext: AVVideoCompositionRenderContext) {}
 
     func startRequest(_ request: AVAsynchronousVideoCompositionRequest) {
-        renderQueue.async { [self] in
+        laneLock.lock()
+        let lane = lanes[nextLane]
+        nextLane = (nextLane + 1) % lanes.count
+        laneLock.unlock()
+        lane.async { [self] in
             do {
                 try render(request)
             } catch {

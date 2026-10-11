@@ -159,7 +159,7 @@ struct PlaybackTests {
         var remaining = Int(rate * seconds)
         while remaining > 0 {
             let frames = AVAudioFrameCount(min(4096, remaining))
-            _ = try engine.renderOffline(frames, to: buffer)
+            #expect(try engine.renderOfflineWhenReady(frames, to: buffer) == .success)
             let l = try #require(buffer.floatChannelData?[0]), r = try #require(buffer.floatChannelData?[1])
             for i in 0..<Int(buffer.frameLength) {
                 left += Double(l[i] * l[i])
@@ -330,7 +330,7 @@ struct PlaybackTests {
             var left = 0.0, right = 0.0
             let buffer = try #require(AVAudioPCMBuffer(pcmFormat: engine.manualRenderingFormat, frameCapacity: 4096))
             for _ in 0..<3 {
-                _ = try engine.renderOffline(4096, to: buffer)
+                _ = try engine.renderOfflineWhenReady(4096, to: buffer)
                 let l = try #require(buffer.floatChannelData?[0]), r = try #require(buffer.floatChannelData?[1])
                 for i in 0..<Int(buffer.frameLength) {
                     left += Double(l[i] * l[i])
@@ -362,7 +362,7 @@ struct PlaybackTests {
         var samples: [Float] = []
         for k in 0..<40 {
             renderer.scrub(state, at: Time(seconds: 0.2 + Double(k) * 0.016 * dragSpeed))
-            _ = try engine.renderOffline(block, to: buffer)
+            _ = try engine.renderOfflineWhenReady(block, to: buffer)
             let left = try #require(buffer.floatChannelData?[0])
             samples += UnsafeBufferPointer(start: left, count: Int(buffer.frameLength))
         }
@@ -392,7 +392,7 @@ struct PlaybackTests {
         var samples: [Float] = []
         for k in 0..<80 {
             renderer.scrub(state, at: Time(seconds: 0.3 + Double(k) * 0.01))
-            _ = try engine.renderOffline(block, to: buffer)
+            _ = try engine.renderOfflineWhenReady(block, to: buffer)
             let left = try #require(buffer.floatChannelData?[0])
             samples += UnsafeBufferPointer(start: left, count: Int(buffer.frameLength))
         }
@@ -424,7 +424,7 @@ struct PlaybackTests {
         // Holding the playhead still fades to silence.
         var tail: [Float] = []
         for _ in 0..<30 {
-            _ = try engine.renderOffline(block, to: buffer)
+            _ = try engine.renderOfflineWhenReady(block, to: buffer)
             let left = try #require(buffer.floatChannelData?[0])
             tail += UnsafeBufferPointer(start: left, count: Int(buffer.frameLength))
         }
@@ -542,5 +542,19 @@ struct PlaybackTests {
                                              bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
         context.draw(image, in: CGRect(x: -x, y: -(image.height - 1 - y), width: image.width, height: image.height))
         return (Int(data[0]), Int(data[1]), Int(data[2]))
+    }
+}
+
+extension AVAudioEngine {
+    /// Offline rendering, waiting while the players haven't read ahead yet (a busy Mac).
+    func renderOfflineWhenReady(_ frames: AVAudioFrameCount, to buffer: AVAudioPCMBuffer) throws -> AVAudioEngineManualRenderingStatus {
+        var status = try renderOffline(frames, to: buffer)
+        var retries = 0
+        while status == .cannotDoInCurrentContext && retries < 2_000 {
+            Thread.sleep(forTimeInterval: 0.002)
+            status = try renderOffline(frames, to: buffer)
+            retries += 1
+        }
+        return status
     }
 }

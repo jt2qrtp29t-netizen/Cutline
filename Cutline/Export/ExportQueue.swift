@@ -149,12 +149,13 @@ final class ExportQueue {
             job.status = .done
             // Learn how fast exports run on this Mac, for the next estimate.
             if let start = job.startDate {
-                let seconds = Date().timeIntervalSince(start)
-                let (w, h) = job.snapshot.settings.resolution.size(for: job.snapshot.state.settings)
-                let pixels = Double(w * h) / (1920 * 1080)
-                if seconds > 0.5, result.frames > 30 {
-                    ExportTimeEstimate.measured1080pFramesPerSecond = Double(result.frames) / seconds * pixels
-                }
+                let snapshot = job.snapshot
+                let (w, h) = snapshot.settings.resolution.size(for: snapshot.state.settings)
+                let encoder = ExportTimeEstimate.Encoder(snapshot.settings)
+                let predicted = ExportTimeEstimate.predicted(
+                    frames: result.frames, width: w, height: h, project: snapshot.state.settings, encoder: encoder,
+                    complexity: ExportTimeEstimate.complexity(of: snapshot.state, in: snapshot.range))
+                ExportTimeEstimate.learn(encoder: encoder, predicted: predicted, actual: Date().timeIntervalSince(start))
             }
         } catch ExportError.cancelled {
             job.status = .canceled

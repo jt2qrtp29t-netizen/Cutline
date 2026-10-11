@@ -104,8 +104,12 @@ nonisolated struct ExportSettings: Codable, Hashable, Sendable {
     /// 0...1: from small files to high quality (sets the bitrate for H.264 and HEVC).
     var quality = 0.6
     var hardwareEncoding = true
-    /// Lets the hardware encoder trade a little quality for much faster H.264/HEVC exports.
+    /// HEVC only: the hardware encoder's faster mode, with the bitrate raised to keep
+    /// the same quality (measured: about 1.9× faster for files about 20% larger).
     var fastEncoding = true
+    /// Puts the movie's index at the start of the file, so it can start playing while
+    /// it downloads (web, YouTube and social uploads).
+    var networkOptimized = true
     /// Audio: AAC.
     var audioBitrate = 192
     var audioSampleRate = 48_000
@@ -134,6 +138,7 @@ nonisolated struct ExportSettings: Codable, Hashable, Sendable {
         quality = try c.decodeIfPresent(Double.self, forKey: .quality) ?? d.quality
         hardwareEncoding = try c.decodeIfPresent(Bool.self, forKey: .hardwareEncoding) ?? d.hardwareEncoding
         fastEncoding = try c.decodeIfPresent(Bool.self, forKey: .fastEncoding) ?? d.fastEncoding
+        networkOptimized = try c.decodeIfPresent(Bool.self, forKey: .networkOptimized) ?? d.networkOptimized
         audioBitrate = try c.decodeIfPresent(Int.self, forKey: .audioBitrate) ?? d.audioBitrate
         audioSampleRate = try c.decodeIfPresent(Int.self, forKey: .audioSampleRate) ?? d.audioSampleRate
         audioChannels = try c.decodeIfPresent(Int.self, forKey: .audioChannels) ?? d.audioChannels
@@ -152,6 +157,11 @@ nonisolated struct ExportSettings: Codable, Hashable, Sendable {
 
     func frameRate(for project: ProjectSettings) -> Int { frameRate ?? project.frameRate }
 
+    /// Whether the faster hardware HEVC mode is in use.
+    var usesFastEncoding: Bool { codec == .hevc && hardwareEncoding && fastEncoding }
+    /// The extra bitrate that gives the faster mode the same quality as the normal one.
+    static let fastEncodingBitrateFactor = 1.2
+
     /// Video bitrate in bits per second (estimated for ProRes).
     func videoBitrate(for project: ProjectSettings) -> Double {
         let (w, h) = resolution.size(for: project)
@@ -162,6 +172,7 @@ nonisolated struct ExportSettings: Codable, Hashable, Sendable {
         // Bits per pixel from small to high quality; HEVC needs about 60% of H.264.
         case .h264: return pixelsPerSecond * (0.03 + quality * 0.22)
         case .hevc: return pixelsPerSecond * (0.03 + quality * 0.22) * 0.6
+            * (usesFastEncoding ? Self.fastEncodingBitrateFactor : 1)
         }
     }
 

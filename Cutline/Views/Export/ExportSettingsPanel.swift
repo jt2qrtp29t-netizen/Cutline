@@ -124,13 +124,18 @@ struct ExportSettingsPanel: View {
             Toggle("Hardware encoding", isOn: Binding(get: { settings.hardwareEncoding },
                                                        set: { on in change { $0.hardwareEncoding = on } }))
                 .font(.system(size: 11))
-            if settings.codec.usesBitrate {
+                .help("Uses the Mac’s video encoder. Turned off, H.264 and HEVC are encoded in software: many times slower, but HEVC gets noticeably better quality for the same file size.")
+            if settings.codec == .hevc {
                 Toggle("Faster encoding", isOn: Binding(get: { settings.fastEncoding },
                                                          set: { on in change { $0.fastEncoding = on } }))
                     .font(.system(size: 11))
                     .disabled(!settings.hardwareEncoding)
-                    .help("Lets the hardware encoder favor speed, about 1.7× faster in 4K at the same bitrate. Turn off for the very best quality.")
+                    .help("Uses the hardware encoder’s faster mode, about 1.9× faster, and raises the bitrate 20% so the quality stays the same. Files are about 20% larger.")
             }
+            Toggle("Network optimization", isOn: Binding(get: { settings.networkOptimized },
+                                                          set: { on in change { $0.networkOptimized = on } }))
+                .font(.system(size: 11))
+                .help("Puts the movie’s index at the start of the file, so it starts playing while it downloads or uploads (web, YouTube and social). It doesn’t change the picture.")
         }
     }
 
@@ -164,7 +169,8 @@ struct ExportSettingsPanel: View {
                 InspectorValueRow(title: "File size", value: "about " + ByteCountFormatter.string(
                     fromByteCount: Int64(settings.estimatedBytes(seconds: seconds, project: project)), countStyle: .file))
                 InspectorValueRow(title: "Export time", value: Self.duration(ExportTimeEstimate.seconds(
-                    frames: frames, width: size.width, height: size.height, codec: settings.codec)))
+                    frames: frames, width: size.width, height: size.height, project: project, settings: settings,
+                    complexity: ExportTimeEstimate.complexity(of: editor.exportEditor(for: source).state, in: range!))))
             }
         }
     }
@@ -250,18 +256,6 @@ struct ExportSettingsPanel: View {
         if seconds < 60 { return "about \(Int(seconds.rounded())) s" }
         let minutes = Int((seconds / 60).rounded())
         return "about \(minutes) min"
-    }
-}
-
-/// A rough guess at how long an export takes, refined by the last export's measured speed.
-enum ExportTimeEstimate {
-    /// Frames per second at 1080p, from the last export (or a typical Apple silicon speed).
-    nonisolated(unsafe) static var measured1080pFramesPerSecond = 90.0
-
-    static func seconds(frames: Int, width: Int, height: Int, codec: ExportCodec) -> Double {
-        let pixels = Double(width * height) / (1920 * 1080)
-        let codecCost = codec == .hevc ? 1.3 : 1
-        return Double(frames) / measured1080pFramesPerSecond * pixels * codecCost
     }
 }
 
