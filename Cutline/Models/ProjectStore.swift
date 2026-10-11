@@ -57,6 +57,7 @@ final class ProjectStore {
         var next = state
         body(&next)
         next.pruneTransitions()
+        next.pruneDucking()
         guard next != state else { return }
         let previous = state
         state = next
@@ -84,6 +85,7 @@ final class ProjectStore {
         var next = base
         body(&next)
         next.pruneTransitions()
+        next.pruneDucking()
         if next != state { state = next }
     }
 

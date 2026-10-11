@@ -296,15 +296,19 @@ nonisolated final class EffectProgram: @unchecked Sendable {
 nonisolated final class TrackProgram: Sendable {
     let envelope: TrackEnvelope
     let effects: [EffectProgram]
+    /// For the ducked (game) track: its gain over the timeline.
+    let ducking: DuckingCurve?
 
-    init(envelope: TrackEnvelope, effects: [EffectProgram] = []) {
+    init(envelope: TrackEnvelope, effects: [EffectProgram] = [], ducking: DuckingCurve? = nil) {
         self.envelope = envelope
         self.effects = effects
+        self.ducking = ducking
     }
 
-    convenience init(track: Track, isActive: Bool) {
+    convenience init(track: Track, isActive: Bool, ducking: DuckingCurve? = nil) {
         self.init(envelope: TrackEnvelope(track, isActive: isActive),
-                  effects: track.audio.effects.map { EffectProgram($0, track: track.audio) })
+                  effects: track.audio.effects.map { EffectProgram($0, track: track.audio) },
+                  ducking: ducking?.gameTrackID == track.id ? ducking : nil)
     }
 
     func gains(at sample: Int64) -> (left: Double, right: Double) {
@@ -407,6 +411,12 @@ nonisolated final class TrackAudioUnit: CutlineAudioUnit, @unchecked Sendable {
                     left[i] = Float(l)
                     right[i] = Float(r)
                 }
+                // Ducking (after the effects, before the fader).
+                if let curve = gains.program?.ducking {
+                    let duck = Float(DSP.linear(curve.gainDB(at: sample)))
+                    left[i] *= duck
+                    right[i] *= duck
+                }
                 let (gl, gr) = gains.gains(at: sample) { $0.gains(at: $1) }
                 left[i] *= gl
                 right[i] *= gr
@@ -422,10 +432,14 @@ nonisolated final class MasterProgram: Sendable {
     let envelope: MasterEnvelope
     /// Universal mute.
     let isMuted: Bool
+    let limiterEnabled: Bool
+    let ceilingDB: Double
 
-    init(envelope: MasterEnvelope, isMuted: Bool) {
+    init(envelope: MasterEnvelope, isMuted: Bool, limiterEnabled: Bool = false, ceilingDB: Double = -1) {
         self.envelope = envelope
         self.isMuted = isMuted
+        self.limiterEnabled = limiterEnabled
+        self.ceilingDB = ceilingDB
     }
 
     func gains(at sample: Int64) -> (left: Double, right: Double) {
@@ -435,8 +449,33 @@ nonisolated final class MasterProgram: Sendable {
     }
 }
 
-/// The master bus: fader, mute, the fade in and out when playback starts and stops,
-/// and the master meter.
+/// Live loudness of the master, published by the render thread for the meter.
+nonisolated final class LoudnessPublisher: @unchecked Sendable {
+    private let momentary = Atomic<UInt64>(LoudnessMeter.silence.bitPattern)
+    private let shortTerm = Atomic<UInt64>(LoudnessMeter.silence.bitPattern)
+    private let integrated = Atomic<UInt64>(LoudnessMeter.silence.bitPattern)
+    private let truePeak = Atomic<UInt64>(0.0.bitPattern)
+    /// Set by the meter's reset button; the render thread clears the integrated value.
+    let resetRequested = Atomic<Bool>(false)
+
+    func publish(_ meter: LoudnessMeter) {
+        momentary.store(meter.momentary.bitPattern, ordering: .relaxed)
+        shortTerm.store(meter.shortTerm.bitPattern, ordering: .relaxed)
+        integrated.store(meter.integrated.bitPattern, ordering: .relaxed)
+        truePeak.store(meter.truePeak.bitPattern, ordering: .relaxed)
+    }
+
+    func read() -> LoudnessReading {
+        let peak = Double(bitPattern: truePeak.load(ordering: .relaxed))
+        return LoudnessReading(momentary: Double(bitPattern: momentary.load(ordering: .relaxed)),
+                               shortTerm: Double(bitPattern: shortTerm.load(ordering: .relaxed)),
+                               integrated: Double(bitPattern: integrated.load(ordering: .relaxed)),
+                               truePeak: peak > 0 ? AudioLevel.db(fromLinear: peak) : LoudnessMeter.silence)
+    }
+}
+
+/// The master bus: fader, mute, the optional limiter, the fade in and out when playback
+/// starts and stops, the master meter and the loudness meter.
 nonisolated final class MasterAudioUnit: CutlineAudioUnit, @unchecked Sendable {
     static let componentDescription = description("ctlm")
 
@@ -444,20 +483,39 @@ nonisolated final class MasterAudioUnit: CutlineAudioUnit, @unchecked Sendable {
     let programs = ProgramMailbox<MasterProgram>()
     let meter = PeakMeter()
     let runControl = RunControl()
+    let loudness = LoudnessPublisher()
+    /// Measures only while playing (not scrubbing or stopped).
+    private let loudnessMeter = LoudnessMeter()
 
     override var render: (UnsafeMutablePointer<Float>, UnsafeMutablePointer<Float>, Int, AudioTimeStamp, Bool) -> Void {
         let programs = self.programs, transportBox = self.transport, meter = self.meter
-        let control = self.runControl
+        let control = self.runControl, publisher = self.loudness, loudnessMeter = self.loudnessMeter
         var gains = ProgramGains<MasterProgram>()
         var clock = TransportClock()
         var runGain: Float = 1
+        let limiter = LimiterDSP()
+        var limiterMix = 0.0
+        var ceiling = -1.0
         let step = 1 / Float(AudioGraphFormat.rampLength)
         return { left, right, frames, timestamp, _ in
-            if let new = programs.take() { gains.install(new, glide: true) }
+            if let new = programs.take() {
+                // The first settings apply at once (an export starts fully limited); later
+                // switches glide so they never click.
+                if gains.program == nil { limiterMix = new.limiterEnabled ? 1 : 0 }
+                gains.install(new, glide: true)
+                if new.ceilingDB != ceiling || limiterMix == 0 {
+                    ceiling = new.ceilingDB
+                    limiter.update([ceiling, 80])
+                }
+            }
+            if publisher.resetRequested.exchange(false, ordering: .relaxed) { loudnessMeter.resetIntegrated() }
             guard let transport = transportBox.transport else { return }
             let position = clock.position(transport, timestamp)
             if control.fadesIn.exchange(false, ordering: .relaxed) { runGain = 0 }
             let target: Float = control.run.load(ordering: .relaxed) ? 1 : 0
+            let limiterTarget = gains.program?.limiterEnabled == true ? 1.0 : 0.0
+            var isRunning = false
+            if case .running = position { isRunning = control.measuresLoudness.load(ordering: .relaxed) }
             var peakL: Float = 0, peakR: Float = 0
             for i in 0..<frames {
                 let sample: Int64
@@ -468,12 +526,24 @@ nonisolated final class MasterAudioUnit: CutlineAudioUnit, @unchecked Sendable {
                 }
                 if runGain < target { runGain = min(target, runGain + step) } else if runGain > target { runGain = max(target, runGain - step) }
                 let (gl, gr) = gains.gains(at: sample) { $0.gains(at: $1) }
-                left[i] *= gl * runGain
-                right[i] *= gr * runGain
+                var l = Double(left[i] * gl), r = Double(right[i] * gr)
+                // The limiter fades in and out when switched, so switching never clicks.
+                if limiterMix != limiterTarget {
+                    limiterMix = limiterTarget > limiterMix ? min(1, limiterMix + Double(step)) : max(0, limiterMix - Double(step))
+                }
+                if limiterMix > 0 {
+                    let (ll, lr) = limiter.process(l, r)
+                    l += (ll - l) * limiterMix
+                    r += (lr - r) * limiterMix
+                }
+                if isRunning { loudnessMeter.process(l, r) }
+                left[i] = Float(l) * runGain
+                right[i] = Float(r) * runGain
                 peakL = max(peakL, abs(left[i]))
                 peakR = max(peakR, abs(right[i]))
             }
             meter.record(left: peakL, right: peakR)
+            if isRunning { publisher.publish(loudnessMeter) }
         }
     }
 }
@@ -484,6 +554,8 @@ nonisolated final class RunControl: Sendable {
     let run = Atomic<Bool>(true)
     /// Set when real-time playback starts, to fade in instead of starting abruptly.
     let fadesIn = Atomic<Bool>(false)
+    /// Live loudness metering (real-time playback only; offline renders measure on their own).
+    let measuresLoudness = Atomic<Bool>(false)
 }
 
 /// The transport a unit follows, set once when the unit joins a graph.

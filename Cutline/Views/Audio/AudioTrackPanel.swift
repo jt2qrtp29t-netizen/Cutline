@@ -23,7 +23,17 @@ struct AudioTrackPanel: View {
                         InspectorSection(title: "Level") {
                             AudioParameterRow(editor: editor, ref: .volume(track.id))
                             AudioParameterRow(editor: editor, ref: .pan(track.id))
+                            HStack {
+                                Button("Normalize Track") { editor.normalize(.track(track.id)) }
+                                    .controlSize(.small)
+                                    .disabled(editor.audioActivity != nil || track.clips.isEmpty)
+                                    .help("Measures this track as it sounds (effects included) and sets its fader to the project's loudness target.")
+                                Text("to " + String(format: "%.1f LUFS", editor.state.audio.loudnessTarget).replacingOccurrences(of: "-", with: "−"))
+                                    .font(.system(size: 10))
+                                    .foregroundStyle(Theme.textTertiary)
+                            }
                         }
+                        DuckingSection(editor: editor, track: track)
                         chainHeader(track)
                         if track.audio.effects.isEmpty {
                             Text("No effects. Add one below, or start from a preset.")
@@ -252,5 +262,107 @@ struct AudioParameterRow: View {
         }
         .buttonStyle(.plain)
         .help(help)
+    }
+}
+
+/// Ducking: a "game" track goes down while a "voice" track is talking.
+private struct DuckingSection: View {
+    let editor: EditorController
+    let track: Track
+
+    var body: some View {
+        let ducking = editor.state.audio.ducking
+        let tracks = editor.audioTrackIndices.map { editor.state.tracks[$0] }
+        InspectorSection(title: "Ducking") {
+            if let ducking {
+                Toggle("Duck the game track under the voice", isOn: Binding(get: { ducking.isEnabled },
+                                                                            set: { editor.setDuckingEnabled($0) }))
+                    .font(.system(size: 11))
+                trackRow("Voice", selection: ducking.voiceTrackID, tracks: tracks) { editor.setDucking(voice: $0, game: ducking.gameTrackID) }
+                trackRow("Game", selection: ducking.gameTrackID, tracks: tracks) { editor.setDucking(voice: ducking.voiceTrackID, game: $0) }
+                slider("Threshold", \.thresholdDB, DuckingSettings.thresholdRange, "%.0f dB", ducking)
+                slider("Amount", \.amountDB, DuckingSettings.amountRange, "%.0f dB", ducking)
+                slider("Attack", \.attackMS, DuckingSettings.attackRange, "%.0f ms", ducking)
+                slider("Release", \.releaseMS, DuckingSettings.releaseRange, "%.0f ms", ducking)
+                HStack {
+                    if DuckingCenter.shared.isAnalyzing(editor.state) {
+                        ProgressView().controlSize(.mini)
+                        Text("Analyzing the voice…")
+                            .font(.system(size: 10))
+                            .foregroundStyle(Theme.textTertiary)
+                    } else {
+                        Text("Worked out from the voice ahead of time, so every playback and export ducks the same way.")
+                            .font(.system(size: 10))
+                            .foregroundStyle(Theme.textTertiary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    Spacer()
+                    Button("Remove", role: .destructive) { editor.removeDucking() }
+                        .controlSize(.small)
+                }
+            } else if tracks.count >= 2 {
+                Text("Turn a game or music track down automatically while someone talks.")
+                    .font(.system(size: 10.5))
+                    .foregroundStyle(Theme.textTertiary)
+                    .fixedSize(horizontal: false, vertical: true)
+                Menu("Duck Another Track Under \(track.name)") {
+                    ForEach(tracks.filter { $0.id != track.id }) { other in
+                        Button(other.name) { editor.setDucking(voice: track.id, game: other.id) }
+                    }
+                }
+                .controlSize(.small)
+                .fixedSize()
+            } else {
+                Text("Add a second audio track to duck one under the other.")
+                    .font(.system(size: 10.5))
+                    .foregroundStyle(Theme.textTertiary)
+            }
+        }
+    }
+
+    private func trackRow(_ title: String, selection: UUID, tracks: [Track], set: @escaping (UUID) -> Void) -> some View {
+        HStack {
+            Text(title)
+                .font(.system(size: 11))
+                .foregroundStyle(Theme.textSecondary)
+                .frame(width: 62, alignment: .leading)
+            Menu(tracks.first { $0.id == selection }?.name ?? "—") {
+                ForEach(tracks) { other in
+                    Button {
+                        set(other.id)
+                    } label: {
+                        if other.id == selection { Label(other.name, systemImage: "checkmark") } else { Text(other.name) }
+                    }
+                }
+            }
+            .menuStyle(.button)
+            .controlSize(.small)
+            .fixedSize()
+        }
+    }
+
+    private func slider(_ title: String, _ keyPath: WritableKeyPath<DuckingSettings, Double>, _ range: ClosedRange<Double>,
+                        _ format: String, _ ducking: DuckingSettings) -> some View {
+        let value = ducking[keyPath: keyPath]
+        let isLog = range.lowerBound > 0
+        let position = isLog ? log(value / range.lowerBound) / log(range.upperBound / range.lowerBound)
+            : (value - range.lowerBound) / (range.upperBound - range.lowerBound)
+        return VStack(alignment: .leading, spacing: 3) {
+            HStack {
+                Text(title).font(.system(size: 11)).foregroundStyle(Theme.textSecondary)
+                Spacer()
+                Text(String(format: format, value).replacingOccurrences(of: "-", with: "−"))
+                    .font(.system(size: 11, weight: .medium).monospacedDigit())
+                    .foregroundStyle(Theme.textPrimary)
+            }
+            PrecisionSlider(value: position, range: 0...1, unitsPerPoint: 0.004,
+                            onBegin: { editor.beginAdjustment() },
+                            onChange: { p in
+                                let v = isLog ? range.lowerBound * pow(range.upperBound / range.lowerBound, p)
+                                    : range.lowerBound + p * (range.upperBound - range.lowerBound)
+                                editor.adjustDucking(keyPath, to: v, in: range)
+                            },
+                            onEnd: { editor.endAudioAdjustment("Change Ducking") })
+        }
     }
 }

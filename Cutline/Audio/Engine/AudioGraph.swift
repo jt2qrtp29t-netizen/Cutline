@@ -22,6 +22,8 @@ nonisolated final class AudioGraph {
     private var tracks: [UUID: TrackNodes] = [:]
     private var voices: [UUID: Voice] = [:]
     private var masterSettings = MasterAudio()
+    /// The game track's ducking curve (the latest one handed in).
+    private var ducking: DuckingCurve?
     var isMuted = false {
         didSet { postMaster() }
     }
@@ -87,11 +89,13 @@ nonisolated final class AudioGraph {
 
     /// Brings the graph's tracks in line with the project and hands every node its
     /// current settings (fader moves, mute and solo, keyframes…). Changes glide in.
-    func update(_ state: ProjectState) {
+    func update(_ state: ProjectState, ducking: DuckingCurve? = nil) {
+        if let ducking { self.ducking = ducking }
+        if state.audio.ducking?.isEnabled != true { self.ducking = nil }
         syncTracks(state)
         for index in state.trackIndices(of: .audio) {
             let track = state.tracks[index]
-            tracks[track.id]?.unit.programs.post(TrackProgram(track: track, isActive: state.isTrackActive(index)))
+            tracks[track.id]?.unit.programs.post(TrackProgram(track: track, isActive: state.isTrackActive(index), ducking: self.ducking))
         }
         for index in state.trackIndices(of: .audio) {
             for clip in state.tracks[index].clips {
@@ -106,7 +110,17 @@ nonisolated final class AudioGraph {
     }
 
     private func postMaster() {
-        master.unit.programs.post(MasterProgram(envelope: MasterEnvelope(masterSettings), isMuted: isMuted))
+        master.unit.programs.post(MasterProgram(envelope: MasterEnvelope(masterSettings), isMuted: isMuted,
+                                                limiterEnabled: masterSettings.limiterEnabled, ceilingDB: masterSettings.ceilingDB))
+    }
+
+    /// The live loudness of the master.
+    var loudness: LoudnessPublisher { master.unit.loudness }
+
+    /// Whether the master measures loudness while playing (real-time playback).
+    var measuresLoudness: Bool {
+        get { master.unit.runControl.measuresLoudness.load(ordering: .relaxed) }
+        set { master.unit.runControl.measuresLoudness.store(newValue, ordering: .relaxed) }
     }
 
     /// One track node per audio track; nodes of deleted tracks are removed.
@@ -136,7 +150,8 @@ nonisolated final class AudioGraph {
 
     /// Builds and schedules a voice for every clip that still sounds after `time`.
     /// - Parameter sources: each media item's prepared 48 kHz stereo sound.
-    func prepareVoices(_ state: ProjectState, from time: Time, sources: (MediaItem) -> PreparedAudio?) {
+    func prepareVoices(_ state: ProjectState, from time: Time, ducking: DuckingCurve? = nil, sources: (MediaItem) -> PreparedAudio?) {
+        if let ducking { self.ducking = ducking }
         removeVoices()
         syncTracks(state)
         for index in state.trackIndices(of: .audio) {
@@ -296,14 +311,14 @@ nonisolated final class AudioGraph {
 nonisolated extension AudioGraph {
     /// Renders `range` of the project offline (no speakers) through the same graph as
     /// playback, handing each block of 48 kHz stereo audio to `consume`.
-    static func render(_ state: ProjectState, range: TimeRange, sources: [UUID: PreparedAudio],
+    static func render(_ state: ProjectState, range: TimeRange, sources: [UUID: PreparedAudio], ducking: DuckingCurve? = nil,
                        isCancelled: () -> Bool = { false }, progress: (Double) -> Void = { _ in },
                        consume: (AVAudioPCMBuffer) throws -> Void) throws {
         let engine = AVAudioEngine()
         let chunk: AVAudioFrameCount = 4096
         try engine.enableManualRenderingMode(.offline, format: AudioGraphFormat.format, maximumFrameCount: chunk)
         let graph = AudioGraph(engine: engine)
-        graph.prepareVoices(state, from: range.start) { sources[$0.id] }
+        graph.prepareVoices(state, from: range.start, ducking: ducking) { sources[$0.id] }
         try engine.start()
         defer {
             graph.removeVoices()

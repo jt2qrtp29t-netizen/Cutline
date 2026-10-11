@@ -29,6 +29,7 @@ final class PlaybackController {
     @ObservationIgnored private var latestState: ProjectState?
     @ObservationIgnored private var mediaObserver: (any NSObjectProtocol)?
     @ObservationIgnored private var generatedMediaObserver: (any NSObjectProtocol)?
+    @ObservationIgnored private var duckingObserver: (any NSObjectProtocol)?
     @ObservationIgnored private var startTask: Task<Void, Never>?
 
     /// Lead time so the video and audio can both be ready to start on the same host tick.
@@ -67,6 +68,15 @@ final class PlaybackController {
             let ids = notification.object as? Set<UUID> ?? []
             MainActor.assumeIsolated { self?.reloadMedia(ids) }
         }
+        // A ducking curve finished computing: hand it to the playing graph.
+        duckingObserver = NotificationCenter.default.addObserver(
+            forName: .duckingCurveReady, object: nil, queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self, let state = self.latestState else { return }
+                self.audio.update(state)
+            }
+        }
         // Rebuild when optimized or proxy copies appear or go, or playback switches files.
         generatedMediaObserver = NotificationCenter.default.addObserver(
             forName: .generatedMediaChanged, object: nil, queue: .main
@@ -94,6 +104,7 @@ final class PlaybackController {
         if let endObserver { NotificationCenter.default.removeObserver(endObserver) }
         if let mediaObserver { NotificationCenter.default.removeObserver(mediaObserver) }
         if let generatedMediaObserver { NotificationCenter.default.removeObserver(generatedMediaObserver) }
+        if let duckingObserver { NotificationCenter.default.removeObserver(duckingObserver) }
         rebuildTask?.cancel()
     }
 

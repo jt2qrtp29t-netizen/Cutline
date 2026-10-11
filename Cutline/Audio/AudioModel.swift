@@ -92,27 +92,95 @@ nonisolated struct TrackAudio: Codable, Hashable, Sendable {
 nonisolated struct MasterAudio: Codable, Hashable, Sendable {
     /// Fader level in dB.
     var volumeDB: Double = 0
+    /// A limiter at the end of the mix, keeping peaks under `ceilingDB`.
+    var limiterEnabled = false
+    var ceilingDB: Double = -1
     /// Keyframes by parameter ID, at timeline times.
     var keyframes: [String: [Keyframe]] = [:]
+
+    static let ceilingRange = -12.0...0.0
 
     init() {}
 
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         volumeDB = try c.decodeIfPresent(Double.self, forKey: .volumeDB) ?? 0
+        limiterEnabled = try c.decodeIfPresent(Bool.self, forKey: .limiterEnabled) ?? false
+        ceilingDB = try c.decodeIfPresent(Double.self, forKey: .ceilingDB) ?? -1
         keyframes = try c.decodeIfPresent([String: [Keyframe]].self, forKey: .keyframes) ?? [:]
+    }
+}
+
+/// Lowers a "game" track while a "voice" track is talking. The game track's gain is
+/// worked out ahead of time from the voice track's sound, so every playback and every
+/// export ducks exactly the same way.
+nonisolated struct DuckingSettings: Codable, Hashable, Sendable {
+    var isEnabled = true
+    var voiceTrackID: UUID
+    var gameTrackID: UUID
+    /// The voice counts as present above this level.
+    var thresholdDB: Double = -40
+    /// How far the game track goes down.
+    var amountDB: Double = -12
+    /// How fast it goes down (it starts this early, so it's down when the voice begins)…
+    var attackMS: Double = 80
+    /// …and how slowly it comes back after the voice stops.
+    var releaseMS: Double = 500
+
+    static let thresholdRange = -70.0...(-10.0)
+    static let amountRange = -40.0...0.0
+    static let attackRange = 5.0...1000.0
+    static let releaseRange = 20.0...4000.0
+    /// The voice must be quiet this long before the game comes back up (no pumping between words).
+    static let holdMS = 150.0
+
+    init(voiceTrackID: UUID, gameTrackID: UUID) {
+        self.voiceTrackID = voiceTrackID
+        self.gameTrackID = gameTrackID
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        isEnabled = try c.decodeIfPresent(Bool.self, forKey: .isEnabled) ?? true
+        voiceTrackID = try c.decode(UUID.self, forKey: .voiceTrackID)
+        gameTrackID = try c.decode(UUID.self, forKey: .gameTrackID)
+        thresholdDB = try c.decodeIfPresent(Double.self, forKey: .thresholdDB) ?? -40
+        amountDB = try c.decodeIfPresent(Double.self, forKey: .amountDB) ?? -12
+        attackMS = try c.decodeIfPresent(Double.self, forKey: .attackMS) ?? 80
+        releaseMS = try c.decodeIfPresent(Double.self, forKey: .releaseMS) ?? 500
     }
 }
 
 /// Project-wide sound settings.
 nonisolated struct ProjectAudio: Codable, Hashable, Sendable {
     var master = MasterAudio()
+    /// Normalize's target, in LUFS (−14 suits YouTube).
+    var loudnessTarget: Double = -14
+    var ducking: DuckingSettings?
+
+    static let loudnessTargets: [(value: Double, title: String)] = [(-14, "−14 LUFS (YouTube)"), (-16, "−16 LUFS")]
+    static let loudnessRange = -40.0...(-5.0)
 
     init() {}
 
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         master = try c.decodeIfPresent(MasterAudio.self, forKey: .master) ?? MasterAudio()
+        loudnessTarget = try c.decodeIfPresent(Double.self, forKey: .loudnessTarget) ?? -14
+        ducking = try c.decodeIfPresent(DuckingSettings.self, forKey: .ducking)
+    }
+}
+
+nonisolated extension ProjectState {
+    /// Clears a ducking setup whose voice or game track no longer exists (or is no longer
+    /// an audio track, or both are the same track). Called after every edit.
+    mutating func pruneDucking() {
+        guard let ducking = audio.ducking else { return }
+        let audioIDs = Set(trackIndices(of: .audio).map { tracks[$0].id })
+        if !audioIDs.contains(ducking.voiceTrackID) || !audioIDs.contains(ducking.gameTrackID)
+            || ducking.voiceTrackID == ducking.gameTrackID {
+            audio.ducking = nil
+        }
     }
 }
 

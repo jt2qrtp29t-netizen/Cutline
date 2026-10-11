@@ -371,12 +371,7 @@ enum ExportAudioMixer {
                        progress: @escaping @Sendable (Double) -> Void = { _ in }) async throws {
         let state = snapshot.state
         // Each source is converted once to the graph's format; wait for those.
-        var prepared: [UUID: PreparedAudio] = [:]
-        let audioMedia = Set(state.trackIndices(of: .audio).flatMap { state.tracks[$0].clips.map(\.mediaID) })
-        for media in state.media where audioMedia.contains(media.id) && media.hasAudio && MediaURLCache.shared.isAvailable(media) {
-            if let audio = await AudioSourceCache.shared.preparedAudio(media) { prepared[media.id] = audio }
-        }
-        let sources = prepared
+        let sources = await AudioSourceCache.shared.preparedSources(for: state)
         try await Task.detached(priority: .userInitiated) {
             try mix(snapshot, sources: sources, to: url, cancellation: cancellation, progress: progress)
         }.value
@@ -385,8 +380,10 @@ enum ExportAudioMixer {
     nonisolated private static func mix(_ snapshot: ExportSnapshot, sources: [UUID: PreparedAudio], to url: URL,
                                         cancellation: ExportCancellation, progress: (Double) -> Void) throws {
         let format = AudioGraphFormat.format
+        // Ducking is worked out from the frozen snapshot, exactly as playback works it out.
+        let ducking = try DuckingAnalyzer.curve(for: snapshot.state, sources: sources, isCancelled: { cancellation.isCancelled })
         let file = try AVAudioFile(forWriting: url, settings: format.settings, commonFormat: .pcmFormatFloat32, interleaved: false)
-        try AudioGraph.render(snapshot.state, range: snapshot.range, sources: sources,
+        try AudioGraph.render(snapshot.state, range: snapshot.range, sources: sources, ducking: ducking,
                               isCancelled: { cancellation.isCancelled }, progress: progress) { buffer in
             try file.write(from: buffer)
         }

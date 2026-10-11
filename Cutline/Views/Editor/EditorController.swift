@@ -96,6 +96,9 @@ final class EditorController {
     var effectsProperty: AnimatableProperty = .positionX
     /// The audio track the Audio tab's settings show (picked in the mixer).
     var selectedAudioTrackID: UUID?
+    /// What the Audio tab is busy with ("Normalizing…"), and the last result to show.
+    var audioActivity: String?
+    var audioMessage: String?
     var selectedKeyframes: Set<KeyframeRef> = []
     /// The grade on the clipboard (Copy Grade / Paste Grade).
     var copiedGrade: CopiedGrade?
@@ -655,10 +658,13 @@ final class EditorController {
     func deleteTrack(at index: Int) {
         guard state.tracks.indices.contains(index) else { return }
         let clipIDs = Set(state.tracks[index].clips.map(\.id))
+        let trackID = state.tracks[index].id
+        // Removing a ducking voice or game track also clears the ducking setup (pruned with the edit).
         store.edit("Delete Track") { state in
             state.tracks.remove(at: index)
         }
         selection.subtract(clipIDs)
+        if selectedAudioTrackID == trackID { selectedAudioTrackID = nil }
     }
 
     func toggleMute(trackAt index: Int) {

@@ -86,6 +86,8 @@ final class MixerMeters {
 
     private(set) var tracks: [UUID: Reading] = [:]
     private(set) var master = Reading()
+    /// The master's loudness (published when it moves by a tenth of a LU or more).
+    private(set) var loudness = LoudnessReading()
 
     @ObservationIgnored private weak var graph: AudioGraph?
     @ObservationIgnored private var timer: Timer?
@@ -135,6 +137,12 @@ final class MixerMeters {
         // Publish only visible movement, so idle meters don't redraw.
         if !Self.same(next, tracks) { tracks = next }
         if !Self.same(nextMaster, master) { master = nextMaster }
+        let nextLoudness = graph.loudness.read()
+        func moved(_ a: Double, _ b: Double) -> Bool { abs(a - b) >= 0.05 }
+        if moved(nextLoudness.momentary, loudness.momentary) || moved(nextLoudness.shortTerm, loudness.shortTerm)
+            || moved(nextLoudness.integrated, loudness.integrated) || moved(nextLoudness.truePeak, loudness.truePeak) {
+            loudness = nextLoudness
+        }
     }
 
     private static func advance(_ reading: Reading, _ peaks: (left: Float, right: Float, clipped: Bool), elapsed: Double) -> Reading {

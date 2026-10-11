@@ -11,7 +11,8 @@ enum AudioTestError: Error {
 @MainActor enum AudioTestKit {
     /// A sine tone file: `channels` channels (the second, if any, at 1.5× the frequency).
     static func tone(channels: AVAudioChannelCount = 2, rate: Double = 48_000, seconds: Double = 2,
-                     frequency: Double = 440, amplitude: Double = 0.5, float: Bool = true) throws -> URL {
+                     frequency: Double = 440, amplitude: Double = 0.5, float: Bool = true, sameInBoth: Bool = false,
+                     phase: Double = 0) throws -> URL {
         let url = FileManager.default.temporaryDirectory.appendingPathComponent("tone-\(channels)-\(Int(rate))-\(UUID()).wav")
         let file = try AVAudioFile(forWriting: url, settings: [
             AVFormatIDKey: kAudioFormatLinearPCM, AVSampleRateKey: rate, AVNumberOfChannelsKey: channels,
@@ -21,8 +22,8 @@ enum AudioTestError: Error {
         let buffer = try #require(AVAudioPCMBuffer(pcmFormat: file.processingFormat, frameCapacity: frames))
         buffer.frameLength = frames
         for c in 0..<Int(channels) {
-            let f = c == 0 ? frequency : frequency * 1.5
-            for i in 0..<Int(frames) { buffer.floatChannelData![c][i] = Float(sin(2 * .pi * f * Double(i) / rate) * amplitude) }
+            let f = c == 0 || sameInBoth ? frequency : frequency * 1.5
+            for i in 0..<Int(frames) { buffer.floatChannelData![c][i] = Float(sin(2 * .pi * f * Double(i) / rate + phase) * amplitude) }
         }
         try file.write(from: buffer)
         return url

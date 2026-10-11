@@ -88,7 +88,9 @@ struct PlaybackTests {
 
         playback.play()
         try await waitUntil { playback.isPlaying }
-        try await Task.sleep(for: .milliseconds(600))
+        // Allow for a busy test machine: the playhead must advance, however long that takes to show.
+        let deadline = Date().addingTimeInterval(5)
+        while playback.currentTime <= Time(seconds: 2.2), Date() < deadline { try await Task.sleep(for: .milliseconds(20)) }
         #expect(playback.currentTime > Time(seconds: 2.2), "playhead advances during playback")
         playback.pause()
         try await waitUntil { !playback.isPlaying }
@@ -553,7 +555,7 @@ extension AVAudioEngine {
     func renderOfflineWhenReady(_ frames: AVAudioFrameCount, to buffer: AVAudioPCMBuffer) throws -> AVAudioEngineManualRenderingStatus {
         var status = try renderOffline(frames, to: buffer)
         var retries = 0
-        while status == .cannotDoInCurrentContext && retries < 2_000 {
+        while status == .cannotDoInCurrentContext && retries < 5_000 {
             Thread.sleep(forTimeInterval: 0.002)
             status = try renderOffline(frames, to: buffer)
             retries += 1

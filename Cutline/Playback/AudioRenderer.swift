@@ -41,6 +41,8 @@ final class AudioRenderer {
     init(engine: AVAudioEngine = AVAudioEngine()) {
         self.engine = engine
         graph = AudioGraph(engine: engine)
+        // The loudness meter is for live playback.
+        graph.measuresLoudness = !engine.isInManualRenderingMode
     }
 
     /// Schedules every audio clip from `time` and starts them at `hostTime`
@@ -51,7 +53,7 @@ final class AudioRenderer {
         // added to a running offline engine would join a render cycle late.
         if engine.isInManualRenderingMode { engine.stop() }
         if !engine.isInManualRenderingMode { guard startEngine() else { return } }
-        graph.prepareVoices(state, from: time) { AudioSourceCache.shared.prepared(for: $0) }
+        graph.prepareVoices(state, from: time, ducking: DuckingCenter.shared.curve(for: state)) { AudioSourceCache.shared.prepared(for: $0) }
         if engine.isInManualRenderingMode { guard startEngine() else { return } }
         graph.start(at: time, hostTime: hostTime)
         isPlaying = true
@@ -107,6 +109,6 @@ final class AudioRenderer {
 
     /// Applies volume, pan, fades, mute/solo and fader changes to the playing graph.
     func update(_ state: ProjectState) {
-        graph.update(state)
+        graph.update(state, ducking: DuckingCenter.shared.curve(for: state))
     }
 }

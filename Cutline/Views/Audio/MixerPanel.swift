@@ -41,6 +41,9 @@ struct MixerPanel: View {
                 Rectangle().fill(Theme.border).frame(width: 1)
                 MasterStrip(editor: editor, reading: meters.master)
                     .padding(8)
+                LoudnessPanel(editor: editor, reading: meters.loudness)
+                    .padding(.vertical, 8)
+                    .padding(.trailing, 8)
             }
         }
         .background(Theme.background)

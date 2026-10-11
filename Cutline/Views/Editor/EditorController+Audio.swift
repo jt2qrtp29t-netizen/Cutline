@@ -1,4 +1,5 @@
 import AppKit
+import Synchronization
 
 /// Mixer edits. A fader or pan drag is one live edit (one undo step); clicks are single edits.
 extension EditorController {
@@ -329,4 +330,76 @@ extension EditorController {
         playback.pause()
         playback.seek(to: target, audible: false)
     }
+}
+
+// MARK: - Loudness, Normalize and ducking
+
+extension EditorController {
+    /// Measures and adjusts `target` to the project's loudness target, as one undo step.
+    /// Runs in the background; the Audio tab shows progress and the result.
+    func normalize(_ target: NormalizeTarget) {
+        guard audioActivity == nil else { return }
+        let lufs = state.audio.loudnessTarget
+        let snapshot = state
+        audioActivity = "Normalizing \(target.title.lowercased())…"
+        audioMessage = nil
+        Task {
+            defer { audioActivity = nil }
+            do {
+                let sources = await AudioSourceCache.shared.preparedSources(for: snapshot)
+                let result = try await Task.detached(priority: .userInitiated) {
+                    try Normalizer.normalize(snapshot, target, to: lufs, sources: sources)
+                }.value
+                store.edit("Normalize \(target.title)") { $0.applyNormalizeGain(result.gainChange, to: target) }
+                audioMessage = String(format: "%@ normalized to %.1f LUFS (%@%.1f dB).", target.title, lufs,
+                                      result.gainChange >= 0 ? "+" : "−", abs(result.gainChange))
+                    .replacingOccurrences(of: "-", with: "−")
+            } catch {
+                audioMessage = "Couldn't normalize: \(error.localizedDescription)"
+            }
+        }
+    }
+
+    func setLoudnessTarget(_ lufs: Double) {
+        store.edit("Change Loudness Target") { $0.audio.loudnessTarget = min(max(lufs, ProjectAudio.loudnessRange.lowerBound), ProjectAudio.loudnessRange.upperBound) }
+    }
+
+    func setMasterLimiter(_ enabled: Bool) {
+        store.edit(enabled ? "Turn On Master Limiter" : "Turn Off Master Limiter") { $0.audio.master.limiterEnabled = enabled }
+    }
+
+    func adjustMasterCeiling(to db: Double) {
+        if !store.isLiveEditing { store.beginLiveEdit() }
+        store.liveEdit { $0.audio.master.ceilingDB = min(max(db, MasterAudio.ceilingRange.lowerBound), MasterAudio.ceilingRange.upperBound) }
+    }
+
+    /// Sets up ducking: `game` goes down while `voice` is talking.
+    func setDucking(voice: UUID, game: UUID) {
+        guard voice != game else { NSSound.beep(); return }
+        store.edit("Set Up Ducking") { state in
+            var settings = state.audio.ducking ?? DuckingSettings(voiceTrackID: voice, gameTrackID: game)
+            settings.voiceTrackID = voice
+            settings.gameTrackID = game
+            state.audio.ducking = settings
+        }
+    }
+
+    func removeDucking() {
+        store.edit("Remove Ducking") { $0.audio.ducking = nil }
+    }
+
+    func setDuckingEnabled(_ enabled: Bool) {
+        store.edit(enabled ? "Turn On Ducking" : "Turn Off Ducking") { $0.audio.ducking?.isEnabled = enabled }
+    }
+
+    /// Changes a ducking setting during a drag (one undo step; call `endAudioAdjustment`).
+    func adjustDucking(_ keyPath: WritableKeyPath<DuckingSettings, Double>, to value: Double, in range: ClosedRange<Double>) {
+        if !store.isLiveEditing { store.beginLiveEdit() }
+        store.liveEdit { $0.audio.ducking?[keyPath: keyPath] = min(max(value, range.lowerBound), range.upperBound) }
+    }
+
+    /// The master's live loudness.
+    func readLoudness() -> LoudnessReading { playback.audio.graph.loudness.read() }
+
+    func resetLoudness() { playback.audio.graph.loudness.resetRequested.store(true, ordering: .relaxed) }
 }
