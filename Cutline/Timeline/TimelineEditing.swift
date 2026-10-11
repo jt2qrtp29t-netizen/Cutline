@@ -144,6 +144,7 @@ nonisolated enum TimelineEditing {
         c.animation = clip.animation.shifted(by: clip.start - time)
         c.labs = clip.labs.map { $0.shifted(by: clip.start - time) }
         c.generator = clip.generator?.shifted(by: clip.start - time)
+        c.fitFades()
         return c
     }
 
@@ -151,6 +152,7 @@ nonisolated enum TimelineEditing {
     static func trimmedEnd(_ clip: Clip, to time: Time) -> Clip {
         var c = clip
         c.duration = time - clip.start
+        c.fitFades()
         return c
     }
 
@@ -288,10 +290,18 @@ nonisolated enum TimelineEditing {
                 }
                 // Split the animation exactly at the cut so neither half jumps.
                 let (leftAnimation, rightAnimation) = clip.animation.split(at: time - clip.start)
-                var left = trimmedEnd(clip, to: time)
+                // Fades stay on the outer edges: none at the cut, so the sound runs on through it.
+                var whole = clip
+                whole.fadeIn = .none
+                whole.fadeOut = .none
+                var left = trimmedEnd(whole, to: time)
                 left.animation = leftAnimation
-                var right = trimmedStart(clip, to: time)
+                left.fadeIn = clip.fadeIn
+                left.fitFades()
+                var right = trimmedStart(whole, to: time)
                 right.animation = rightAnimation
+                right.fadeOut = clip.fadeOut
+                right.fitFades()
                 // Labs parameters split the same way.
                 let labs = clip.labs.map { $0.split(at: time - clip.start) }
                 left.labs = labs.map(\.left)

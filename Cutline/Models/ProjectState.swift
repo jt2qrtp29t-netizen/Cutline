@@ -18,6 +18,8 @@ nonisolated struct ProjectState: Codable, Hashable, Sendable {
     var markers: [Marker] = []
     /// The last export settings used for this project.
     var exportSettings = ExportSettings()
+    /// The master bus and other project-wide sound settings.
+    var audio = ProjectAudio()
 
     init(settings: ProjectSettings = .default, videoTracks: Int = 1, audioTracks: Int = 1, textTracks: Int = 1) {
         self.settings = settings
@@ -35,6 +37,7 @@ nonisolated struct ProjectState: Codable, Hashable, Sendable {
         tracks = try c.decodeIfPresent([Track].self, forKey: .tracks) ?? []
         markers = try c.decodeIfPresent([Marker].self, forKey: .markers) ?? []
         exportSettings = try c.decodeIfPresent(ExportSettings.self, forKey: .exportSettings) ?? ExportSettings()
+        audio = try c.decodeIfPresent(ProjectAudio.self, forKey: .audio) ?? ProjectAudio()
         if version < 2 { migrateSeparatingAudio() }
         if version < 3 { migrateTextToTextTracks() }
         version = Self.currentVersion
@@ -108,6 +111,8 @@ nonisolated struct ProjectState: Codable, Hashable, Sendable {
         // Views can briefly ask about a track that was just deleted.
         guard tracks.indices.contains(index) else { return false }
         let track = tracks[index]
+        // On audio tracks solo overrides mute, as on a mixing desk.
+        if track.kind == .audio && track.isSoloed { return true }
         if track.isMuted { return false }
         let anySolo = tracks.contains { $0.kind == track.kind && $0.isSoloed }
         return !anySolo || track.isSoloed

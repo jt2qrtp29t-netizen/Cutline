@@ -1,19 +1,34 @@
 import AVFoundation
 
-/// Provides a file `AVAudioFile` can read for each media item. Plain audio files
-/// (WAV, AIFF, CAF, M4A, MP3, FLAC…) are used directly; the sound of movie files
-/// is decoded once into a cached CAF proxy, prepared in the background.
+/// A media item's sound, ready for the audio graph.
+nonisolated struct PreparedAudio: Sendable, Equatable {
+    /// A 48 kHz stereo file (the graph's format).
+    let url: URL
+    /// The original had one channel (it's played as two identical ones, and pans with
+    /// constant power, as mono sources always have in Cutline).
+    let isMono: Bool
+}
+
+/// Provides each media item's sound in the audio graph's one format, 48 kHz stereo:
+/// the single place sources are resampled. Files already in that format are used
+/// directly; everything else (other rates, mono, the sound of movies) is converted
+/// once into a cached CAF, prepared in the background.
 final class AudioSourceCache {
     static let shared = AudioSourceCache()
 
-    private var ready: [UUID: URL] = [:]
-    private var preparing: [UUID: Task<URL?, Never>] = [:]
+    private var ready: [UUID: PreparedAudio] = [:]
+    private var preparing: [UUID: Task<PreparedAudio?, Never>] = [:]
 
-    /// The readable URL if it's ready; otherwise starts preparing it and returns nil.
-    func readableURL(for media: MediaItem) -> URL? {
-        if let url = ready[media.id] { return url }
+    /// The prepared sound if it's ready; otherwise starts preparing it and returns nil.
+    func prepared(for media: MediaItem) -> PreparedAudio? {
+        if let prepared = ready[media.id] { return prepared }
         _ = task(for: media)
         return nil
+    }
+
+    /// The readable 48 kHz stereo file if it's ready; otherwise starts preparing it and returns nil.
+    func readableURL(for media: MediaItem) -> URL? {
+        prepared(for: media)?.url
     }
 
     /// Drops prepared files for media whose source went missing, moved or came back.
@@ -26,8 +41,14 @@ final class AudioSourceCache {
     }
 
     /// Waits until the media's audio is readable.
+    @discardableResult
     func prepare(_ media: MediaItem) async -> URL? {
-        if let url = ready[media.id] { return url }
+        await preparedAudio(media)?.url
+    }
+
+    /// Waits until the media's audio is prepared.
+    func preparedAudio(_ media: MediaItem) async -> PreparedAudio? {
+        if let prepared = ready[media.id] { return prepared }
         return await task(for: media).value
     }
 
@@ -38,15 +59,15 @@ final class AudioSourceCache {
         }
     }
 
-    private func task(for media: MediaItem) -> Task<URL?, Never> {
+    private func task(for media: MediaItem) -> Task<PreparedAudio?, Never> {
         if let existing = preparing[media.id] { return existing }
         let source = MediaURLCache.shared.url(for: media)
         let id = media.id
         let task = Task {
-            let url = await Self.makeReadable(source, id: id)
-            if let url { ready[id] = url }
+            let prepared = await Self.makeReadable(source, id: id)
+            if let prepared { ready[id] = prepared }
             preparing[id] = nil
-            return url
+            return prepared
         }
         preparing[media.id] = task
         return task
@@ -58,8 +79,12 @@ final class AudioSourceCache {
     }
 
     @concurrent
-    nonisolated private static func makeReadable(_ url: URL, id: UUID) async -> URL? {
-        if (try? AVAudioFile(forReading: url)) != nil { return url }
+    nonisolated private static func makeReadable(_ url: URL, id: UUID) async -> PreparedAudio? {
+        let isMono = await sourceChannels(url) == 1
+        if let file = try? AVAudioFile(forReading: url),
+           file.processingFormat.sampleRate == AudioGraphFormat.sampleRate, file.processingFormat.channelCount == 2 {
+            return PreparedAudio(url: url, isMono: false)
+        }
 
         // Name the proxy after the source file's identity so edits to the file invalidate it.
         let stamp = DiskCache.stamp(for: url) ?? "0-0"
@@ -67,7 +92,7 @@ final class AudioSourceCache {
         let proxy = folder.appendingPathComponent("\(id.uuidString)-\(stamp).caf")
         if FileManager.default.fileExists(atPath: proxy.path) {
             DiskCache.touch(proxy)
-            return proxy
+            return PreparedAudio(url: proxy, isMono: isMono)
         }
         try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         let temp = folder.appendingPathComponent("\(UUID().uuidString).tmp.caf")
@@ -80,13 +105,23 @@ final class AudioSourceCache {
             return nil
         }
         try? FileManager.default.moveItem(at: temp, to: proxy)
-        return proxy
+        return PreparedAudio(url: proxy, isMono: isMono)
     }
 
-    /// Decodes the first audio track to 32-bit float stereo PCM.
+    /// Channels of the first audio track of a file.
+    @concurrent
+    nonisolated private static func sourceChannels(_ url: URL) async -> Int {
+        guard let track = try? await AVURLAsset(url: url).loadTracks(withMediaType: .audio).first,
+              let description = try? await track.load(.formatDescriptions).first,
+              let basic = CMAudioFormatDescriptionGetStreamBasicDescription(description) else { return 2 }
+        return Int(basic.pointee.mChannelsPerFrame)
+    }
+
+    /// Decodes the first audio track to 32-bit float stereo PCM at 48 kHz (a mono track
+    /// becomes two identical channels).
     @concurrent
     nonisolated private static func decode(_ url: URL, to destination: URL) async -> Bool {
-        let sampleRate = 48_000.0
+        let sampleRate = AudioGraphFormat.sampleRate
         let asset = AVURLAsset(url: url)
         guard let track = try? await asset.loadTracks(withMediaType: .audio).first,
               let reader = try? AVAssetReader(asset: asset),

@@ -128,7 +128,13 @@ nonisolated enum ExportRenderer {
             let asset = AVURLAsset(url: audio)
             if let track = try await asset.loadTracks(withMediaType: .audio).first {
                 let r = try AVAssetReader(asset: asset)
-                let o = AVAssetReaderTrackOutput(track: track, outputSettings: [AVFormatIDKey: kAudioFormatLinearPCM])
+                // The mix is 48 kHz stereo (the graph's format); the file gets the export's
+                // sample rate and channels.
+                let o = AVAssetReaderTrackOutput(track: track, outputSettings: [
+                    AVFormatIDKey: kAudioFormatLinearPCM,
+                    AVSampleRateKey: snapshot.settings.audioSampleRate,
+                    AVNumberOfChannelsKey: snapshot.settings.audioChannels,
+                ])
                 if r.canAdd(o) {
                     audioReader = r
                     audioOutput = o
@@ -357,66 +363,32 @@ nonisolated enum ExportRenderer {
     }
 }
 
-/// Mixes the audio tracks exactly as playback does (the same voices, speed, pitch,
-/// pan, volume and mute/solo), rendered offline into a file on a background thread.
+/// Mixes the audio tracks exactly as playback does: the same `AudioGraph` (clips,
+/// tracks, master and all their settings), rendered offline into a file on a
+/// background thread.
 enum ExportAudioMixer {
     static func render(_ snapshot: ExportSnapshot, to url: URL, cancellation: ExportCancellation,
                        progress: @escaping @Sendable (Double) -> Void = { _ in }) async throws {
         let state = snapshot.state
-        // Audio from movie files is decoded once into a readable proxy; wait for those.
-        var readable: [UUID: URL] = [:]
+        // Each source is converted once to the graph's format; wait for those.
+        var prepared: [UUID: PreparedAudio] = [:]
         let audioMedia = Set(state.trackIndices(of: .audio).flatMap { state.tracks[$0].clips.map(\.mediaID) })
         for media in state.media where audioMedia.contains(media.id) && media.hasAudio && MediaURLCache.shared.isAvailable(media) {
-            if let url = await AudioSourceCache.shared.prepare(media) { readable[media.id] = url }
+            if let audio = await AudioSourceCache.shared.preparedAudio(media) { prepared[media.id] = audio }
         }
-        let files = readable
+        let sources = prepared
         try await Task.detached(priority: .userInitiated) {
-            try mix(snapshot, files: files, to: url, cancellation: cancellation, progress: progress)
+            try mix(snapshot, sources: sources, to: url, cancellation: cancellation, progress: progress)
         }.value
     }
 
-    nonisolated private static func mix(_ snapshot: ExportSnapshot, files: [UUID: URL], to url: URL,
+    nonisolated private static func mix(_ snapshot: ExportSnapshot, sources: [UUID: PreparedAudio], to url: URL,
                                         cancellation: ExportCancellation, progress: (Double) -> Void) throws {
-        let rate = Double(snapshot.settings.audioSampleRate)
-        let channels = AVAudioChannelCount(max(1, min(2, snapshot.settings.audioChannels)))
-        guard let format = AVAudioFormat(standardFormatWithSampleRate: rate, channels: channels) else {
-            throw ExportError.setupFailed("the audio format isn’t supported.")
-        }
-        let engine = AVAudioEngine()
-        let chunk: AVAudioFrameCount = 4096
-        try engine.enableManualRenderingMode(.offline, format: format, maximumFrameCount: chunk)
-        _ = engine.mainMixerNode
-        let voices = AudioVoice.makeAll(for: snapshot.state, from: snapshot.range.start, in: engine) { files[$0.id] }
-        try engine.start()
-        defer {
-            voices.forEach { $0.player.stop() }
-            engine.stop()
-        }
-        for voice in voices { try voice.player.playAudio(at: nil) }
-
+        let format = AudioGraphFormat.format
         let file = try AVAudioFile(forWriting: url, settings: format.settings, commonFormat: .pcmFormatFloat32, interleaved: false)
-        guard let buffer = AVAudioPCMBuffer(pcmFormat: engine.manualRenderingFormat, frameCapacity: chunk) else {
-            throw ExportError.setupFailed("the audio couldn’t be prepared.")
-        }
-        let total = AVAudioFramePosition((snapshot.range.duration.seconds * rate).rounded())
-        var done: AVAudioFramePosition = 0
-        while done < total {
-            if cancellation.isCancelled { throw ExportError.cancelled }
-            let frames = AVAudioFrameCount(min(AVAudioFramePosition(chunk), total - done))
-            // When the Mac is busy the players may not have read their files ahead yet;
-            // that's "try again", not an error.
-            var status = try engine.renderOffline(frames, to: buffer)
-            var retries = 0
-            while status == .cannotDoInCurrentContext && retries < 2_000 {
-                if cancellation.isCancelled { throw ExportError.cancelled }
-                Thread.sleep(forTimeInterval: 0.002)
-                status = try engine.renderOffline(frames, to: buffer)
-                retries += 1
-            }
-            guard status == .success else { throw ExportError.writingFailed("the audio mix stopped early.") }
+        try AudioGraph.render(snapshot.state, range: snapshot.range, sources: sources,
+                              isCancelled: { cancellation.isCancelled }, progress: progress) { buffer in
             try file.write(from: buffer)
-            done += AVAudioFramePosition(buffer.frameLength)
-            progress(Double(done) / Double(total))
         }
     }
 }

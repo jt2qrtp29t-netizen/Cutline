@@ -111,13 +111,19 @@ nonisolated enum AnimatableProperty: String, Codable, CaseIterable, Identifiable
     case liftX, liftY, liftMaster, gammaX, gammaY, gammaMaster
     case gainX, gainY, gainMaster, offsetX, offsetY, offsetMaster
     case lutIntensity
+    // Audio clips (Audio tab).
+    case volume, pan
 
     var id: String { rawValue }
 
-    /// Motion parameters belong to the Effects tab; the rest to the Color tab.
-    var isColor: Bool { !Self.motion.contains(self) }
+    /// Motion parameters belong to the Effects tab, grade parameters to the Color tab
+    /// and sound parameters to the Audio tab.
+    var isMotion: Bool { Self.motion.contains(self) }
+    var isColor: Bool { Self.grade.contains(self) }
+    var isAudio: Bool { Self.audio.contains(self) }
     static let motion: [AnimatableProperty] = [.positionX, .positionY, .scale, .rotation, .opacity, .yaw, .pitch]
-    static let grade: [AnimatableProperty] = allCases.filter(\.isColor)
+    static let audio: [AnimatableProperty] = [.volume, .pan]
+    static let grade: [AnimatableProperty] = allCases.filter { !motion.contains($0) && !audio.contains($0) }
 
     var title: String {
         switch self {
@@ -149,12 +155,14 @@ nonisolated enum AnimatableProperty: String, Codable, CaseIterable, Identifiable
         case .offsetY: "Offset Color Y"
         case .offsetMaster: "Offset"
         case .lutIntensity: "LUT Intensity"
+        case .volume: "Volume"
+        case .pan: "Pan"
         }
     }
 
     var defaultValue: Double {
         switch self {
-        case .scale, .opacity, .contrast, .saturation, .lutIntensity: 1
+        case .scale, .opacity, .contrast, .saturation, .lutIntensity, .volume: 1
         default: 0
         }
     }
@@ -190,6 +198,8 @@ nonisolated enum AnimatableProperty: String, Codable, CaseIterable, Identifiable
         case .offsetY: \.color.offset.y
         case .offsetMaster: \.color.offset.master
         case .lutIntensity: \.color.lutIntensity
+        case .volume: \.volume
+        case .pan: \.pan
         }
     }
 
@@ -204,6 +214,8 @@ nonisolated enum AnimatableProperty: String, Codable, CaseIterable, Identifiable
         case .exposure: -3...3
         case .contrast, .saturation: 0...2
         case .lutIntensity: 0...1
+        // Linear gain: silence to +12 dB.
+        case .volume: 0...AudioLevel.linear(fromDB: 12)
         default: -1...1
         }
     }

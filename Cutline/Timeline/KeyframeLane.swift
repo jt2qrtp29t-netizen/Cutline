@@ -31,7 +31,7 @@ struct KeyframeLane: View {
                 VStack(spacing: 0) {
                     ForEach(rows) { property in
                         Button {
-                            if !property.isColor { editor.effectsProperty = property }
+                            if property.isMotion { editor.effectsProperty = property }
                         } label: {
                             Text(property.title)
                                 .font(.system(size: 10, weight: property == editor.effectsProperty ? .semibold : .regular))
@@ -98,7 +98,7 @@ private struct KeyframeRow: View {
                         DragGesture(minimumDistance: 2)
                             .onChanged { drag in
                                 if !editor.selectedKeyframes.contains(ref) { editor.selectedKeyframes = [ref] }
-                                if !property.isColor { editor.effectsProperty = property }
+                                if property.isMotion { editor.effectsProperty = property }
                                 editor.dragKeyframes(editor.selectedKeyframes, by: layout.duration(forWidth: drag.translation.width))
                             }
                             .onEnded { _ in

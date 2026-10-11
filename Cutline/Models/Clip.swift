@@ -76,6 +76,11 @@ nonisolated struct Clip: Identifiable, Codable, Hashable, Sendable {
     /// Pitch shift for audio clips, independent of speed.
     var pitchSemitones: Double = 0
     var pitchCents: Double = 0
+    /// Clip gain for audio clips, in dB, applied before volume (Normalize sets it).
+    var gainDB: Double = 0
+    /// Fades at the start and end of audio clips.
+    var fadeIn = AudioFade.none
+    var fadeOut = AudioFade.none
     /// Clips sharing a link ID select, move, trim, cut and delete together.
     var linkID: UUID?
     /// A locked clip can't be moved, trimmed, cut, deleted, adjusted or overwritten.
@@ -120,6 +125,9 @@ nonisolated struct Clip: Identifiable, Codable, Hashable, Sendable {
         pan = try c.decodeIfPresent(Double.self, forKey: .pan) ?? 0
         pitchSemitones = try c.decodeIfPresent(Double.self, forKey: .pitchSemitones) ?? 0
         pitchCents = try c.decodeIfPresent(Double.self, forKey: .pitchCents) ?? 0
+        gainDB = try c.decodeIfPresent(Double.self, forKey: .gainDB) ?? 0
+        fadeIn = try c.decodeIfPresent(AudioFade.self, forKey: .fadeIn) ?? .none
+        fadeOut = try c.decodeIfPresent(AudioFade.self, forKey: .fadeOut) ?? .none
         linkID = try c.decodeIfPresent(UUID.self, forKey: .linkID)
         isLocked = try c.decodeIfPresent(Bool.self, forKey: .isLocked) ?? false
         isMuted = try c.decodeIfPresent(Bool.self, forKey: .isMuted) ?? false

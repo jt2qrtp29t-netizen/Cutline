@@ -79,7 +79,7 @@ extension EditorController {
                 state.updateClip(clip.id) { $0.animation.setKeyframe(property, at: offset, value: value) }
             }
         }
-        if !property.isColor { effectsProperty = property }
+        if property.isMotion { effectsProperty = property }
     }
 
     /// Sets a parameter from the Effects panel. An animated parameter gets a keyframe

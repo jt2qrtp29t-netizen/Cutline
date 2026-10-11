@@ -87,7 +87,7 @@ struct ParameterRow: View {
                 .disabled(!animated)
 
                 Button {
-                    if !property.isColor { editor.effectsProperty = property }
+                    if property.isMotion { editor.effectsProperty = property }
                 } label: {
                     Text(property.title)
                         .font(.system(size: 11, weight: isCurrent ? .semibold : .regular))
@@ -96,7 +96,7 @@ struct ParameterRow: View {
                         .contentShape(.rect)
                 }
                 .buttonStyle(.plain)
-                .help(property.isColor ? property.title : "Show \(property.title) in the curve editor")
+                .help(!property.isMotion ? property.title : "Show \(property.title) in the curve editor")
 
                 NumberField(value: value, range: property.range, displayScale: property.displayScale, unit: property.unit,
                             fractionDigits: property.fractionDigits, step: property.unitsPerPoint * 10) { newValue in
@@ -107,7 +107,7 @@ struct ParameterRow: View {
             PrecisionSlider(
                 value: value, range: property.sliderRange(for: editor.settings), unitsPerPoint: property.unitsPerPoint,
                 onBegin: {
-                    if !property.isColor { editor.effectsProperty = property }
+                    if property.isMotion { editor.effectsProperty = property }
                     editor.beginAdjustment()
                 },
                 onChange: { editor.setEffectValue(property, of: clip.id, to: $0) },
@@ -119,7 +119,7 @@ struct ParameterRow: View {
         .padding(.horizontal, 4)
         .background(isCurrent ? Theme.accentMuted : Theme.raised.opacity(0), in: .rect(cornerRadius: 6))
         .contextMenu {
-            if !property.isColor {
+            if property.isMotion {
                 Button("Show in Curve Editor") { editor.effectsProperty = property }
             }
             Button("Remove All \(property.title) Keyframes", role: .destructive) {

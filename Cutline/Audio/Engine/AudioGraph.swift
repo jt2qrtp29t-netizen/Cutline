@@ -1,0 +1,329 @@
+import AVFoundation
+import Synchronization
+
+/// Cutline's audio graph, the same for playback, scrubbing and export:
+///
+///     clip player → [time-pitch] → clip node ─┐
+///     clip player → [time-pitch] → clip node ─┼→ track sum → track node ─┐
+///                                              …                        ├→ master sum → master node → output
+///                                   (other tracks) → track node ────────┘
+///
+/// Clip nodes apply clip gain, volume, pan and fades; track nodes the fader, pan and
+/// effects; the master node the master fader, start/stop fades and metering. Every
+/// node evaluates its settings with the same functions (`ClipEnvelope`,
+/// `TrackEnvelope`, `MasterEnvelope`) at the timeline sample it's rendering, so real
+/// time and offline rendering produce the same sound.
+nonisolated final class AudioGraph {
+    let engine: AVAudioEngine
+    let transport = AudioTransport()
+
+    private let masterSum = AVAudioMixerNode()
+    private let master: (node: AVAudioUnitEffect, unit: MasterAudioUnit)
+    private var tracks: [UUID: TrackNodes] = [:]
+    private var voices: [UUID: Voice] = [:]
+    private var masterSettings = MasterAudio()
+    var isMuted = false {
+        didSet { postMaster() }
+    }
+
+    private struct TrackNodes {
+        let sum: AVAudioMixerNode
+        let node: AVAudioUnitEffect
+        let unit: TrackAudioUnit
+    }
+
+    private struct Voice {
+        let clipID: UUID
+        let trackID: UUID
+        let player: AVAudioPlayerNode?
+        /// While scrubbing there's no player; a silent source keeps the clip node live.
+        let silence: AVAudioSourceNode?
+        let timePitch: AVAudioUnitTimePitch?
+        let node: AVAudioUnitEffect
+        let unit: ClipAudioUnit
+        var isMono: Bool
+        var nodes: [AVAudioNode] { [player, silence, timePitch].compactMap { $0 } + [node] }
+    }
+
+    init(engine: AVAudioEngine) {
+        self.engine = engine
+        master = CutlineAudioUnit.makeNode(MasterAudioUnit.self, MasterAudioUnit.componentDescription)
+        master.unit.transport.attach(transport)
+        let format = AudioGraphFormat.format
+        engine.attach(masterSum)
+        engine.attach(master.node)
+        Self.keepAlive(masterSum, in: engine)
+        try? engine.connectNode(masterSum, to: master.node, format: format)
+        try? engine.connectNode(master.node, to: engine.mainMixerNode, format: format)
+        postMaster()
+    }
+
+    /// The engine only renders mixer branches that have an input when they're wired
+    /// in; a silent source keeps each of the graph's mixers live, so clips and tracks
+    /// can join and leave while the engine runs.
+    private static func keepAlive(_ mixer: AVAudioMixerNode, in engine: AVAudioEngine) {
+        let silence = silentSource()
+        engine.attach(silence)
+        try? engine.connectNode(silence, to: mixer, fromBus: 0, toBus: mixer.nextAvailableInputBus, format: AudioGraphFormat.format)
+    }
+
+    private static func silentSource() -> AVAudioSourceNode {
+        AVAudioSourceNode(format: AudioGraphFormat.format) { isSilence, _, _, buffers in
+            for buffer in UnsafeMutableAudioBufferListPointer(buffers) {
+                if let data = buffer.mData { memset(data, 0, Int(buffer.mDataByteSize)) }
+            }
+            isSilence.pointee = true
+            return noErr
+        }
+    }
+
+    var masterMeter: PeakMeter { master.unit.meter }
+    func meter(forTrack id: UUID) -> PeakMeter? { tracks[id]?.unit.meter }
+    var hasVoices: Bool { voices.values.contains { $0.player != nil } }
+
+    // MARK: Settings
+
+    /// Brings the graph's tracks in line with the project and hands every node its
+    /// current settings (fader moves, mute and solo, keyframes…). Changes glide in.
+    func update(_ state: ProjectState) {
+        syncTracks(state)
+        for index in state.trackIndices(of: .audio) {
+            let track = state.tracks[index]
+            tracks[track.id]?.unit.programs.post(TrackProgram(envelope: TrackEnvelope(track, isActive: state.isTrackActive(index))))
+        }
+        for index in state.trackIndices(of: .audio) {
+            for clip in state.tracks[index].clips {
+                guard let voice = voices[clip.id] else { continue }
+                let envelope = ClipEnvelope(clip, isActive: state.isClipActive(clip, onTrack: index), monoSource: voice.isMono)
+                voice.unit.programs.post(ClipProgram(envelope: envelope, scrub: scrubSources[clip.id]))
+            }
+        }
+        masterSettings = state.audio.master
+        postMaster()
+    }
+
+    private func postMaster() {
+        master.unit.programs.post(MasterProgram(envelope: MasterEnvelope(masterSettings), isMuted: isMuted))
+    }
+
+    /// One track node per audio track; nodes of deleted tracks are removed.
+    private func syncTracks(_ state: ProjectState) {
+        let ids = Set(state.trackIndices(of: .audio).map { state.tracks[$0].id })
+        for (id, nodes) in tracks where !ids.contains(id) {
+            for voice in voices.values where voice.trackID == id { remove(voice) }
+            engine.detach(nodes.sum)
+            engine.detach(nodes.node)
+            tracks[id] = nil
+        }
+        let format = AudioGraphFormat.format
+        for id in ids where tracks[id] == nil {
+            let sum = AVAudioMixerNode()
+            let (node, unit) = CutlineAudioUnit.makeNode(TrackAudioUnit.self, TrackAudioUnit.componentDescription)
+            unit.transport.attach(transport)
+            engine.attach(sum)
+            engine.attach(node)
+            Self.keepAlive(sum, in: engine)
+            try? engine.connectNode(sum, to: node, format: format)
+            try? engine.connectNode(node, to: masterSum, fromBus: 0, toBus: masterSum.nextAvailableInputBus, format: format)
+            tracks[id] = TrackNodes(sum: sum, node: node, unit: unit)
+        }
+    }
+
+    // MARK: Playing
+
+    /// Builds and schedules a voice for every clip that still sounds after `time`.
+    /// - Parameter sources: each media item's prepared 48 kHz stereo sound.
+    func prepareVoices(_ state: ProjectState, from time: Time, sources: (MediaItem) -> PreparedAudio?) {
+        removeVoices()
+        syncTracks(state)
+        for index in state.trackIndices(of: .audio) {
+            let track = state.tracks[index]
+            for clip in track.clips where clip.end > time {
+                guard let media = state.mediaItem(clip.mediaID), let prepared = sources(media),
+                      // Each voice reads through its own file object.
+                      let file = try? AVAudioFile(forReading: prepared.url),
+                      let plan = AudioVoicePlan.make(for: clip, from: time, sampleRate: AudioGraphFormat.sampleRate,
+                                                     fileLength: file.length) else { continue }
+                let player = AVAudioPlayerNode()
+                // Speed and pitch need the time-pitch unit; without them the sound passes untouched.
+                let timePitch = clip.speed != 1 || clip.pitchShiftCents != 0 ? AVAudioUnitTimePitch() : nil
+                timePitch?.rate = Float(clip.speed)
+                timePitch?.pitch = Float(clip.pitchShiftCents)
+                let voice = makeVoice(clip: clip, trackID: track.id, player: player, timePitch: timePitch, isMono: prepared.isMono)
+                let envelope = ClipEnvelope(clip, isActive: state.isClipActive(clip, onTrack: index), monoSource: prepared.isMono)
+                voice.unit.programs.post(ClipProgram(envelope: envelope))
+                let when = plan.delayFrames > 0 ? AVAudioTime(sampleTime: plan.delayFrames, atRate: AudioGraphFormat.sampleRate) : nil
+                player.scheduleSegment(file, startingFrame: plan.startFrame, frameCount: plan.frameCount, at: when, completionHandler: nil)
+                // Read the first audio now, so the voice is ready on its very first sample.
+                player.prepare(withFrameCount: 8192)
+            }
+        }
+        update(state)
+    }
+
+    private func makeVoice(clip: Clip, trackID: UUID, player: AVAudioPlayerNode?, timePitch: AVAudioUnitTimePitch?,
+                           isMono: Bool) -> Voice {
+        let (node, unit) = CutlineAudioUnit.makeNode(ClipAudioUnit.self, ClipAudioUnit.componentDescription)
+        unit.transport.attach(transport)
+        let voice = Voice(clipID: clip.id, trackID: trackID, player: player, silence: player == nil ? Self.silentSource() : nil,
+                          timePitch: timePitch, node: node, unit: unit, isMono: isMono)
+        let format = AudioGraphFormat.format
+        voice.nodes.forEach(engine.attach)
+        let chain = voice.nodes
+        for (from, to) in zip(chain, chain.dropFirst()) {
+            try? engine.connectNode(from, to: to, format: format)
+        }
+        if let sum = tracks[trackID]?.sum {
+            try? engine.connectNode(node, to: sum, fromBus: 0, toBus: sum.nextAvailableInputBus, format: format)
+        }
+        voices[clip.id] = voice
+        return voice
+    }
+
+    /// Starts every voice: at `hostTime` in real time (the sample at timeline `time`
+    /// reaches the output then), or immediately when rendering offline.
+    func start(at time: Time, hostTime: UInt64?) {
+        let sample = AudioGraphFormat.sample(of: time)
+        let start: AVAudioTime
+        if let hostTime {
+            transport.set(.realtime(hostTime: hostTime, timelineSample: sample))
+            master.unit.runControl.fadesIn.store(true, ordering: .relaxed)
+            start = AVAudioTime(hostTime: hostTime)
+        } else {
+            // Offline: the players and every node agree on the engine sample that plays
+            // the first timeline sample (the next one to be rendered).
+            let engineSample = engine.isInManualRenderingMode ? engine.manualRenderingSampleTime : 0
+            transport.set(.offline(timelineSample: sample, engineSample: engineSample))
+            start = AVAudioTime(sampleTime: engineSample, atRate: AudioGraphFormat.sampleRate)
+        }
+        master.unit.runControl.run.store(true, ordering: .relaxed)
+        for voice in voices.values {
+            try? voice.player?.playAudio(at: start)
+        }
+    }
+
+    /// Fades the master out (real time) before `removeVoices` stops the sound.
+    func fadeOut() {
+        master.unit.runControl.run.store(false, ordering: .relaxed)
+    }
+
+    func removeVoices() {
+        for voice in voices.values { remove(voice) }
+        scrubSources = [:]
+    }
+
+    private func remove(_ voice: Voice) {
+        voice.player?.stop()
+        voice.nodes.forEach(engine.detach)
+        voices[voice.clipID] = nil
+    }
+
+    // MARK: Scrubbing
+
+    private var scrubSources: [UUID: ScrubSource] = [:]
+    private var scrubPlan: ScrubPlan?
+
+    /// Plays the sound under the playhead while it's dragged: clip nodes for the clips
+    /// near it read their decoded source at the scrub head, through the same tracks
+    /// and master as playback.
+    func scrub(_ state: ProjectState, to time: Time, sources: [ScrubSource], monoSources: Set<UUID>) {
+        if voices.values.contains(where: { $0.player != nil }) { removeVoices() }
+        syncTracks(state)
+        let wanted = Dictionary(uniqueKeysWithValues: sources.map { ($0.clipID, $0) })
+        for voice in voices.values where wanted[voice.clipID] == nil { remove(voice) }
+        scrubSources = wanted
+        for index in state.trackIndices(of: .audio) {
+            let track = state.tracks[index]
+            for clip in track.clips where wanted[clip.id] != nil && voices[clip.id] == nil {
+                _ = makeVoice(clip: clip, trackID: track.id, player: nil, timePitch: nil, isMono: monoSources.contains(clip.mediaID))
+            }
+        }
+        update(state)
+
+        // Move the read head: keep reading on if the playhead is close, otherwise jump
+        // to it with a short crossfade from where it was.
+        let now = currentEngineSample
+        let target = AudioGraphFormat.sample(of: time)
+        let resync = Int64(0.08 * AudioGraphFormat.sampleRate)
+        let idle = Int64(0.12 * AudioGraphFormat.sampleRate)
+        var plan: ScrubPlan
+        if let previous = scrubPlan, !previous.isSilent(at: now) {
+            let head = previous.read(at: now).current
+            if abs(head - target) > resync {
+                plan = ScrubPlan(head: target, engineSample: now, previousHead: head, idleAt: now + idle)
+            } else {
+                plan = previous
+                plan.idleAt = now + idle
+            }
+        } else {
+            plan = ScrubPlan(head: target, engineSample: now, previousHead: nil, idleAt: now + idle)
+        }
+        scrubPlan = plan
+        transport.set(.scrub(plan))
+        master.unit.runControl.run.store(true, ordering: .relaxed)
+    }
+
+    /// Lets the scrub head come to rest; it fades out.
+    func stopScrubbing() {
+        guard var plan = scrubPlan else { return }
+        plan.idleAt = min(plan.idleAt, currentEngineSample)
+        scrubPlan = plan
+        transport.set(.scrub(plan))
+    }
+
+    /// The engine's sample clock now: the next sample to render offline, or (in real
+    /// time) a little after the last rendered cycle.
+    private var currentEngineSample: Int64 {
+        if engine.isInManualRenderingMode { return engine.manualRenderingSampleTime }
+        return Int64(engine.outputNode.lastRenderTime?.sampleTime ?? 0) + 256
+    }
+
+    func stopTransport(at time: Time) {
+        scrubPlan = nil
+        transport.set(.stopped(at: AudioGraphFormat.sample(of: time)))
+    }
+}
+
+// MARK: - Offline rendering
+
+nonisolated extension AudioGraph {
+    /// Renders `range` of the project offline (no speakers) through the same graph as
+    /// playback, handing each block of 48 kHz stereo audio to `consume`.
+    static func render(_ state: ProjectState, range: TimeRange, sources: [UUID: PreparedAudio],
+                       isCancelled: () -> Bool = { false }, progress: (Double) -> Void = { _ in },
+                       consume: (AVAudioPCMBuffer) throws -> Void) throws {
+        let engine = AVAudioEngine()
+        let chunk: AVAudioFrameCount = 4096
+        try engine.enableManualRenderingMode(.offline, format: AudioGraphFormat.format, maximumFrameCount: chunk)
+        let graph = AudioGraph(engine: engine)
+        graph.prepareVoices(state, from: range.start) { sources[$0.id] }
+        try engine.start()
+        defer {
+            graph.removeVoices()
+            engine.stop()
+        }
+        graph.start(at: range.start, hostTime: nil)
+        guard let buffer = AVAudioPCMBuffer(pcmFormat: engine.manualRenderingFormat, frameCapacity: chunk) else {
+            throw ExportError.setupFailed("the audio couldn’t be prepared.")
+        }
+        let total = AVAudioFramePosition((range.duration.seconds * AudioGraphFormat.sampleRate).rounded())
+        var done: AVAudioFramePosition = 0
+        while done < total {
+            if isCancelled() { throw ExportError.cancelled }
+            let frames = AVAudioFrameCount(min(AVAudioFramePosition(chunk), total - done))
+            // When busy, the players may not have read ahead yet: that's "try again".
+            var status = try engine.renderOffline(frames, to: buffer)
+            var retries = 0
+            while status == .cannotDoInCurrentContext && retries < 2_000 {
+                if isCancelled() { throw ExportError.cancelled }
+                Thread.sleep(forTimeInterval: 0.002)
+                status = try engine.renderOffline(frames, to: buffer)
+                retries += 1
+            }
+            guard status == .success else { throw ExportError.writingFailed("the audio mix stopped early.") }
+            try consume(buffer)
+            done += AVAudioFramePosition(buffer.frameLength)
+            progress(Double(done) / Double(max(total, 1)))
+        }
+    }
+}

@@ -42,6 +42,8 @@ nonisolated struct Track: Identifiable, Codable, Hashable, Sendable {
     var clips: [Clip] = []
     /// Transitions on cuts between this track's clips.
     var transitions: [Transition] = []
+    /// Audio tracks: fader, pan and effects.
+    var audio = TrackAudio.neutral
 
     static let heightRange: ClosedRange<Double> = 32...220
 
@@ -65,6 +67,7 @@ nonisolated struct Track: Identifiable, Codable, Hashable, Sendable {
         height = try c.decodeIfPresent(Double.self, forKey: .height)
         clips = try c.decodeIfPresent([Clip].self, forKey: .clips) ?? []
         transitions = try c.decodeIfPresent([Transition].self, forKey: .transitions) ?? []
+        audio = try c.decodeIfPresent(TrackAudio.self, forKey: .audio) ?? .neutral
     }
 
     mutating func sortClips() {
