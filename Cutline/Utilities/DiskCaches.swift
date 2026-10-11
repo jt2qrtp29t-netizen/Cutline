@@ -12,6 +12,8 @@ nonisolated enum DiskCache: String, CaseIterable, Identifiable, Sendable {
     case media = "Media"
     /// The sound of speed-ramped and tape-speed clips, rendered ahead of time.
     case retimed = "RetimedAudio"
+    /// Transcripts of media files (for captions).
+    case transcripts = "Transcripts"
 
     var id: String { rawValue }
 
@@ -21,6 +23,7 @@ nonisolated enum DiskCache: String, CaseIterable, Identifiable, Sendable {
         case .waveforms: "Waveforms"
         case .media: "Optimized and proxy media"
         case .retimed: "Speed-changed audio"
+        case .transcripts: "Transcripts"
         }
     }
 

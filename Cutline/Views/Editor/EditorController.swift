@@ -98,6 +98,11 @@ final class EditorController {
     var selectedAudioTrackID: UUID?
     /// What the Audio tab is busy with ("Normalizing…"), and the last result to show.
     var audioActivity: String?
+    /// Transcription in progress: progress (0…1) by media ID.
+    var transcriptionProgress: [UUID: Double] = [:]
+    /// Why the last transcription stopped, if it failed.
+    var transcriptionMessage: String?
+    @ObservationIgnored var transcriptionTask: Task<Void, Never>?
     var audioMessage: String?
     var selectedKeyframes: Set<KeyframeRef> = []
     /// The grade on the clipboard (Copy Grade / Paste Grade).

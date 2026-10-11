@@ -20,6 +20,8 @@ nonisolated struct ProjectState: Codable, Hashable, Sendable {
     var exportSettings = ExportSettings()
     /// The master bus and other project-wide sound settings.
     var audio = ProjectAudio()
+    /// What was said in each media item (by media ID), for captions.
+    var transcripts: [UUID: Transcript] = [:]
 
     init(settings: ProjectSettings = .default, videoTracks: Int = 1, audioTracks: Int = 1, textTracks: Int = 1) {
         self.settings = settings
@@ -38,6 +40,7 @@ nonisolated struct ProjectState: Codable, Hashable, Sendable {
         markers = try c.decodeIfPresent([Marker].self, forKey: .markers) ?? []
         exportSettings = try c.decodeIfPresent(ExportSettings.self, forKey: .exportSettings) ?? ExportSettings()
         audio = try c.decodeIfPresent(ProjectAudio.self, forKey: .audio) ?? ProjectAudio()
+        transcripts = try c.decodeIfPresent([UUID: Transcript].self, forKey: .transcripts) ?? [:]
         if version < 2 { migrateSeparatingAudio() }
         if version < 3 { migrateTextToTextTracks() }
         version = Self.currentVersion
