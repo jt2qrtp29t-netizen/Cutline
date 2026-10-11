@@ -114,14 +114,43 @@ extension EditorController {
 
     /// The captions the Captions tab shows.
     var currentCaptions: [Caption] {
-        captionTrackIndex.map { state.captions(onTrack: $0) } ?? []
+        guard let index = captionTrackIndex else { return [] }
+        return captions(onTrack: index)
+    }
+
+    /// A caption track's captions, worked out once per change to the project.
+    func captions(onTrack index: Int) -> [Caption] {
+        let revision = store.revision
+        if let cached = captionCache, cached.revision == revision, cached.trackIndex == index { return cached.captions }
+        let captions = state.captions(onTrack: index)
+        captionCache = (revision, index, captions)
+        return captions
     }
 
     /// Transcribes everything on the audio tracks and makes sure there's a caption track
     /// to show the result (the Captions tab's Transcribe button).
     func transcribeForCaptions(locale: Locale? = nil) {
+        transcribeForCaptions(nil, locale: locale)
+    }
+
+    func transcribeForCaptions(_ mediaIDs: Set<UUID>?, locale: Locale? = nil) {
         if captionTrackIndices.isEmpty { selectedCaptionTrackID = addCaptionTrack() }
-        transcribe(locale: locale)
+        transcribe(mediaIDs, locale: locale)
+    }
+
+    /// Media whose transcript was edited by hand and would be replaced.
+    func editedTranscripts(among mediaIDs: Set<UUID>?) -> [MediaItem] {
+        state.transcribableMedia.filter { (mediaIDs?.contains($0.id) ?? true) && state.transcripts[$0.id]?.isEdited == true }
+    }
+
+    /// Transcribes (all media, or `mediaIDs`), first asking if that would replace edited
+    /// transcripts (`pendingTranscription` is set and the editor asks).
+    func requestTranscription(_ mediaIDs: Set<UUID>? = nil) {
+        if editedTranscripts(among: mediaIDs).isEmpty {
+            transcribeForCaptions(mediaIDs)
+        } else {
+            pendingTranscription = PendingTranscription(mediaIDs: mediaIDs)
+        }
     }
 
     private func updateWord(_ word: CaptionWord, actionName: String, coalesce: Bool = false,
@@ -129,6 +158,7 @@ extension EditorController {
         store.edit(actionName, coalescingKey: coalesce ? "word/\(word.wordID)" : nil) { state in
             guard let index = state.transcripts[word.mediaID]?.words.firstIndex(where: { $0.id == word.wordID }) else { return }
             body(&state.transcripts[word.mediaID]!.words[index])
+            state.transcripts[word.mediaID]!.isEdited = true
         }
     }
 
@@ -153,6 +183,7 @@ extension EditorController {
         store.edit(hidden ? "Hide Word" : "Show Word") { state in
             guard let index = state.transcripts[mediaID]?.words.firstIndex(where: { $0.id == wordID }) else { return }
             state.transcripts[mediaID]!.words[index].isHidden = hidden
+            state.transcripts[mediaID]!.isEdited = true
         }
     }
 
@@ -173,6 +204,7 @@ extension EditorController {
                 guard let i = state.transcripts[word.mediaID]?.words.firstIndex(where: { $0.id == word.wordID }) else { continue }
                 state.transcripts[word.mediaID]!.words[i].startsCaption = false
                 state.transcripts[word.mediaID]!.words[i].keepsWithPrevious = true
+                state.transcripts[word.mediaID]!.isEdited = true
             }
         }
     }
@@ -189,6 +221,7 @@ extension EditorController {
                 for (word, newText) in zip(caption.words, newWords) {
                     guard let i = state.transcripts[word.mediaID]?.words.firstIndex(where: { $0.id == word.wordID }) else { continue }
                     state.transcripts[word.mediaID]!.words[i].text = newText
+                    state.transcripts[word.mediaID]!.isEdited = true
                 }
                 return
             }
@@ -212,6 +245,7 @@ extension EditorController {
                 let at = transcript.words.firstIndex { $0.start >= start } ?? transcript.words.count
                 transcript.words.insert(contentsOf: replacements, at: at)
             }
+            transcript.isEdited = true
             state.transcripts[mediaID] = transcript
         }
     }

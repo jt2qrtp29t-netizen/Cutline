@@ -12,7 +12,12 @@ import Observation
 /// one undo step.
 @Observable
 final class ProjectStore {
-    private(set) var state: ProjectState
+    private(set) var state: ProjectState {
+        didSet { revision &+= 1 }
+    }
+    /// Goes up with every change to the state (edits, live changes, undo and redo), so
+    /// things worked out from it can be kept until it changes.
+    @ObservationIgnored private(set) var revision = 0
     /// True while a gesture is mutating the state without registering undo.
     private(set) var isLiveEditing = false
 

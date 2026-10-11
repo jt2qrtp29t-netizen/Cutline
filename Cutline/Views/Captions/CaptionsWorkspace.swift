@@ -92,7 +92,7 @@ struct TranscriptPanel: View {
                     .controlSize(.small)
             } else {
                 Button {
-                    editor.transcribeForCaptions()
+                    editor.requestTranscription()
                 } label: {
                     Label(editor.state.transcripts.isEmpty ? "Transcribe" : "Transcribe Again", systemImage: "waveform.badge.mic")
                 }

@@ -119,7 +119,8 @@ enum SpeechKit {
 
         // Fewer words per caption; a caption that would run too long splits.
         undo.beginUndoGrouping(); editor.adjustCaptions(track, actionName: "Words") { $0.maxWords = 3 }; undo.endUndoGrouping()
-        #expect(texts(editor) == ["w0 w1 w2", "w3 w4 w5.", "w6 w7 w8", "w9", "w10 w11 w12", "w13 w14 w15"])
+        // Split evenly: 4 words at 3 per caption make 2 + 2, not 3 + 1.
+        #expect(texts(editor) == ["w0 w1 w2", "w3 w4 w5.", "w6 w7", "w8 w9", "w10 w11 w12", "w13 w14 w15"])
         undo.beginUndoGrouping(); editor.adjustCaptions(track, actionName: "Length") { $0.maxWords = 20; $0.maxDuration = 1.0; $0.splitsSentences = false }; undo.endUndoGrouping()
         #expect(captions(editor).allSatisfy { $0.words.last!.end - $0.words.first!.start <= Time(seconds: 1.0) })
         // Undo walks back each settings change.
@@ -434,5 +435,75 @@ enum SpeechKit {
         let index = try #require(sandbox.state.trackIndices(of: .caption).first)
         #expect(sandbox.state.tracks[index].captions?.style == CaptionPreset.lowerThird.style)
         #expect(sandbox.state.captions(onTrack: index).map(\.text) == ["hello there.", "general kenobi"])
+    }
+}
+
+
+@MainActor struct CaptionPolishTests {
+    private func words(_ texts: [String], from start: Double = 1, step: Double = 0.3) -> [TranscriptWord] {
+        texts.enumerated().map { k, t in TranscriptWord(text: t, start: start + Double(k) * step, end: start + Double(k) * step + 0.25) }
+    }
+
+    private func state(_ words: [TranscriptWord], clips: Int = 1, length: Double = 20) -> ProjectState {
+        var state = ProjectState()
+        let media = MediaItem(id: UUID(), name: "talk", path: "/talk.wav", duration: Time(seconds: length), width: 0, height: 0,
+                              frameRate: 0, hasAudio: true)
+        state.media = [media]
+        state.transcripts[media.id] = Transcript(mediaID: media.id, locale: "en_US", words: words)
+        let piece = length / Double(clips)
+        state.tracks[state.trackIndices(of: .audio)[0]].clips = (0..<clips).map { k in
+            Clip(id: UUID(), mediaID: media.id, name: "talk", start: Time(seconds: Double(k) * piece), duration: Time(seconds: piece),
+                 sourceStart: Time(seconds: Double(k) * piece))
+        }
+        state.appendCaptionTrack()
+        return state
+    }
+
+    @Test func longSentencesSplitEvenly() {
+        let s = state(words(["and", "I", "have", "no", "idea", "what", "I'm", "doing."]))
+        let index = s.trackIndices(of: .caption)[0]
+        #expect(s.captions(onTrack: index).map(\.text) == ["and I have no", "idea what I'm doing."], "4 + 4, not 6 + 2")
+        // Thirteen words: 5 + 4 + 4 (never more than six).
+        let long = state(words((1...13).map { "w\($0)" }, step: 0.2))
+        let groups = long.captions(onTrack: index).map(\.words.count)
+        #expect(groups.reduce(0, +) == 13 && groups.allSatisfy { $0 <= 6 } && groups.max()! - groups.min()! <= 1, "\(groups)")
+    }
+
+    @Test func transcribingAgainAsksBeforeReplacingEdits() throws {
+        var s = state(words(["hello", "there"]))
+        let mediaID = try #require(s.media.first?.id)
+        s.media[0].path = "/tmp/missing-\(UUID()).wav"
+        let editor = EditorController(store: ProjectStore(state: s))
+        // Untouched: no question (it just starts).
+        #expect(editor.editedTranscripts(among: nil).isEmpty)
+        // After a correction it asks first.
+        editor.editWord(editor.currentCaptions[0].words[0], to: "Hello")
+        #expect(editor.state.transcripts[mediaID]?.isEdited == true)
+        editor.requestTranscription()
+        #expect(editor.pendingTranscription != nil && !editor.isTranscribing, "waits for the answer")
+        #expect(editor.editedTranscripts(among: [UUID()]).isEmpty, "other media isn't affected")
+        #expect(try ProjectState.decode(editor.state.encoded()) == editor.state)
+    }
+
+    @Test func anHourOfSpeechStaysQuick() throws {
+        // 9,000 words over an hour, cut into 300 clips.
+        let text = (0..<9_000).map { "w\($0)" + ($0 % 12 == 11 ? "." : "") }
+        let s = state(words(text, from: 0, step: 0.4), clips: 300, length: 3_600)
+        let index = s.trackIndices(of: .caption)[0]
+        let clock = ContinuousClock()
+        let start = clock.now
+        let captions = s.captions(onTrack: index)
+        let elapsed = clock.now - start
+        #expect(captions.flatMap(\.words).count == 9_000)
+        #expect(elapsed < .milliseconds(500), "\(elapsed) (debug build)")
+
+        // Redraws during playback reuse them until the project changes.
+        let editor = EditorController(store: ProjectStore(state: s))
+        _ = editor.currentCaptions
+        let again = clock.now
+        for _ in 0..<60 { _ = editor.currentCaptions }
+        #expect(clock.now - again < .milliseconds(20), "a second of playback redraws")
+        editor.editWord(editor.currentCaptions[0].words[0], to: "first")
+        #expect(editor.currentCaptions[0].words[0].text == "first", "a change shows at once")
     }
 }

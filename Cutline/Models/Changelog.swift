@@ -19,6 +19,15 @@ enum Changelog {
     }
 
     static let entries: [Entry] = [
+        Entry(version: "4.5", title: "Captions", tags: [.feature], changes: [
+            "A new Captions tab (⌘5): transcribe the audio tracks on this Mac (nothing is uploaded) and get captions timed word by word. Playground is now ⌘6 and Export ⌘7.",
+            "Caption tracks (CC) on the timeline: their captions come from the transcript and follow the audio through every move, trim, cut, ripple and speed change, so they never drift out of sync.",
+            "The transcript, caption by caption: click a word to go there, see the spoken word highlighted as it plays, double-click a caption to retype it, and right-click to start a new caption, merge with the previous one, or hide a word (hidden words are kept and can be shown again).",
+            "Grouping you control: words per caption, longest and shortest caption, the pause that starts a new caption, and a new caption at each sentence. Long sentences split evenly.",
+            "Captions burned into the picture, drawn the same in the preview and the export, with presets (Bold Center, Karaoke with the spoken word highlighted, Lower Third, Clean) and font, size, colors, outline, box, all caps and position. They keep their size on vertical and square exports.",
+            "Export captions as a SubRip (.srt) file from the Captions tab, or next to the movie from the Export tab, where burning them in can also be turned off.",
+            "Right-click an audio clip in Edit to transcribe it. Transcribing again asks first if it would replace your corrections. Transcripts are kept on disk, so a recording is only ever transcribed once.",
+        ]),
         Entry(version: "4.4", title: "Smooth speed changes", tags: [.bugFix], changes: [
             "Fixed: speed changes could make the preview lag, stutter or freeze. Changing a speed ramp made every filmstrip thumbnail on the clip ask for a new frame on every step of the drag, and with recordings that only store a full frame every few seconds (games, phones) each one meant decoding seconds of video, keeping the video decoder busy long after the drag.",
             "Thumbnails now wait for the end of a drag (showing the nearest frame meanwhile), are made at most three at a time, newest first, and skip requests for tiles that have scrolled away or moved on.",

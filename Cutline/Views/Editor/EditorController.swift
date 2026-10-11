@@ -105,6 +105,10 @@ final class EditorController {
     @ObservationIgnored var transcriptionTask: Task<Void, Never>?
     /// The caption track the Captions tab is showing.
     var selectedCaptionTrackID: UUID?
+    /// Transcribing again would replace edited transcripts: waiting for the user to confirm.
+    var pendingTranscription: PendingTranscription?
+    /// Captions worked out for a track at a store revision (redraws during playback reuse them).
+    @ObservationIgnored var captionCache: (revision: Int, trackIndex: Int, captions: [Caption])?
     var audioMessage: String?
     var selectedKeyframes: Set<KeyframeRef> = []
     /// The grade on the clipboard (Copy Grade / Paste Grade).
@@ -843,6 +847,12 @@ final class EditorController {
         state.media.append(item)
         return item
     }
+}
+
+struct PendingTranscription: Identifiable {
+    let id = UUID()
+    /// Nil: all media on the audio tracks.
+    let mediaIDs: Set<UUID>?
 }
 
 struct EditorAlert: Identifiable {

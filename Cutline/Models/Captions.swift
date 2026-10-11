@@ -156,7 +156,11 @@ nonisolated extension ProjectState {
                 guard let transcript = transcripts[clip.mediaID] else { continue }
                 let from = clip.sourceStart.seconds, to = clip.sourceEnd.seconds
                 let remap = clip.remap
-                for word in transcript.words where includingHidden || !word.isHidden {
+                // Words are in time order: start at the first that could fall inside the clip
+                // (a long transcript cut into many clips stays quick).
+                let first = transcript.firstWord(endingAfter: from)
+                for word in transcript.words[first...] where includingHidden || !word.isHidden {
+                    if word.start >= to { break }
                     let middle = (word.start + word.end) / 2
                     guard middle >= from, middle < to else { continue }
                     func timeline(_ source: Double) -> Time {
@@ -182,26 +186,67 @@ nonisolated extension ProjectState {
     func captions(onTrack index: Int) -> [Caption] {
         guard tracks.indices.contains(index), let settings = tracks[index].captions else { return [] }
         let words = captionWords(for: settings, includingHidden: true)
-        var groups: [[CaptionWord]] = []
-        var current: [CaptionWord] = []
         let pause = Time(seconds: settings.pauseSplit), longest = Time(seconds: settings.maxDuration)
+        let maxWords = max(settings.maxWords, 1)
+
+        // 1. Stretches between hard breaks: a long pause, a sentence end, a split the
+        //    transcript asks for. Merged words never break.
+        var stretches: [[CaptionWord]] = []
+        var current: [CaptionWord] = []
         for word in words {
-            if let first = current.first, let last = current.last, !(word.keepsWithPrevious && !word.startsCaption) {
-                let shown = current.filter { !$0.isHidden }
+            if let last = current.last, !(word.keepsWithPrevious && !word.startsCaption) {
+                let lastShown = current.last { !$0.isHidden }
                 let breaks = word.startsCaption
-                    || (!word.isHidden && shown.count >= max(settings.maxWords, 1))
                     || word.start - last.end >= pause
-                    || word.end - first.start > longest
-                    || (settings.splitsSentences && shown.last?.text.last.map { ".?!".contains($0) } == true && !word.isHidden
-                        && shown.last == last)
+                    || (settings.splitsSentences && !word.isHidden && lastShown == last
+                        && last.text.last.map { ".?!".contains($0) } == true)
                 if breaks {
-                    groups.append(current)
+                    stretches.append(current)
                     current = []
                 }
             }
             current.append(word)
         }
-        if !current.isEmpty { groups.append(current) }
+        if !current.isEmpty { stretches.append(current) }
+
+        // 2. Each stretch into evenly sized captions within the word and length limits
+        //    (8 words at 6 per caption make 4 + 4, not 6 + 2). Merged words stay together.
+        var groups: [[CaptionWord]] = []
+        for stretch in stretches {
+            var units: [[CaptionWord]] = []
+            for word in stretch {
+                if word.keepsWithPrevious && !word.startsCaption, !units.isEmpty { units[units.count - 1].append(word) } else { units.append([word]) }
+            }
+            func shown(_ unit: [CaptionWord]) -> Int { unit.filter { !$0.isHidden }.count }
+            let total = units.map(shown).reduce(0, +)
+            let span = (stretch.last?.end ?? .zero) - (stretch.first?.start ?? .zero)
+            let pieces = max(Int((Double(total) / Double(maxWords)).rounded(.up)),
+                             Int((span.seconds / max(longest.seconds, 0.01)).rounded(.up)), 1)
+            let target = Double(total) / Double(pieces)
+            var group: [CaptionWord] = []
+            var count = 0, made = 0, done = 0
+            for unit in units {
+                let n = shown(unit)
+                if !group.isEmpty, n > 0 {
+                    let start = group.first!.start
+                    // Breaks at the rounded running targets (13 words in 3: 4 + 5 + 4).
+                    let due = Int((Double(made + 1) * target).rounded())
+                    let full = count + n > maxWords
+                        || (unit.last!.end - start > longest)
+                        || (made < pieces - 1 && done >= due)
+                    if full {
+                        groups.append(group)
+                        made += 1
+                        group = []
+                        count = 0
+                    }
+                }
+                group += unit
+                count += n
+                done += n
+            }
+            if !group.isEmpty { groups.append(group) }
+        }
         // Hidden words have done their job (timing): leave them out of what's shown.
         groups = groups.map { $0.filter { !$0.isHidden } }.filter { !$0.isEmpty }
 

@@ -365,9 +365,7 @@ private struct AudioClipMenuItems: View {
             editor.normalize(.clip(clip.id))
         }
         Button(editor.state.transcripts[clip.mediaID] == nil ? "Transcribe for Captions" : "Transcribe Again for Captions") {
-            let media = Set(targets.compactMap { editor.state.clip($0)?.mediaID } + [clip.mediaID])
-            if editor.captionTrackIndices.isEmpty { editor.selectedCaptionTrackID = editor.addCaptionTrack() }
-            editor.transcribe(media)
+            editor.requestTranscription(Set(targets.compactMap { editor.state.clip($0)?.mediaID } + [clip.mediaID]))
         }
         .disabled(editor.isTranscribing)
         .disabled(editor.audioActivity != nil)

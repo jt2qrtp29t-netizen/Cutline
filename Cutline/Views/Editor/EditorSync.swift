@@ -27,6 +27,20 @@ struct EditorSync: ViewModifier {
             .sheet(item: Binding(get: { editor.clipDialog }, set: { editor.clipDialog = $0 })) { dialog in
                 ClipDialogView(editor: editor, dialog: dialog)
             }
+            .confirmationDialog(
+                "Replace your transcript edits?",
+                isPresented: Binding(get: { editor.pendingTranscription != nil }, set: { if !$0 { editor.pendingTranscription = nil } }),
+                presenting: editor.pendingTranscription
+            ) { pending in
+                Button("Transcribe Again", role: .destructive) {
+                    editor.pendingTranscription = nil
+                    editor.transcribeForCaptions(pending.mediaIDs)
+                }
+                Button("Cancel", role: .cancel) { editor.pendingTranscription = nil }
+            } message: { pending in
+                let names = editor.editedTranscripts(among: pending.mediaIDs).map(\.name)
+                Text("Your corrections, hidden words and caption splits in \(names.formatted(.list(type: .and))) will be replaced by a fresh transcript. You can undo it afterwards.")
+            }
             .alert(item: Binding(get: { editor.alert }, set: { editor.alert = $0 })) { alert in
                 Alert(title: Text(alert.title), message: Text(alert.message))
             }

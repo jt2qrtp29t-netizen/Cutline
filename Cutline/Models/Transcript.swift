@@ -44,10 +44,37 @@ nonisolated struct Transcript: Codable, Hashable, Sendable {
     /// The language it was recognized in (a locale identifier such as "en_US").
     var locale: String
     var words: [TranscriptWord]
+    /// Changed by hand since it was recognized (transcribing again would lose that).
+    var isEdited = false
+
+    init(mediaID: UUID, locale: String, words: [TranscriptWord]) {
+        self.mediaID = mediaID
+        self.locale = locale
+        self.words = words
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        mediaID = try c.decode(UUID.self, forKey: .mediaID)
+        locale = try c.decode(String.self, forKey: .locale)
+        words = try c.decode([TranscriptWord].self, forKey: .words)
+        isEdited = try c.decodeIfPresent(Bool.self, forKey: .isEdited) ?? false
+    }
 
     /// Words whose span overlaps source seconds `range`, in order.
     func words(in range: ClosedRange<Double>) -> [TranscriptWord] {
         words.filter { $0.end > range.lowerBound && $0.start < range.upperBound }
+    }
+
+    /// Index of the first word ending after `time` (words are kept in time order).
+    func firstWord(endingAfter time: Double) -> Int {
+        var low = 0, high = words.count
+        while low < high {
+            let mid = (low + high) / 2
+            if words[mid].end <= time { low = mid + 1 } else { high = mid }
+        }
+        // A couple of words back, in case an edited word overlaps its neighbor.
+        return max(0, low - 2)
     }
 
     /// The plain text (shown words, separated by spaces).

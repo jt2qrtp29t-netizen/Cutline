@@ -84,7 +84,7 @@ struct TimelineLanes: View {
             ForEach(layout.rows.filter { $0.kind == .caption }, id: \.trackID) { row in
                 let window = renderWindow
                 let isActive = editor.state.isTrackActive(row.trackIndex)
-                ForEach(editor.state.captions(onTrack: row.trackIndex).filter {
+                ForEach(editor.captions(onTrack: row.trackIndex).filter {
                     layout.x(for: $0.end) >= window.lowerBound && layout.x(for: $0.start) <= window.upperBound
                 }) { caption in
                     CaptionBlock(caption: caption)
