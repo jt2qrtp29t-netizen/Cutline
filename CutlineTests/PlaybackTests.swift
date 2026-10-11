@@ -59,8 +59,9 @@ struct PlaybackTests {
         let corner = try pixel(frame3, x: 20, y: 20)
         #expect(middle.r > middle.b, "sunset layer should be on top: \(middle)")
         #expect(corner.b > corner.r, "ocean should show around the scaled layer: \(corner)")
-        // The left half of the sunset layer is cropped away, revealing the ocean.
-        let cropped = try pixel(frame3, x: 700, y: 540)
+        // The left half of the sunset layer is cropped away, revealing the ocean (sampled
+        // below the ocean clip's burned-in timecode text).
+        let cropped = try pixel(frame3, x: 700, y: 750)
         let kept = try pixel(frame3, x: 1200, y: 540)
         #expect(cropped.b > cropped.r, "cropped area shows the layer below: \(cropped)")
         #expect(kept.r > kept.b, "uncropped part of the layer remains: \(kept)")

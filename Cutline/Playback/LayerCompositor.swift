@@ -20,7 +20,18 @@ nonisolated final class LayerCompositor: NSObject, AVVideoCompositing, @unchecke
         kCVPixelBufferMetalCompatibilityKey as String: true,
     ]
 
-    let sourcePixelBufferAttributes: [String: any Sendable]? = LayerCompositor.pixelAttributes
+    /// Source frames come as the decoder makes them (YUV, 10-bit when the file is), which
+    /// Core Image reads directly on the GPU: no conversion pass per frame (about twice as
+    /// fast in 4K) and 10-bit footage keeps its precision. RGB is the fallback.
+    static let sourceFormats: [OSType] = [
+        kCVPixelFormatType_420YpCbCr10BiPlanarVideoRange, kCVPixelFormatType_420YpCbCr10BiPlanarFullRange,
+        kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange, kCVPixelFormatType_420YpCbCr8BiPlanarFullRange,
+        kCVPixelFormatType_32BGRA,
+    ]
+    let sourcePixelBufferAttributes: [String: any Sendable]? = [
+        kCVPixelBufferPixelFormatTypeKey as String: LayerCompositor.sourceFormats,
+        kCVPixelBufferMetalCompatibilityKey as String: true,
+    ]
     let requiredPixelBufferAttributesForRenderContext: [String: any Sendable] = LayerCompositor.pixelAttributes
 
     func renderContextChanged(_ newRenderContext: AVVideoCompositionRenderContext) {}

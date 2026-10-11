@@ -15,6 +15,7 @@ enum Changelog {
             "Accurate export time estimates, based on measured encoder speeds, how much work each frame is (layers, grades, Labs effects), and how long your own exports take.",
             "Faster Encoding now keeps the quality: it raises the bitrate 20% to make up for the encoder’s faster mode, which is still about 1.9× faster. It’s only offered for HEVC, the codec it speeds up.",
             "Network Optimization in the Export tab (on by default): the movie’s index goes at the start of the file, so it starts playing while it downloads or uploads.",
+            "Twice as fast drawing of video frames in 4K: the GPU now reads frames in the decoder’s own format instead of converting each one first. 10-bit footage keeps its full precision, and clips with transparency still work.",
             "Fixed: exports could freeze when several frames were drawn or several exports ran at once, and an export could fail with “the audio mix stopped early” on a busy Mac.",
         ]),
         Entry(version: "3.4", title: "Faster exports", changes: [
