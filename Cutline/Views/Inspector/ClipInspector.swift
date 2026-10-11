@@ -156,8 +156,11 @@ struct ClipInspector: View {
             editor.adjustClip(clip.id, actionName: "Reset Audio") { clip in
                 clip.volume = 1
                 clip.pan = 0
+                clip.gainDB = 0
             }
         }) {
+            slider("Gain", \.gainDB, range: -24...24, unit: " dB", fractionDigits: 1, unitsPerPoint: 0.05,
+                   action: "Change Gain")
             slider("Volume", \.volume, range: 0...2, displayScale: 100, unit: "%", unitsPerPoint: 0.005,
                    action: "Change Volume")
             slider("Pan", \.pan, range: -1...1, displayScale: 100, unitsPerPoint: 0.005, action: "Change Pan")
@@ -170,6 +173,16 @@ struct ClipInspector: View {
             }
             .font(.system(size: 9.5, weight: .medium))
             .foregroundStyle(Theme.textTertiary)
+        }
+
+        InspectorSection(title: "Fades", onReset: {
+            editor.adjustClip(clip.id, actionName: "Remove Fades") { clip in
+                clip.fadeIn = .off
+                clip.fadeOut = .off
+            }
+        }) {
+            fadeRow("In", .leading, clip.fadeIn)
+            fadeRow("Out", .trailing, clip.fadeOut)
         }
 
         InspectorSection(title: "Pitch", onReset: {
@@ -187,6 +200,26 @@ struct ClipInspector: View {
                 .font(.system(size: 10))
                 .foregroundStyle(Theme.textTertiary)
                 .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    /// A fade's length and curve.
+    private func fadeRow(_ title: String, _ edge: ClipEdge, _ fade: AudioFade) -> some View {
+        let id = clip.id
+        return VStack(alignment: .leading, spacing: 4) {
+            InspectorSlider(title: "Fade \(title)", value: fade.duration.seconds, range: 0...max(clip.duration.seconds, 0.01),
+                            unit: " s", fractionDigits: 2, unitsPerPoint: 0.01,
+                            onBegin: editor.beginAdjustment,
+                            onChange: { editor.adjustFade(edge, of: id, to: Time(seconds: $0)) },
+                            onEnd: { editor.endAudioAdjustment("Change Fade \(title)") },
+                            onSet: { editor.setFade(edge, of: [id], to: Time(seconds: $0)) })
+            Picker("Curve", selection: Binding(get: { fade.curve }, set: { editor.setFadeCurve(edge, of: [id], to: $0) })) {
+                ForEach(FadeCurve.allCases) { Text($0.title).tag($0) }
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            .controlSize(.small)
+            .disabled(!fade.isActive)
         }
     }
 

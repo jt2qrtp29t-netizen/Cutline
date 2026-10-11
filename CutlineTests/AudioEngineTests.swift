@@ -3,6 +3,10 @@ import Foundation
 import Testing
 @testable import Cutline
 
+enum AudioTestError: Error {
+    case notPrepared(String)
+}
+
 /// Builds sound files and renders projects offline (no speakers) for audio tests.
 @MainActor enum AudioTestKit {
     /// A sine tone file: `channels` channels (the second, if any, at 1.5× the frequency).
@@ -32,14 +36,17 @@ import Testing
         for url in urls {
             let media = try await MediaImporter.makeItem(for: url)
             state.media.append(media)
-            sources[media.id] = try #require(await AudioSourceCache.shared.preparedAudio(media))
+            guard let prepared = await AudioSourceCache.shared.preparedAudio(media) else {
+                throw AudioTestError.notPrepared(url.lastPathComponent)
+            }
+            sources[media.id] = prepared
             let ids = TimelineEditing.place(media, at: cursor, onTrack: state.trackIndices(of: .audio)[0], in: &state)
             cursor = ids.compactMap { state.clip($0)?.end }.max() ?? cursor
         }
         return (state, sources)
     }
 
-    struct Rendered {
+    nonisolated struct Rendered: Sendable {
         var left: [Float] = []
         var right: [Float] = []
 
@@ -60,14 +67,19 @@ import Testing
         }
     }
 
-    static func render(_ state: ProjectState, sources: [UUID: PreparedAudio], seconds: Double, from start: Double = 0) throws -> Rendered {
-        var out = Rendered()
-        try AudioGraph.render(state, range: TimeRange(start: Time(seconds: start), end: Time(seconds: start + seconds)), sources: sources) { buffer in
-            let n = Int(buffer.frameLength)
-            out.left += UnsafeBufferPointer(start: buffer.floatChannelData![0], count: n)
-            out.right += UnsafeBufferPointer(start: buffer.floatChannelData![1], count: n)
-        }
-        return out
+    /// Renders on a background thread (as export does), never blocking the main actor
+    /// that other tests share.
+    static func render(_ state: ProjectState, sources: [UUID: PreparedAudio], seconds: Double, from start: Double = 0) async throws -> Rendered {
+        let range = TimeRange(start: Time(seconds: start), end: Time(seconds: start + seconds))
+        return try await Task.detached {
+            var out = Rendered()
+            try AudioGraph.render(state, range: range, sources: sources) { buffer in
+                let n = Int(buffer.frameLength)
+                out.left += UnsafeBufferPointer(start: buffer.floatChannelData![0], count: n)
+                out.right += UnsafeBufferPointer(start: buffer.floatChannelData![1], count: n)
+            }
+            return out
+        }.value
     }
 
     static func samples(of url: URL) throws -> (left: [Float], right: [Float]) {
@@ -88,7 +100,7 @@ import Testing
     @Test func anUntouchedChainLeavesTheSamplesExactlyAsTheyAre() async throws {
         let url = try AudioTestKit.tone()
         let (state, sources) = try await AudioTestKit.project([url])
-        let rendered = try AudioTestKit.render(state, sources: sources, seconds: 1)
+        let rendered = try await AudioTestKit.render(state, sources: sources, seconds: 1)
         let original = try AudioTestKit.samples(of: url)
         var worst: Float = 0
         for i in 0..<48_000 {
@@ -104,14 +116,14 @@ import Testing
         #expect(AudioLevel.linear(fromDB: AudioLevel.silenceDB) == 0)
 
         let (state, sources) = try await AudioTestKit.project([try AudioTestKit.tone()])
-        let reference = try AudioTestKit.render(state, sources: sources, seconds: 0.5).rms(seconds: 0.1...0.4)
+        let reference = try await AudioTestKit.render(state, sources: sources, seconds: 0.5).rms(seconds: 0.1...0.4)
         for (clipDB, trackDB, masterDB) in [(-6.0206, 0.0, 0.0), (0, -12, 0), (3, 3, -6.0206)] {
             var adjusted = state
             let clip = AudioTestKit.firstClip(state)
             adjusted.updateClip(clip.id) { $0.gainDB = clipDB }
             adjusted.tracks[AudioTestKit.audioTrack(state)].audio.volumeDB = trackDB
             adjusted.audio.master.volumeDB = masterDB
-            let level = try AudioTestKit.render(adjusted, sources: sources, seconds: 0.5).rms(seconds: 0.1...0.4)
+            let level = try await AudioTestKit.render(adjusted, sources: sources, seconds: 0.5).rms(seconds: 0.1...0.4)
             let expected = AudioLevel.linear(fromDB: clipDB + trackDB + masterDB)
             #expect(abs(level.left / reference.left - expected) < 1e-3, "\(clipDB)+\(trackDB)+\(masterDB) dB")
         }
@@ -130,10 +142,10 @@ import Testing
             let url = try AudioTestKit.tone(channels: mono ? 1 : 2, rate: mono ? 44_100 : 48_000, float: false)
             let (state, sources) = try await AudioTestKit.project([url])
             #expect(sources.values.first?.isMono == mono)
-            let center = try AudioTestKit.render(state, sources: sources, seconds: 0.5).rms(seconds: 0.1...0.4)
+            let center = try await AudioTestKit.render(state, sources: sources, seconds: 0.5).rms(seconds: 0.1...0.4)
             var panned = state
             panned.updateClip(AudioTestKit.firstClip(state).id) { $0.pan = -0.5; $0.volume = 1.5 }
-            let level = try AudioTestKit.render(panned, sources: sources, seconds: 0.5).rms(seconds: 0.1...0.4)
+            let level = try await AudioTestKit.render(panned, sources: sources, seconds: 0.5).rms(seconds: 0.1...0.4)
             let law = PanLaw.gains(pan: -0.5, monoSource: mono), centerLaw = PanLaw.gains(pan: 0, monoSource: mono)
             #expect(abs(level.left / center.left - 1.5 * law.left / centerLaw.left) < 2e-3)
             #expect(abs(level.right / center.right - 1.5 * law.right / centerLaw.right) < 2e-3)
@@ -154,11 +166,11 @@ import Testing
 
         // Rendered: a one-second fade-in reaches the curve's level at each point.
         let (state, sources) = try await AudioTestKit.project([try AudioTestKit.tone(seconds: 2)])
-        let flat = try AudioTestKit.render(state, sources: sources, seconds: 1.2)
+        let flat = try await AudioTestKit.render(state, sources: sources, seconds: 1.2)
         for curve in FadeCurve.allCases {
             var faded = state
             faded.updateClip(AudioTestKit.firstClip(state).id) { $0.fadeIn = AudioFade(duration: Time(seconds: 1), curve: curve) }
-            let out = try AudioTestKit.render(faded, sources: sources, seconds: 1.2)
+            let out = try await AudioTestKit.render(faded, sources: sources, seconds: 1.2)
             for u in [0.25, 0.5, 0.75] {
                 let i = Int(u * 48_000)
                 let window = (i - 240)..<(i + 240)
@@ -184,9 +196,9 @@ import Testing
         state.tracks[a2].isSoloed = true
         #expect(state.isTrackActive(a1), "solo overrides mute")
         #expect(state.isTrackActive(a2) && !state.isTrackActive(a3), "several solos play; the rest don't")
-        let soloed = try AudioTestKit.render(state, sources: sources, seconds: 0.5).rms(seconds: 0.1...0.4)
+        let soloed = try await AudioTestKit.render(state, sources: sources, seconds: 0.5).rms(seconds: 0.1...0.4)
         state.tracks[a1].isSoloed = false
-        let one = try AudioTestKit.render(state, sources: sources, seconds: 0.5).rms(seconds: 0.1...0.4)
+        let one = try await AudioTestKit.render(state, sources: sources, seconds: 0.5).rms(seconds: 0.1...0.4)
         #expect(abs(soloed.left / one.left - 2) < 1e-3, "two soloed tracks sound, then one")
     }
 
@@ -202,14 +214,14 @@ import Testing
             c.fadeIn = AudioFade(duration: Time(seconds: 0.3), curve: .logarithmic)
             c.fadeOut = AudioFade(duration: Time(seconds: 0.4), curve: .linear)
         }
-        let whole = try AudioTestKit.render(state, sources: sources, seconds: 2)
+        let whole = try await AudioTestKit.render(state, sources: sources, seconds: 2)
         var cut = state
         let created = TimelineEditing.blade(at: Time(seconds: 0.77), clips: [clip.id], in: &cut)
         #expect(created.count == 1)
         let left = try #require(cut.clip(clip.id)), right = try #require(cut.clip(created[0]))
         #expect(left.fadeIn == state.clip(clip.id)!.fadeIn && !left.fadeOut.isActive)
         #expect(right.fadeOut == state.clip(clip.id)!.fadeOut && !right.fadeIn.isActive)
-        let halves = try AudioTestKit.render(cut, sources: sources, seconds: 2)
+        let halves = try await AudioTestKit.render(cut, sources: sources, seconds: 2)
         var worst: Float = 0
         for i in 0..<min(whole.left.count, halves.left.count) {
             worst = max(worst, abs(whole.left[i] - halves.left[i]), abs(whole.right[i] - halves.right[i]))
@@ -286,7 +298,7 @@ import Testing
 
     /// What plays (the real-time renderer, run offline here) and what's exported are the same samples.
     @Test func previewAndExportMatch() async throws {
-        var (state, sources) = try await AudioTestKit.project([try AudioTestKit.tone(channels: 1, rate: 44_100, seconds: 2)])
+        var (state, _) = try await AudioTestKit.project([try AudioTestKit.tone(channels: 1, rate: 44_100, seconds: 2)])
         let clip = AudioTestKit.firstClip(state)
         state.updateClip(clip.id) { c in
             c.gainDB = -2

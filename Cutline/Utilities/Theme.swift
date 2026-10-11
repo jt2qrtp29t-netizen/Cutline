@@ -140,6 +140,9 @@ enum Theme {
     static let faderUnity = Color(hex: 0x3A3A38)
     static let mixerStrip = Color(hex: 0x1F1F1E)
     static let mixerStripSelected = Color(hex: 0x262B27)
+    static let fadeShade = Color(hex: 0x000000).opacity(0.32)
+    static let fadeLine = Color(hex: 0xF2F6FA).opacity(0.85)
+    static let fadeHandle = Color(hex: 0xF2F6FA)
 
     // MARK: Shadows
 

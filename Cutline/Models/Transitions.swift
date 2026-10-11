@@ -46,9 +46,31 @@ nonisolated struct Transition: Identifiable, Codable, Hashable, Sendable {
     /// is nil for a transition on an open edge.
     var outgoingClipID: UUID?
     var incomingClipID: UUID?
+    /// On audio tracks a transition is a crossfade; this is its shape.
+    var curve: FadeCurve = .equalPower
 
     static let defaultDuration = Time(seconds: 1.25)
     static let minimumDuration = Time.frame(fps: 60)
+    /// A new audio crossfade's length.
+    static let defaultCrossfade = Time(seconds: 0.5)
+
+    init(kind: TransitionKind, duration: Time, outgoingClipID: UUID?, incomingClipID: UUID?, curve: FadeCurve = .equalPower) {
+        self.kind = kind
+        self.duration = duration
+        self.outgoingClipID = outgoingClipID
+        self.incomingClipID = incomingClipID
+        self.curve = curve
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decodeIfPresent(UUID.self, forKey: .id) ?? UUID()
+        kind = try c.decode(TransitionKind.self, forKey: .kind)
+        duration = try c.decode(Time.self, forKey: .duration)
+        outgoingClipID = try c.decodeIfPresent(UUID.self, forKey: .outgoingClipID)
+        incomingClipID = try c.decodeIfPresent(UUID.self, forKey: .incomingClipID)
+        curve = try c.decodeIfPresent(FadeCurve.self, forKey: .curve) ?? .equalPower
+    }
 }
 
 /// Where a transition actually plays, after limiting it to what its clips allow.
@@ -186,6 +208,19 @@ nonisolated extension ProjectState {
         tracks[t].transitions.removeAll { $0.outgoingClipID == outgoingID && $0.incomingClipID == incomingID }
         tracks[t].transitions.append(transition)
         return transition.id
+    }
+
+    /// Adds (or replaces) a crossfade on the cut between two touching audio clips.
+    @discardableResult
+    mutating func addCrossfade(between outgoingID: UUID, and incomingID: UUID, duration: Time = Transition.defaultCrossfade,
+                               curve: FadeCurve = .equalPower) -> UUID? {
+        guard let t = trackIndex(ofClip: outgoingID), tracks[t].kind == .audio, trackIndex(ofClip: incomingID) == t else { return nil }
+        let crossfade = Transition(kind: .crossDissolve, duration: duration, outgoingClipID: outgoingID,
+                                   incomingClipID: incomingID, curve: curve)
+        guard tracks[t].isValid(crossfade) else { return nil }
+        tracks[t].transitions.removeAll { $0.outgoingClipID == outgoingID && $0.incomingClipID == incomingID }
+        tracks[t].transitions.append(crossfade)
+        return crossfade.id
     }
 
     /// The cut or open clip edge nearest `time` on a track, within `tolerance`.

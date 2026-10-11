@@ -17,7 +17,14 @@ struct ClipView: View {
         RoundedRectangle(cornerRadius: Theme.Metrics.clipCornerRadius)
     }
 
+    @State private var isHovering = false
+
     private var isAudio: Bool { kind == .audio }
+
+    /// How loud the clip plays over time (gain, volume, fades, crossfades), for its waveform.
+    private var audioEnvelope: ClipEnvelope {
+        ClipEnvelope(clip, track: editor.state.track(ofClip: clip.id), isActive: true, monoSource: false)
+    }
     private var fill: Color {
         clip.isText ? Theme.textClipFill : (isAudio ? Theme.audioClipFill : Theme.clipFill)
     }
@@ -38,7 +45,7 @@ struct ClipView: View {
             } else if let media, !isOffline {
                 Group {
                     if isAudio {
-                        Waveform(clip: clip, media: media, layout: layout, visibleRange: visibleRange)
+                        Waveform(clip: clip, envelope: audioEnvelope, media: media, layout: layout, visibleRange: visibleRange)
                     } else {
                         Filmstrip(clip: clip, media: media, layout: layout, visibleRange: visibleRange, fps: editor.fps)
                     }
@@ -67,6 +74,12 @@ struct ClipView: View {
         .gesture(moveGesture)
         .overlay(alignment: .leading) { if !clip.isLocked { trimHandle(.leading) } }
         .overlay(alignment: .trailing) { if !clip.isLocked { trimHandle(.trailing) } }
+        .overlay {
+            if isAudio, !isLocked, !clip.isLocked, !isOffline {
+                FadeOverlay(editor: editor, clip: clip, layout: layout, showsHandles: isSelected || isHovering)
+            }
+        }
+        .onHover { isHovering = $0 }
         .contextMenu { ClipContextMenu(editor: editor, clip: clip, isSelected: isSelected) }
         // Clips on locked tracks can't be selected or edited; clicks fall through to the lane.
         .allowsHitTesting(!isLocked)
@@ -220,6 +233,10 @@ private struct ClipContextMenu: View {
             get: { editor.areSoloed(targets) },
             set: { _ in editor.toggleSolo(targets) }
         ))
+        if clip.isAudioLabel(editor) {
+            Divider()
+            AudioClipMenuItems(editor: editor, clip: clip, targets: targets)
+        }
         if editor.state.track(ofClip: clip.id)?.kind.isVisual == true {
             Divider()
             Button("Copy Grade") {
@@ -282,10 +299,12 @@ private struct ClipContextMenu: View {
     }
 }
 
-/// Audio peaks drawn across the clip. Only the visible part is drawn, and the
-/// height follows the clip's volume.
+/// Audio peaks drawn across the clip. Only the visible part is drawn, and the height
+/// follows how loud the clip plays there: clip gain, volume (with keyframes), fades and
+/// crossfades, from the same evaluator as playback.
 private struct Waveform: View {
     let clip: Clip
+    let envelope: ClipEnvelope
     let media: MediaItem
     let layout: TimelineLayout
     let visibleRange: ClosedRange<CGFloat>
@@ -300,8 +319,8 @@ private struct Waveform: View {
             let upper = min(width, visibleRange.upperBound)
             if upper > lower, let peaks = cache.peaks(for: media, url: MediaURLCache.shared.url(for: media)), !peaks.isEmpty {
                 let clipValue = clip
+                let envelopeValue = envelope
                 let pps = layout.pixelsPerSecond
-                let gain = min(clip.volume, 2)
                 Canvas { context, size in
                     let mid = size.height / 2
                     var path = Path()
@@ -315,7 +334,8 @@ private struct Waveform: View {
                         let i1 = min(peaks.count, max(i0 + 1, Int(t1.seconds * WaveformCache.bucketsPerSecond)))
                         var peak: Float = 0
                         if i0 < i1 { for i in i0..<i1 { peak = max(peak, peaks[i]) } }
-                        let h = max(0.5, CGFloat(peak) * CGFloat(gain) * mid * 0.95)
+                        let level = min(envelopeValue.level(at: clipValue.start + Time(seconds: Double(lower + x + step / 2) / pps)), 2)
+                        let h = max(0.5, CGFloat(peak) * CGFloat(level) * mid * 0.95)
                         path.addRect(CGRect(x: x, y: mid - min(h, mid), width: step - 0.5, height: min(h, mid) * 2))
                         x += step
                     }
@@ -326,6 +346,125 @@ private struct Waveform: View {
             }
         }
         .clipped()
+    }
+}
+
+/// Fades and crossfades in an audio clip's right-click menu.
+private struct AudioClipMenuItems: View {
+    let editor: EditorController
+    let clip: Clip
+    let targets: Set<UUID>
+
+    static let lengths: [Double] = [0.1, 0.25, 0.5, 1, 2]
+
+    var body: some View {
+        fadeMenu("Fade In", edge: .leading, fade: clip.fadeIn)
+        fadeMenu("Fade Out", edge: .trailing, fade: clip.fadeOut)
+        Button("Crossfade with Previous Clip") { editor.addCrossfade(to: clip.id, after: false) }
+            .disabled(editor.neighbor(of: clip.id, after: false) == nil)
+        Button("Crossfade with Next Clip") { editor.addCrossfade(to: clip.id, after: true) }
+            .disabled(editor.neighbor(of: clip.id, after: true) == nil)
+    }
+
+    private func fadeMenu(_ title: String, edge: ClipEdge, fade: AudioFade) -> some View {
+        Menu(title) {
+            Button("None") { editor.setFade(edge, of: targets, to: .zero) }
+            ForEach(Self.lengths, id: \.self) { seconds in
+                Button {
+                    editor.setFade(edge, of: targets, to: Time(seconds: seconds))
+                } label: {
+                    if abs(fade.duration.seconds - seconds) < 0.001 {
+                        Label(Self.label(seconds), systemImage: "checkmark")
+                    } else {
+                        Text(Self.label(seconds))
+                    }
+                }
+            }
+            Divider()
+            Picker("Curve", selection: Binding(get: { fade.curve }, set: { editor.setFadeCurve(edge, of: targets, to: $0) })) {
+                ForEach(FadeCurve.allCases) { Text($0.title).tag($0) }
+            }
+            .pickerStyle(.inline)
+        }
+    }
+
+    static func label(_ seconds: Double) -> String {
+        seconds < 1 ? "\(Int((seconds * 1000).rounded())) ms" : String(format: "%g s", seconds)
+    }
+}
+
+/// An audio clip's fades: the curve of each fade drawn over the clip with the faded
+/// part shaded, and a handle at its inner end to drag the fade longer or shorter.
+private struct FadeOverlay: View {
+    let editor: EditorController
+    let clip: Clip
+    let layout: TimelineLayout
+    let showsHandles: Bool
+
+    @State private var dragStart: Time?
+
+    var body: some View {
+        GeometryReader { geometry in
+            let width = geometry.size.width
+            let top = Theme.Metrics.clipLabelHeight
+            let height = max(geometry.size.height - top, 1)
+            let fadeIn = layout.width(for: clip.fadeIn.duration)
+            let fadeOut = layout.width(for: clip.fadeOut.duration)
+            ZStack(alignment: .topLeading) {
+                Canvas { context, _ in
+                    for (edge, length, curve) in [(ClipEdge.leading, fadeIn, clip.fadeIn.curve), (.trailing, fadeOut, clip.fadeOut.curve)]
+                    where length > 0.5 {
+                        var line = Path()
+                        let steps = max(Int(length / 2), 4)
+                        for i in 0...steps {
+                            let u = Double(i) / Double(steps)
+                            let x = edge == .leading ? length * u : width - length * u
+                            let y = top + height * (1 - curve.gain(u))
+                            if i == 0 { line.move(to: CGPoint(x: x, y: y)) } else { line.addLine(to: CGPoint(x: x, y: y)) }
+                        }
+                        var shade = line
+                        shade.addLine(to: CGPoint(x: edge == .leading ? length : width - length, y: top))
+                        shade.addLine(to: CGPoint(x: edge == .leading ? 0 : width, y: top))
+                        shade.closeSubpath()
+                        context.fill(shade, with: .color(Theme.fadeShade))
+                        context.stroke(line, with: .color(Theme.fadeLine), lineWidth: 1.5)
+                    }
+                }
+                .allowsHitTesting(false)
+                if showsHandles && width > 24 {
+                    handle(.leading, x: fadeIn, top: top, maxX: width)
+                    handle(.trailing, x: width - fadeOut, top: top, maxX: width)
+                }
+            }
+        }
+    }
+
+    private func handle(_ edge: ClipEdge, x: CGFloat, top: CGFloat, maxX: CGFloat) -> some View {
+        let size: CGFloat = 9
+        let current = edge == .leading ? clip.fadeIn.duration : clip.fadeOut.duration
+        return RoundedRectangle(cornerRadius: 2)
+            .fill(Theme.fadeHandle)
+            .overlay { RoundedRectangle(cornerRadius: 2).strokeBorder(Theme.fadeLine, lineWidth: 1) }
+            .frame(width: size, height: size)
+            .rotationEffect(.degrees(45))
+            .frame(width: 16, height: 16)
+            .contentShape(.rect)
+            .position(x: min(max(x, size / 2 + 1), maxX - size / 2 - 1), y: top + 6)
+            .pointerStyle(.columnResize)
+            .help(edge == .leading ? "Fade in: drag to change its length" : "Fade out: drag to change its length")
+            .gesture(
+                DragGesture(minimumDistance: 1)
+                    .onChanged { value in
+                        if dragStart == nil { dragStart = current }
+                        guard let start = dragStart else { return }
+                        let seconds = Double(value.translation.width) / layout.pixelsPerSecond * (edge == .leading ? 1 : -1)
+                        editor.adjustFade(edge, of: clip.id, to: start + Time(seconds: seconds))
+                    }
+                    .onEnded { _ in
+                        dragStart = nil
+                        editor.endAudioAdjustment(edge == .leading ? "Change Fade In" : "Change Fade Out")
+                    }
+            )
     }
 }
 

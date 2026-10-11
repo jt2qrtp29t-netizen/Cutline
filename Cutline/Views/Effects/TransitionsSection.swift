@@ -79,16 +79,27 @@ struct SelectedTransitionSection: View {
     var body: some View {
         if let (trackIndex, transition) = editor.state.transition(id),
            let placed = editor.state.tracks[trackIndex].placedTransitions().first(where: { $0.transition.id == id }) {
-            InspectorSection(title: "Transition") {
-                Picker("Kind", selection: Binding(
-                    get: { transition.kind },
-                    set: { editor.setTransitionKind($0, for: id) }
-                )) {
-                    ForEach(TransitionKind.allCases) { kind in
-                        Text(kind.title).tag(kind)
+            let isCrossfade = editor.state.tracks[trackIndex].kind == .audio
+            InspectorSection(title: isCrossfade ? "Crossfade" : "Transition") {
+                if isCrossfade {
+                    Picker("Curve", selection: Binding(
+                        get: { transition.curve },
+                        set: { editor.setCrossfadeCurve($0, for: id) }
+                    )) {
+                        ForEach(FadeCurve.allCases) { Text($0.title).tag($0) }
                     }
+                    .labelsHidden()
+                } else {
+                    Picker("Kind", selection: Binding(
+                        get: { transition.kind },
+                        set: { editor.setTransitionKind($0, for: id) }
+                    )) {
+                        ForEach(TransitionKind.allCases) { kind in
+                            Text(kind.title).tag(kind)
+                        }
+                    }
+                    .labelsHidden()
                 }
-                .labelsHidden()
 
                 InspectorSlider(title: "Length", value: transition.duration.seconds, range: 0.1...3, unit: "s",
                                 fractionDigits: 2, unitsPerPoint: 0.01,
@@ -104,7 +115,7 @@ struct SelectedTransitionSection: View {
                 }
                 InspectorValueRow(title: placed.isEdge ? "On" : "Between", value: placed.description)
 
-                Button("Delete Transition", role: .destructive) { editor.deleteTransition(id) }
+                Button(isCrossfade ? "Delete Crossfade" : "Delete Transition", role: .destructive) { editor.deleteTransition(id) }
                     .controlSize(.small)
             }
             .disabled(editor.state.tracks[trackIndex].isLocked)

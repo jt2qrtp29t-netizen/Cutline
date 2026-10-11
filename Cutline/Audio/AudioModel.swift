@@ -49,7 +49,7 @@ nonisolated struct AudioFade: Codable, Hashable, Sendable {
     var duration: Time = .zero
     var curve: FadeCurve = .equalPower
 
-    static let none = AudioFade()
+    static let off = AudioFade()
     var isActive: Bool { duration > .zero }
 }
 

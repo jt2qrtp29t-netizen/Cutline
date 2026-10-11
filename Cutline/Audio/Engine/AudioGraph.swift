@@ -96,7 +96,8 @@ nonisolated final class AudioGraph {
         for index in state.trackIndices(of: .audio) {
             for clip in state.tracks[index].clips {
                 guard let voice = voices[clip.id] else { continue }
-                let envelope = ClipEnvelope(clip, isActive: state.isClipActive(clip, onTrack: index), monoSource: voice.isMono)
+                let envelope = ClipEnvelope(clip, track: state.tracks[index], isActive: state.isClipActive(clip, onTrack: index),
+                                            monoSource: voice.isMono)
                 voice.unit.programs.post(ClipProgram(envelope: envelope, scrub: scrubSources[clip.id]))
             }
         }
@@ -140,11 +141,16 @@ nonisolated final class AudioGraph {
         syncTracks(state)
         for index in state.trackIndices(of: .audio) {
             let track = state.tracks[index]
-            for clip in track.clips where clip.end > time {
-                guard let media = state.mediaItem(clip.mediaID), let prepared = sources(media),
+            for clip in track.clips {
+                guard let media = state.mediaItem(clip.mediaID), let prepared = sources(media) else { continue }
+                let envelope = ClipEnvelope(clip, track: track, isActive: state.isClipActive(clip, onTrack: index),
+                                            monoSource: prepared.isMono)
+                // The clip as it sounds, widened across its crossfades.
+                let playing = envelope.playbackClip(clip)
+                guard playing.end > time,
                       // Each voice reads through its own file object.
                       let file = try? AVAudioFile(forReading: prepared.url),
-                      let plan = AudioVoicePlan.make(for: clip, from: time, sampleRate: AudioGraphFormat.sampleRate,
+                      let plan = AudioVoicePlan.make(for: playing, from: time, sampleRate: AudioGraphFormat.sampleRate,
                                                      fileLength: file.length) else { continue }
                 let player = AVAudioPlayerNode()
                 // Speed and pitch need the time-pitch unit; without them the sound passes untouched.
@@ -152,7 +158,6 @@ nonisolated final class AudioGraph {
                 timePitch?.rate = Float(clip.speed)
                 timePitch?.pitch = Float(clip.pitchShiftCents)
                 let voice = makeVoice(clip: clip, trackID: track.id, player: player, timePitch: timePitch, isMono: prepared.isMono)
-                let envelope = ClipEnvelope(clip, isActive: state.isClipActive(clip, onTrack: index), monoSource: prepared.isMono)
                 voice.unit.programs.post(ClipProgram(envelope: envelope))
                 let when = plan.delayFrames > 0 ? AVAudioTime(sampleTime: plan.delayFrames, atRate: AudioGraphFormat.sampleRate) : nil
                 player.scheduleSegment(file, startingFrame: plan.startFrame, frameCount: plan.frameCount, at: when, completionHandler: nil)

@@ -45,13 +45,42 @@ nonisolated struct ClipEnvelope: Sendable {
     let panFrames: [Keyframe]
     let fadeIn: AudioFade
     let fadeOut: AudioFade
+    /// Crossfades with the neighboring clips: the clip plays on across them.
+    let crossIn: Crossfade?
+    let crossOut: Crossfade?
     let monoSource: Bool
     let isActive: Bool
 
-    init(_ clip: Clip, isActive: Bool, monoSource: Bool) {
+    /// Where a clip fades against its neighbor.
+    struct Crossfade: Sendable, Equatable {
+        let range: TimeRange
+        let curve: FadeCurve
+
+        func progress(at time: Time) -> Double {
+            range.duration > .zero ? (time - range.start).seconds / range.duration.seconds : 1
+        }
+    }
+
+    /// When the clip sounds: its own span, widened by any crossfades.
+    var span: TimeRange {
+        TimeRange(start: crossIn?.range.start ?? start, end: crossOut?.range.end ?? end)
+    }
+
+    /// - Parameter track: the clip's track, for its crossfades.
+    init(_ clip: Clip, track: Track? = nil, isActive: Bool, monoSource: Bool) {
         clipID = clip.id
         start = clip.start
         end = clip.end
+        var crossIn: Crossfade?, crossOut: Crossfade?
+        if let track, track.kind == .audio {
+            for placed in track.placedTransitions() where !placed.isEdge {
+                let crossfade = Crossfade(range: placed.range, curve: placed.transition.curve)
+                if placed.incoming?.id == clip.id { crossIn = crossfade }
+                if placed.outgoing?.id == clip.id { crossOut = crossfade }
+            }
+        }
+        self.crossIn = crossIn
+        self.crossOut = crossOut
         gain = AudioLevel.linear(fromDB: clip.gainDB)
         volume = clip.volume
         volumeFrames = clip.animation.keyframes(for: .volume)
@@ -72,16 +101,37 @@ nonisolated struct ClipEnvelope: Sendable {
         panFrames.isEmpty ? pan : ClipAnimation.interpolate(panFrames, atOffset: time - start)
     }
 
-    /// The fades' combined gain at a timeline time.
+    /// The fades' and crossfades' combined gain at a timeline time. A crossfade replaces
+    /// the clip's own fade at that end. There's no cut-off at the clip's edges: outside
+    /// its span there's no sound to scale, and a cut-off there would be smeared into the
+    /// last samples by the control-rate interpolation.
     func fadeGain(at time: Time) -> Double {
         var g = 1.0
-        if fadeIn.isActive {
+        if let crossIn {
+            if time < crossIn.range.end { g *= crossIn.curve.gain(crossIn.progress(at: time)) }
+        } else if fadeIn.isActive {
             g *= fadeIn.curve.gain((time - start).seconds / fadeIn.duration.seconds)
         }
-        if fadeOut.isActive {
+        if let crossOut {
+            if time > crossOut.range.start { g *= crossOut.curve.gain(1 - crossOut.progress(at: time)) }
+        } else if fadeOut.isActive {
             g *= fadeOut.curve.gain((end - time).seconds / fadeOut.duration.seconds)
         }
         return g
+    }
+
+    /// The clip as it plays: widened to its span, with the source moved to match (as
+    /// far as there's media before the clip's in-point).
+    func playbackClip(_ clip: Clip) -> Clip {
+        let span = span
+        var lead = clip.start - span.start
+        let available = clip.sourceStart.scaled(by: 1 / max(clip.speed, 0.0001))
+        if lead > available { lead = available }
+        var c = clip
+        c.start = clip.start - lead
+        c.sourceStart = clip.sourceStart - lead.scaled(by: clip.speed)
+        c.duration = clip.duration + lead + (span.end - clip.end)
+        return c
     }
 
     /// Overall linear level (before pan): clip gain × volume × fades, or 0 when muted.

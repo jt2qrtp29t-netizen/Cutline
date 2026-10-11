@@ -292,8 +292,8 @@ nonisolated enum TimelineEditing {
                 let (leftAnimation, rightAnimation) = clip.animation.split(at: time - clip.start)
                 // Fades stay on the outer edges: none at the cut, so the sound runs on through it.
                 var whole = clip
-                whole.fadeIn = .none
-                whole.fadeOut = .none
+                whole.fadeIn = .off
+                whole.fadeOut = .off
                 var left = trimmedEnd(whole, to: time)
                 left.animation = leftAnimation
                 left.fadeIn = clip.fadeIn

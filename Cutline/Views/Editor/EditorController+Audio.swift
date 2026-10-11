@@ -1,4 +1,4 @@
-import Foundation
+import AppKit
 
 /// Mixer edits. A fader or pan drag is one live edit (one undo step); clicks are single edits.
 extension EditorController {
@@ -85,6 +85,72 @@ nonisolated extension TrackAudio {
         case AudioParameter.volume.id: volumeDB = value
         case AudioParameter.pan.id: pan = value
         default: break
+        }
+    }
+}
+
+// MARK: - Clip tools: gain, fades and crossfades
+
+extension EditorController {
+    /// Sets a clip's fade length during a drag of its fade handle (one undo step per
+    /// drag; call `endAudioAdjustment`). The two fades together never exceed the clip.
+    func adjustFade(_ edge: ClipEdge, of id: UUID, to duration: Time) {
+        guard !state.isClipLocked(id) else { return }
+        if !store.isLiveEditing { store.beginLiveEdit() }
+        store.liveEdit { state in
+            state.updateClip(id) { clip in
+                let other = edge == .leading ? clip.fadeOut.duration : clip.fadeIn.duration
+                let length = min(max(duration, .zero), max(clip.duration - other, .zero))
+                if edge == .leading { clip.fadeIn.duration = length } else { clip.fadeOut.duration = length }
+            }
+        }
+    }
+
+    /// Sets a fade's length in one step (menus and the inspector).
+    func setFade(_ edge: ClipEdge, of ids: Set<UUID>, to duration: Time) {
+        store.edit(duration > .zero ? "Change Fade" : "Remove Fade") { state in
+            for id in ids where !state.isClipLocked(id) {
+                state.updateClip(id) { clip in
+                    let other = edge == .leading ? clip.fadeOut.duration : clip.fadeIn.duration
+                    let length = min(max(duration, .zero), max(clip.duration - other, .zero))
+                    if edge == .leading { clip.fadeIn.duration = length } else { clip.fadeOut.duration = length }
+                }
+            }
+        }
+    }
+
+    func setFadeCurve(_ edge: ClipEdge, of ids: Set<UUID>, to curve: FadeCurve) {
+        store.edit("Change Fade Curve") { state in
+            for id in ids where !state.isClipLocked(id) {
+                state.updateClip(id) { clip in
+                    if edge == .leading { clip.fadeIn.curve = curve } else { clip.fadeOut.curve = curve }
+                }
+            }
+        }
+    }
+
+    /// The touching clip before or after an audio clip on its track.
+    func neighbor(of id: UUID, after: Bool) -> Clip? {
+        guard let index = state.trackIndex(ofClip: id), state.tracks[index].kind == .audio,
+              let clip = state.clip(id) else { return nil }
+        return state.tracks[index].clips.first { after ? $0.start == clip.end : $0.end == clip.start }
+    }
+
+    /// Crossfades an audio clip with the touching clip before or after it, and selects the crossfade.
+    func addCrossfade(to id: UUID, after: Bool) {
+        guard let other = neighbor(of: id, after: after) else { NSSound.beep(); return }
+        var created: UUID?
+        store.edit("Add Crossfade") { state in
+            created = after ? state.addCrossfade(between: id, and: other.id) : state.addCrossfade(between: other.id, and: id)
+        }
+        if let created { selectTransition(created) } else { NSSound.beep() }
+    }
+
+    func setCrossfadeCurve(_ curve: FadeCurve, for id: UUID) {
+        store.edit("Change Crossfade Curve") { state in
+            guard let (track, _) = state.transition(id),
+                  let index = state.tracks[track].transitions.firstIndex(where: { $0.id == id }) else { return }
+            state.tracks[track].transitions[index].curve = curve
         }
     }
 }

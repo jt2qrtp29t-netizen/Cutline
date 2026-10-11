@@ -34,8 +34,8 @@ nonisolated struct ScrubSource: Sendable {
     }
 
     /// The same samples for a clip whose timing or speed changed.
-    func retimed(for clip: Clip) -> ScrubSource {
-        ScrubSource(clipID: clip.id, clipStart: AudioGraphFormat.sample(of: clip.start), clipEnd: AudioGraphFormat.sample(of: clip.end),
+    func retimed(for clip: Clip, id: UUID) -> ScrubSource {
+        ScrubSource(clipID: id, clipStart: AudioGraphFormat.sample(of: clip.start), clipEnd: AudioGraphFormat.sample(of: clip.end),
                     sourceStart: clip.sourceStart.seconds, speed: clip.speed, bufferStart: bufferStart, left: left, right: right)
     }
 }
@@ -53,7 +53,10 @@ final class ScrubSourceLoader {
         let window = (center - Self.window)...(center + Self.window)
         var result: [ScrubSource] = []
         for trackIndex in state.trackIndices(of: .audio) {
-            for clip in state.tracks[trackIndex].clips {
+            let track = state.tracks[trackIndex]
+            for original in track.clips {
+                // Scrub across crossfades too: the clip as it sounds, widened to its span.
+                let clip = ClipEnvelope(original, track: track, isActive: true, monoSource: false).playbackClip(original)
                 let start = clip.start.seconds, end = clip.end.seconds
                 guard end > window.lowerBound, start < window.upperBound,
                       let media = state.mediaItem(clip.mediaID),
@@ -61,12 +64,12 @@ final class ScrubSourceLoader {
                 // The source span the window needs, within the clip.
                 let from = clip.sourceStart.seconds + (max(window.lowerBound, start) - start) * clip.speed
                 let to = clip.sourceStart.seconds + (min(window.upperBound, end) - start) * clip.speed
-                var source = buffers[clip.id]
+                var source = buffers[original.id]
                 if source == nil || !source!.covers(from...max(from, to)) {
                     source = Self.load(url, clip: clip, around: from...max(from, to), margin: Self.window * clip.speed)
                 }
-                guard let loaded = source?.retimed(for: clip) else { continue }
-                buffers[clip.id] = loaded
+                guard let loaded = source?.retimed(for: clip, id: original.id) else { continue }
+                buffers[original.id] = loaded
                 result.append(loaded)
             }
         }
