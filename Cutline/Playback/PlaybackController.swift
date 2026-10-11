@@ -9,6 +9,8 @@ import QuartzCore
 final class PlaybackController {
     let player = AVPlayer()
     @ObservationIgnored let audio = AudioRenderer()
+    /// The mixer's meters, read from this editor's audio graph.
+    @ObservationIgnored private(set) lazy var meters = MixerMeters(graph: audio.graph)
 
     /// The playhead. Updated continuously during playback and immediately while scrubbing.
     private(set) var currentTime: Time = .zero

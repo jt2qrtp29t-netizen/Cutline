@@ -117,6 +117,8 @@ struct EditorView: View {
                 ScopesPanel(editor: editor)
                     .frame(width: scopesWidth)
             }
+        case .audio:
+            AudioWorkspace(editor: editor)
         case .playground:
             if let playground = editor.playground {
                 PlaygroundWorkspace(main: editor, session: playground)

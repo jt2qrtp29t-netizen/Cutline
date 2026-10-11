@@ -79,6 +79,8 @@ nonisolated final class AudioGraph {
 
     var masterMeter: PeakMeter { master.unit.meter }
     func meter(forTrack id: UUID) -> PeakMeter? { tracks[id]?.unit.meter }
+    /// The audio tracks the graph has nodes for.
+    var trackIDs: Set<UUID> { Set(tracks.keys) }
     var hasVoices: Bool { voices.values.contains { $0.player != nil } }
 
     // MARK: Settings

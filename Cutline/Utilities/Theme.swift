@@ -127,6 +127,20 @@ enum Theme {
     static let snapGuide = Color(hex: 0xF2C94C)
     static let dropTarget = Color(hex: 0x3BD473).opacity(0.10)
 
+    // MARK: Mixer
+
+    static let meterLow = Color(hex: 0x3BD473)
+    static let meterMid = Color(hex: 0xE8C547)
+    static let meterHigh = Color(hex: 0xF0605A)
+    static let meterTrack = Color(hex: 0x0B0B0A)
+    static let meterScale = Color(hex: 0x666662)
+    static let faderSlot = Color(hex: 0x0B0B0A)
+    static let faderCap = Color(hex: 0xD6D6D2)
+    static let faderCapLine = Color(hex: 0x1A1A19)
+    static let faderUnity = Color(hex: 0x3A3A38)
+    static let mixerStrip = Color(hex: 0x1F1F1E)
+    static let mixerStripSelected = Color(hex: 0x262B27)
+
     // MARK: Shadows
 
     static let shadow = Color(hex: 0x000000).opacity(0.35)

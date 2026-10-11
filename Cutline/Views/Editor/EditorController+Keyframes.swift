@@ -26,7 +26,7 @@ enum SandboxPanel: String, CaseIterable, Identifiable {
 }
 
 enum Workspace: String, CaseIterable, Identifiable {
-    case edit, effects, color, playground, export
+    case edit, effects, color, audio, playground, export
 
     var id: String { rawValue }
     var title: String { rawValue.capitalized }
@@ -36,6 +36,7 @@ enum Workspace: String, CaseIterable, Identifiable {
         case .edit: "scissors"
         case .effects: "sparkles"
         case .color: "paintpalette"
+        case .audio: "slider.vertical.3"
         case .playground: "gamecontroller"
         case .export: "square.and.arrow.up"
         }

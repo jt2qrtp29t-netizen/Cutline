@@ -94,6 +94,8 @@ final class EditorController {
     }
     /// The parameter shown in the curve editor and highlighted in the Effects panel.
     var effectsProperty: AnimatableProperty = .positionX
+    /// The audio track the Audio tab's settings show (picked in the mixer).
+    var selectedAudioTrackID: UUID?
     var selectedKeyframes: Set<KeyframeRef> = []
     /// The grade on the clipboard (Copy Grade / Paste Grade).
     var copiedGrade: CopiedGrade?

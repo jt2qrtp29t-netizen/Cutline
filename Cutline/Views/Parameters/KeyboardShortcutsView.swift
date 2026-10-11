@@ -29,7 +29,7 @@ enum ShortcutList {
             Item(keys: "Help menu", action: "Changelog"),
         ]),
         Group(title: "Workspace", symbolName: "rectangle.3.group", items: [
-            Item(keys: "⌘1 – ⌘5", action: "Edit, Effects, Color, Playground, Export"),
+            Item(keys: "⌘1 – ⌘6", action: "Edit, Effects, Color, Audio, Playground, Export"),
             Item(keys: "Scroll sideways", action: "Next or previous tab (e.g. a mouse’s thumb wheel)"),
             Item(keys: "⌘+  /  ⌘−", action: "Zoom the timeline in or out"),
             Item(keys: "⌥-click zoom buttons", action: "Zoom in smaller steps"),
