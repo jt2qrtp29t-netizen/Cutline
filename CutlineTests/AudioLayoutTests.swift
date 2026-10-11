@@ -1,3 +1,4 @@
+import AppKit
 import AVFoundation
 import Foundation
 import Testing
@@ -85,5 +86,40 @@ import Testing
         let scratch = try await AudioTestKit.render(sandbox.state, sources: sources, seconds: 1.5, from: sandbox.state.tracks[sandboxTrack].clips[0].start.seconds)
         let projectLevel = project.rms(seconds: 0.5...1.2).left, scratchLevel = scratch.rms(seconds: 0.5...1.2).left
         #expect(projectLevel > 0.2 && scratchLevel < projectLevel * 0.3, "\(projectLevel) vs \(scratchLevel)")
+    }
+}
+
+struct AudioWindowFitTests {
+    @Test func sideColumnsShrinkSoTheTabFitsTheWindow() {
+        // Roomy window: the widths as set.
+        let wide = AudioWorkspaceLayout.fit(mixer: 460, panel: 340, available: 1800)
+        #expect(wide.mixer == 460 && wide.panel == 340)
+        // A small window (like 1000 points): everything still fits, the preview keeps its share.
+        for available in [1100.0, 1000, 900, 760] {
+            let fitted = AudioWorkspaceLayout.fit(mixer: 460, panel: 340, available: available)
+            #expect(fitted.mixer + fitted.panel + AudioWorkspaceLayout.dividers + AudioWorkspaceLayout.minimumPreview <= available + 0.001,
+                    "\(available): \(fitted)")
+            #expect(fitted.mixer >= AudioWorkspaceLayout.mixerRange.lowerBound && fitted.panel >= AudioWorkspaceLayout.panelRange.lowerBound)
+        }
+        // Tiny windows bottom out at the minimums rather than vanishing.
+        let tiny = AudioWorkspaceLayout.fit(mixer: 460, panel: 340, available: 500)
+        #expect(tiny.mixer == AudioWorkspaceLayout.mixerRange.lowerBound && tiny.panel == AudioWorkspaceLayout.panelRange.lowerBound)
+    }
+
+    @Test func theMixerNeverHidesTrackStrips() {
+        // Master and loudness stay pinned only when a whole track strip fits beside them;
+        // otherwise everything scrolls together.
+        #expect(MixerLayout.pinsMaster(width: 460))
+        #expect(!MixerLayout.pinsMaster(width: 300), "the case in the screenshot: the strip would get no room")
+        #expect(!MixerLayout.pinsMaster(width: MixerLayout.masterAndLoudnessWidth + MixerLayout.stripWidth))
+    }
+}
+
+@MainActor struct WindowSizeTests {
+    @Test func projectWindowsAreAtLeast60PercentOfA27InchDisplay() {
+        #expect(WindowMetrics.preferredMinimumWidth == 1536, "60% of 2560 points")
+        let screen = NSScreen.main?.visibleFrame.width ?? 1536
+        #expect(WindowMetrics.minimumWidth == min(1536, screen), "never wider than the screen")
+        #expect(WindowMetrics.defaultWidth >= WindowMetrics.minimumWidth)
     }
 }

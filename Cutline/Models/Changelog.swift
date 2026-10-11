@@ -11,6 +11,12 @@ enum Changelog {
     }
 
     static let entries: [Entry] = [
+        Entry(version: "3.9", title: "Window size", changes: [
+            "Project windows can't be made narrower than 1536 points (about 60% of a 27″ display), so the Effects, Color and Audio tabs always have room for their panels beside the preview. On a smaller screen the limit is the screen's width.",
+            "New project windows open 1680 points wide (or as wide as the screen).",
+            "The Audio tab also fits its columns to the window, and in a narrow mixer the track strips, master and loudness panel scroll together, so a track strip is never hidden.",
+            "Fixed: the background check for missing files could report every file as changed after its records were refreshed, making playback drop and reload all prepared audio for nothing.",
+        ]),
         Entry(version: "3.8", title: "Audio tab", changes: [
             "A new Audio tab (⌘4) between Color and Playground: a mixer, the preview, the selected clip's and track's settings and effects, and audio keyframe lanes under the timeline.",
             "One audio engine for playback, scrubbing and export: each clip, track and the master run through the same chain and the same calculations, so what you hear is exactly what's exported. Everything runs at 48 kHz stereo; sources are converted once on the way in. Existing clips sound exactly as before.",

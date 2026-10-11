@@ -102,7 +102,7 @@ import Testing
             state.updateClip(clip.id) { $0.color.lut = LUTReference(name: "Gone", path: "/nonexistent/gone.cube") }
         }
         undo.endUndoGrouping()
-        MediaURLCache.shared.invalidate()
+        // (The changed media item is looked up afresh; no need to touch the shared cache.)
         let warnings = editor.exportPreflightWarnings(for: .edit)
         #expect(warnings.count == 2, "\(warnings)")
         #expect(warnings.contains { $0.contains("Sunset") } && warnings.contains { $0.contains("Gone") })

@@ -26,29 +26,66 @@ struct MixerPanel: View {
             .frame(height: 36)
             Rectangle().fill(Theme.border).frame(height: 1)
 
-            HStack(spacing: 0) {
-                ScrollView(.horizontal) {
-                    HStack(spacing: 6) {
-                        ForEach(editor.audioTrackIndices, id: \.self) { index in
-                            let track = editor.state.tracks[index]
-                            MixerStrip(editor: editor, track: track, isActive: editor.state.isTrackActive(index),
-                                       reading: meters.tracks[track.id] ?? MixerMeters.Reading())
+            GeometryReader { geometry in
+                if MixerLayout.pinsMaster(width: geometry.size.width) {
+                    // Wide enough: the strips scroll; master and loudness stay on the right.
+                    HStack(spacing: 0) {
+                        ScrollView(.horizontal) {
+                            strips(meters).padding(8)
+                        }
+                        .scrollIndicators(.automatic)
+                        Rectangle().fill(Theme.border).frame(width: 1)
+                        masterAndLoudness(meters)
+                    }
+                } else {
+                    // Narrow: everything scrolls together, so no strip is ever hidden.
+                    ScrollView(.horizontal) {
+                        HStack(spacing: 0) {
+                            strips(meters).padding(8)
+                            Rectangle().fill(Theme.border).frame(width: 1)
+                            masterAndLoudness(meters)
                         }
                     }
-                    .padding(8)
+                    .scrollIndicators(.automatic)
                 }
-                .scrollIndicators(.automatic)
-                Rectangle().fill(Theme.border).frame(width: 1)
-                MasterStrip(editor: editor, reading: meters.master)
-                    .padding(8)
-                LoudnessPanel(editor: editor, reading: meters.loudness)
-                    .padding(.vertical, 8)
-                    .padding(.trailing, 8)
             }
         }
         .background(Theme.background)
         .onAppear { meters.beginWatching() }
         .onDisappear { meters.endWatching() }
+    }
+}
+
+extension MixerPanel {
+    private func strips(_ meters: MixerMeters) -> some View {
+        HStack(spacing: 6) {
+            ForEach(editor.audioTrackIndices, id: \.self) { index in
+                let track = editor.state.tracks[index]
+                MixerStrip(editor: editor, track: track, isActive: editor.state.isTrackActive(index),
+                           reading: meters.tracks[track.id] ?? MixerMeters.Reading())
+            }
+        }
+    }
+
+    private func masterAndLoudness(_ meters: MixerMeters) -> some View {
+        HStack(spacing: 0) {
+            MasterStrip(editor: editor, reading: meters.master)
+                .padding(8)
+            LoudnessPanel(editor: editor, reading: meters.loudness)
+                .padding(.vertical, 8)
+                .padding(.trailing, 8)
+        }
+    }
+}
+
+/// How the mixer arranges itself in its width.
+nonisolated enum MixerLayout {
+    static let stripWidth = 84.0
+    /// Master strip and loudness panel with their padding and the divider.
+    static let masterAndLoudnessWidth = 84.0 + 16 + 150 + 8 + 1
+    /// Master and loudness stay pinned only if at least one whole track strip fits beside them.
+    static func pinsMaster(width: Double) -> Bool {
+        width - masterAndLoudnessWidth >= stripWidth + 16
     }
 }
 

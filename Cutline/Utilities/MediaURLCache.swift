@@ -72,8 +72,11 @@ final class MediaURLCache {
         for (id, media) in known {
             let url = media.resolveURL()
             let exists = FileManager.default.fileExists(atPath: url.path)
-            let wasAvailable = availability[id] ?? FileManager.default.fileExists(atPath: urls[id]?.path ?? "")
-            if exists != wasAvailable || url != urls[id] { changed.insert(id) }
+            // Only a known earlier state can have changed; an item seen for the first time
+            // (or after its entry was refreshed) isn't announced.
+            let previousURL = urls[id]
+            let wasAvailable = availability[id] ?? previousURL.map { FileManager.default.fileExists(atPath: $0.path) } ?? exists
+            if exists != wasAvailable || (previousURL != nil && url != previousURL) { changed.insert(id) }
             urls[id] = url
             availability[id] = exists
         }
@@ -84,9 +87,4 @@ final class MediaURLCache {
         NotificationCenter.default.post(name: .mediaAvailabilityChanged, object: changed)
     }
 
-    func invalidate() {
-        urls.removeAll()
-        availability.removeAll()
-        revision += 1
-    }
 }

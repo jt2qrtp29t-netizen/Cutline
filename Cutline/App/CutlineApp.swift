@@ -32,7 +32,7 @@ struct CutlineApp: App {
         } makeDocument: { _, _ in
             CutlineDocument()
         }
-        .defaultSize(width: 1440, height: 900)
+        .defaultSize(width: WindowMetrics.defaultWidth, height: 900)
         .windowStyle(.hiddenTitleBar)
         .commands { CutlineCommands() }
 

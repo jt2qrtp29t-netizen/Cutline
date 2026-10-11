@@ -50,7 +50,7 @@ struct EditorView: View {
         }
         // The system title bar is hidden; our own bar sits under the window buttons.
         .ignoresSafeArea(.container, edges: .top)
-        .frame(minWidth: 1080, minHeight: 680)
+        .frame(minWidth: WindowMetrics.minimumWidth, minHeight: 680)
         .background {
             // ⌘= is what most keyboards send for "⌘+"; the menu item shows ⌘+.
             Button("Zoom In") { editor.activeEditor.zoomIn() }
