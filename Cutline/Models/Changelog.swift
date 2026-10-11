@@ -11,6 +11,10 @@ enum Changelog {
     }
 
     static let entries: [Entry] = [
+        Entry(version: "3.6", title: "Live render view", changes: [
+            "While an export runs, the Export tab’s viewer shows the frames being exported, live, framed exactly as in the file (cropped or letterboxed for vertical and square exports), with the frame number, timecode, progress and time left.",
+            "Frames are shown a dozen times a second and prepared off the export’s thread, so exports don’t slow down. The eye button hides them; “Show Frames” over the preview brings them back.",
+        ]),
         Entry(version: "3.5", title: "Performance", changes: [
             "Accurate export time estimates, based on measured encoder speeds, how much work each frame is (layers, grades, Labs effects), and how long your own exports take.",
             "Faster Encoding now keeps the quality: it raises the bitrate 20% to make up for the encoder’s faster mode, which is still about 1.9× faster. It’s only offered for HEVC, the codec it speeds up.",

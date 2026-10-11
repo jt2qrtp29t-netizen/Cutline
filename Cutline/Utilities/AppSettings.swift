@@ -81,6 +81,11 @@ final class AppSettings {
         didSet { Self.defaults.set(createProxyOnImport, forKey: "media.proxyOnImport") }
     }
 
+    /// Show the frames being exported, live, in the Export tab's viewer.
+    var showFramesWhileExporting: Bool = value("export.showFrames", default: true) {
+        didSet { Self.defaults.set(showFramesWhileExporting, forKey: "export.showFrames") }
+    }
+
     // MARK: Effects
 
     /// Length of newly added transitions, in seconds.
@@ -106,7 +111,7 @@ final class AppSettings {
         for key in ["general.showWelcome", "media.watchOffline", "timeline.snapByDefault", "timeline.snapDistance",
                     "timeline.followPlayhead", "timeline.fineScrubPointsPerFrame", "playback.scrubAudio",
                     "transitions.duration", "mouse.scrollSwitchesTabs", "mouse.reverseTabScrolling",
-                    "playback.media", "media.optimizeOnImport", "media.proxyOnImport"] {
+                    "playback.media", "media.optimizeOnImport", "media.proxyOnImport", "export.showFrames"] {
             Self.defaults.removeObject(forKey: key)
         }
         showWelcomeAtLaunch = true
@@ -122,5 +127,6 @@ final class AppSettings {
         playbackMedia = .original
         createOptimizedOnImport = false
         createProxyOnImport = false
+        showFramesWhileExporting = true
     }
 }

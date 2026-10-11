@@ -14,6 +14,7 @@ nonisolated struct ExportResult: Sendable {
 enum ExportRunner {
     /// - Parameter progress: 0...1 overall, plus frames written so far.
     static func run(_ snapshot: ExportSnapshot, to destination: URL, cancellation: ExportCancellation,
+                    frameTap: ExportFrameTap? = nil,
                     progress: @escaping @Sendable (Double, Int) -> Void) async throws -> ExportResult {
         guard snapshot.range.duration > .zero, snapshot.frameCount > 0 else { throw ExportError.emptyTimeline }
 
@@ -38,7 +39,8 @@ enum ExportRunner {
         let movie = workFolder.appendingPathComponent("export.\(snapshot.settings.effectiveContainer.fileExtension)")
         let total = snapshot.frameCount
         try await Task.detached(priority: .userInitiated) {
-            try await ExportRenderer.render(snapshot, audio: mix, to: movie, cancellation: cancellation) { frames in
+            try await ExportRenderer.render(snapshot, audio: mix, to: movie, cancellation: cancellation,
+                                        frameTap: frameTap) { frames in
                 progress(0.05 + 0.95 * Double(frames) / Double(total), frames)
             }
         }.value

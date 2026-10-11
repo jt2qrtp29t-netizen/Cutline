@@ -257,6 +257,49 @@ enum ExportProbe {
         #expect(finished == 12, "every export finished")
     }
 
+    @Test func theLiveViewSeesTheFramesBeingExported() async throws {
+        let (state, urls, clip) = try await sunsetProject(seconds: 2)
+        var graded = state
+        graded.updateClip(clip.id) { $0.color.saturation = 0 }  // gray: easy to check
+        var settings = ExportPreset.quickPreview.applied(to: ExportSettings())
+        settings.frameRate = 30
+        let snapshot = snapshot(graded, urls: urls, settings: settings)
+        let collected = LiveFrames()
+        let tap = ExportFrameTap(outputSize: CGSize(width: 960, height: 540), fills: true) { image, index in
+            collected.add(image, index)
+        }
+        let url = ExportProbe.folder().appendingPathComponent("live.mp4")
+        _ = try await ExportRunner.run(snapshot, to: url, cancellation: ExportCancellation(), frameTap: tap) { _, _ in }
+        try await Task.sleep(for: .milliseconds(300))  // the last frame is prepared off the export's thread
+
+        let frames = collected.frames
+        #expect(!frames.isEmpty)
+        #expect(frames.count < 60, "only a few frames a second are shown: \(frames.count)")
+        let last = try #require(frames.max { $0.index < $1.index })
+        #expect(last.index == 59, "the final frame is always shown")
+        #expect(last.image.width == 960 && last.image.height == 540)
+        // It's the exported picture (graded gray), the same as in the file.
+        let inFile = try await ExportProbe.frame(url, at: 59.0 / 30)
+        #expect(try ExportProbe.difference(last.image, inFile) < 4)
+        let p = try TextRenderTests.pixel(last.image, x: 480, y: 270)
+        #expect(abs(p.r - p.g) < 6 && abs(p.g - p.b) < 6, "\(p)")
+    }
+
+    @Test func liveFramesAreFramedLikeTheFile() throws {
+        let wide = CIImage(color: CIColor(red: 1, green: 0, blue: 0)).cropped(to: CGRect(x: 0, y: 0, width: 1920, height: 1080))
+        // Vertical, filled: cropped to 9:16, red all over.
+        let filled = ExportFrameTap(outputSize: CGSize(width: 1080, height: 1920), fills: true) { _, _ in }.framed(wide)
+        #expect(filled.extent.size == CGSize(width: 720, height: 1280))
+        // Vertical, fitted: letterboxed, black above and below.
+        let fitted = ExportFrameTap(outputSize: CGSize(width: 1080, height: 1920), fills: false) { _, _ in }.framed(wide)
+        let image = try #require(CIContext().createCGImage(fitted, from: fitted.extent))
+        let top = try TextRenderTests.pixel(image, x: 360, y: 40), middle = try TextRenderTests.pixel(image, x: 360, y: 640)
+        #expect(top.r < 5 && middle.r > 250)
+        // Never larger than needed.
+        let small = ExportFrameTap(outputSize: CGSize(width: 640, height: 360), fills: true) { _, _ in }.framed(wide)
+        #expect(small.extent.size == CGSize(width: 640, height: 360))
+    }
+
     @Test func networkOptimizationPutsTheIndexFirst() async throws {
         let toneURL = FileManager.default.temporaryDirectory.appendingPathComponent("tone-\(UUID()).wav")
         try PlaybackTests.writeTone(to: toneURL, format: kAudioFormatLinearPCM, seconds: 1)
@@ -305,4 +348,11 @@ enum ExportProbe {
         #expect(try await ExportProbe.frameCount(result.url) == 60)
         #expect(try FileManager.default.contentsOfDirectory(atPath: folder.path) == ["keep.mp4"])
     }
+}
+
+nonisolated private final class LiveFrames: @unchecked Sendable {
+    private let lock = NSLock()
+    private var stored: [(image: CGImage, index: Int)] = []
+    var frames: [(image: CGImage, index: Int)] { lock.withLock { stored } }
+    func add(_ image: CGImage, _ index: Int) { lock.withLock { stored.append((image, index)) } }
 }

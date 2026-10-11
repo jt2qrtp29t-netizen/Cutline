@@ -15,12 +15,8 @@ struct ExportWorkspace: View {
             ExportSourcePanel(editor: editor)
                 .frame(width: leftWidth)
             PanelDivider(axis: .vertical, size: $leftWidth, range: 260...440)
-            PreviewPanel(editor: sourceEditor)
+            center(source: source, sourceEditor: sourceEditor)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .overlay(alignment: .topTrailing) {
-                    if source == .playground { SandboxBadge().padding(12) }
-                }
-                .overlay(alignment: .topLeading) { ExportRangeBadge(editor: editor).padding(12) }
             PanelDivider(axis: .vertical, size: $rightWidth, range: 300...520, direction: -1)
             ExportSettingsPanel(editor: editor)
                 .frame(width: rightWidth)
@@ -31,6 +27,30 @@ struct ExportWorkspace: View {
             layout.editorSync(sourceEditor).id(source)
         } else {
             layout.id(source)
+        }
+    }
+}
+
+extension ExportWorkspace {
+    /// The preview, or the frames being exported while an export runs (Parameters can hide them).
+    @ViewBuilder
+    private func center(source: ExportSource, sourceEditor: EditorController) -> some View {
+        let running = ExportQueue.shared.current
+        if let running, AppSettings.shared.showFramesWhileExporting {
+            let (width, height) = running.snapshot.settings.resolution.size(for: running.snapshot.state.settings)
+            ExportLiveView(job: running, aspectRatio: CGFloat(width) / CGFloat(max(height, 1)))
+        } else {
+            PreviewPanel(editor: sourceEditor)
+                .overlay(alignment: .topTrailing) {
+                    if source == .playground { SandboxBadge().padding(12) }
+                }
+                .overlay(alignment: .topLeading) {
+                    VStack(alignment: .leading, spacing: 6) {
+                        ExportRangeBadge(editor: editor)
+                        if let running { ExportHiddenFramesBadge(job: running) }
+                    }
+                    .padding(12)
+                }
         }
     }
 }

@@ -76,7 +76,7 @@ nonisolated enum ExportRenderer {
     /// Renders video and the (already mixed) audio file into `output`. Reports progress
     /// as frames written. The file is only complete when this returns.
     static func render(_ snapshot: ExportSnapshot, audio: URL?, to output: URL,
-                       cancellation: ExportCancellation,
+                       cancellation: ExportCancellation, frameTap: ExportFrameTap? = nil,
                        progress: @escaping @Sendable (Int) -> Void) async throws {
         guard snapshot.range.duration > .zero, snapshot.frameCount > 0 else { throw ExportError.emptyTimeline }
 
@@ -195,6 +195,7 @@ nonisolated enum ExportRenderer {
                     if cancellation.isCancelled || Task.isCancelled { throw ExportError.cancelled }
                     var progressed = false
                     if let frame = pendingVideo, try streams.video.receiver.appendImmediately(frame.pixels, with: frame.time) {
+                        frameTap?.offer(frame.pixels, index: written, isLast: written == total - 1)
                         written += 1
                         progress(written)
                         pendingVideo = try await nextVideo()

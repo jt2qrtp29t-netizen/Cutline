@@ -35,6 +35,9 @@ final class ExportJob: Identifiable {
     var startDate: Date?
     var endDate: Date?
     var warnings: [String] = []
+    /// The latest frame shown while rendering (scaled down), and its index in the export.
+    var liveFrame: CGImage?
+    var liveFrameIndex = 0
 
     @ObservationIgnored let cancellation = ExportCancellation()
     /// The project to add the finished file to with "Add to Media".
@@ -136,7 +139,18 @@ final class ExportQueue {
         job.status = .rendering
         job.startDate = Date()
         do {
-            let result = try await ExportRunner.run(job.snapshot, to: job.destination, cancellation: job.cancellation) { progress, frames in
+            // Frames for the live view, when it's on (otherwise nothing is captured).
+            let (width, height) = job.snapshot.settings.resolution.size(for: job.snapshot.state.settings)
+            let tap = AppSettings.shared.showFramesWhileExporting
+                ? ExportFrameTap(outputSize: CGSize(width: width, height: height), fills: job.snapshot.settings.fit == .fill) { image, index in
+                Task { @MainActor in
+                    guard job.status == .rendering || index == job.totalFrames - 1 else { return }
+                    job.liveFrame = image
+                    job.liveFrameIndex = index
+                }
+            } : nil
+            let result = try await ExportRunner.run(job.snapshot, to: job.destination, cancellation: job.cancellation,
+                                                    frameTap: tap) { progress, frames in
                 Task { @MainActor in
                     guard job.status == .rendering else { return }
                     job.progress = max(job.progress, progress)

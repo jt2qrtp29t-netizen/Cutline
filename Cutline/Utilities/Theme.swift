@@ -130,6 +130,8 @@ enum Theme {
     // MARK: Shadows
 
     static let shadow = Color(hex: 0x000000).opacity(0.35)
+    /// Behind video frames (the export's live view before its first frame).
+    static let videoBlack = Color(hex: 0x000000)
 
     // MARK: Metrics
 
