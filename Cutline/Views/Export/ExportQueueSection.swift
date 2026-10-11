@@ -99,6 +99,8 @@ struct ExportJobRow: View {
                     Button("Open") { NSWorkspace.shared.open(job.destination) }
                     if let project = job.project {
                         Button("Add to Media") { project.importMedia([job.destination]) }
+                        Button("Make Thumbnail") { project.makeThumbnail(for: job) }
+                            .help("Picks 3 thumbnail frames from this export (with your local AI model, if Ollama has one)")
                     }
                 default:
                     Button("Remove") { ExportQueue.shared.remove(job) }

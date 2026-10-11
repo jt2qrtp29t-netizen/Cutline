@@ -273,3 +273,87 @@ nonisolated final class FakeOllama: URLProtocol, @unchecked Sendable {
         #expect(picks.picks.allSatisfy { $0.candidate.aesthetics > floor }, "no blank or blurred frames")
     }
 }
+
+@Suite(.serialized) @MainActor struct ThumbnailStudioTests {
+    private func frame(width: Int, height: Int) throws -> CGImage {
+        let context = try #require(CGContext(data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0,
+                                             space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue))
+        context.setFillColor(CGColor(red: 0.2, green: 0.3, blue: 0.4, alpha: 1))
+        context.fill(CGRect(x: 0, y: 0, width: width, height: height))
+        return try #require(context.makeImage())
+    }
+
+    @Test func thumbnailsAreYouTubeSizedWithAnOptionalTitle() throws {
+        let wide = try frame(width: 1920, height: 1080), tall = try frame(width: 1080, height: 1920)
+        let plain = try #require(ThumbnailComposer.compose(frame: wide, title: nil, style: CaptionPreset.boldCenter.style))
+        #expect(plain.width == 1280 && plain.height == 720)
+        let vertical = try #require(ThumbnailComposer.compose(frame: tall, title: nil, style: CaptionPreset.boldCenter.style))
+        #expect(vertical.width == 720 && vertical.height == 1280)
+        // The title is drawn: bright pixels where the plain frame has none.
+        let titled = try #require(ThumbnailComposer.compose(frame: wide, title: "FINAL BOSS", style: CaptionPreset.boldCenter.style))
+        func bright(_ image: CGImage) throws -> Int {
+            var n = 0
+            for y in stride(from: 0, to: image.height, by: 6) { for x in stride(from: 0, to: image.width, by: 6) {
+                let p = try TextRenderTests.pixel(image, x: x, y: y)
+                if p.r > 220 && p.g > 220 && p.b > 220 { n += 1 }
+            } }
+            return n
+        }
+        #expect(try bright(plain) == 0 && bright(titled) > 50)
+        // JPEG fits YouTube's 2 MB; PNG too for a plain frame.
+        let jpeg = try #require(ThumbnailComposer.encode(titled, as: .jpeg))
+        #expect(jpeg.count <= ThumbnailComposer.maximumBytes && jpeg.prefix(2) == Data([0xFF, 0xD8]))
+        #expect(try #require(ThumbnailComposer.encode(titled, as: .png)).prefix(4) == Data([0x89, 0x50, 0x4E, 0x47]))
+    }
+
+    @Test func fromExportToSavedThumbnail() async throws {
+        let a = try ThumbnailFinderTests.photo(ThumbnailFinderTests.photoA), b = try ThumbnailFinderTests.photo(ThumbnailFinderTests.photoB)
+        let plain = try ThumbnailFinderTests.photo(URL(fileURLWithPath: "/System/Library/PrivateFrameworks/SystemDesktopAppearance.framework/Versions/A/Resources/DefaultBackground.jpg"))
+        let e = a.extent
+        let left = a.cropped(to: CGRect(x: e.minX, y: e.minY, width: e.width * 0.4, height: e.height * 0.6))
+        let movie = try await ThumbnailFinderTests.movie([a, ThumbnailFinderTests.flat(0.5), b, left, plain], seconds: 1.5)
+        FakeOllama.set(tags: [("qwen2.5vl:7b", ["vision"])],
+                       chat: #"{"picks":[{"frame":2,"reason":"Rocks and waves"},{"frame":1,"reason":"Bridge at sunset"},{"frame":3,"reason":"Forest"}],"title":"COAST RUN"}"#)
+        let session = ThumbnailSession(movie: movie, speech: [(2, "no way!")], client: FakeOllama.client())
+        session.start()
+        let deadline = ContinuousClock.now + .seconds(60)
+        while session.phase != .ready, ContinuousClock.now < deadline {
+            if case .failed = session.phase { break }
+            try await Task.sleep(for: .milliseconds(50))
+        }
+        #expect(session.phase == .ready, "\(session.phase)")
+        #expect(session.model == "qwen2.5vl:7b" && session.picks.map(\.reason) == ["Rocks and waves", "Bridge at sunset", "Forest"])
+        #expect(session.showsTitle && session.title == "COAST RUN", "the suggested title is offered")
+        // The context sent included what's said.
+        let content = FakeOllama.lock.withLock { (FakeOllama.lastChatBody?["messages"] as? [[String: Any]])?.first?["content"] as? String }
+        #expect(content?.contains("no way!") == true)
+
+        session.selected = 2
+        session.format = .jpeg
+        let saved = try #require(session.save())
+        #expect(saved.lastPathComponent == movie.deletingPathExtension().lastPathComponent + "-thumbnail.jpg")
+        #expect(saved.deletingLastPathComponent() == movie.deletingLastPathComponent(), "next to the movie")
+        let data = try Data(contentsOf: saved)
+        #expect(data.count <= ThumbnailComposer.maximumBytes)
+        let image = try #require(CGImageSourceCreateWithData(data as CFData, nil).flatMap { CGImageSourceCreateImageAtIndex($0, 0, nil) })
+        #expect(image.width == 1280 && image.height == 720)
+        #expect(session.saveMessage?.hasPrefix("Saved") == true)
+    }
+
+    @Test func theExportsSpeechIsTimedFromItsStart() throws {
+        var state = ProjectState()
+        let media = MediaItem(id: UUID(), name: "talk", path: "/talk.wav", duration: Time(seconds: 30), width: 0, height: 0,
+                              frameRate: 0, hasAudio: true)
+        state.media = [media]
+        state.transcripts[media.id] = Transcript(mediaID: media.id, locale: "en_US", words: [
+            TranscriptWord(text: "before", start: 1, end: 1.4), TranscriptWord(text: "let's", start: 6, end: 6.3),
+            TranscriptWord(text: "go!", start: 6.3, end: 6.8), TranscriptWord(text: "after", start: 12, end: 12.5),
+        ])
+        state.tracks[state.trackIndices(of: .audio)[0]].clips = [Clip(id: UUID(), mediaID: media.id, name: "t", start: .zero,
+                                                                      duration: Time(seconds: 30), sourceStart: .zero)]
+        let snapshot = ExportSnapshot(state: state, urls: [:], range: TimeRange(start: Time(seconds: 5), end: Time(seconds: 10)),
+                                      settings: ExportSettings())
+        let speech = ThumbnailSession.speech(in: snapshot)
+        #expect(speech.map(\.text) == ["let's", "go!"] && abs(speech[0].time - 1) < 0.01)
+    }
+}

@@ -105,6 +105,8 @@ final class EditorController {
     @ObservationIgnored var transcriptionTask: Task<Void, Never>?
     /// The caption track the Captions tab is showing.
     var selectedCaptionTrackID: UUID?
+    /// The thumbnail being made in the Export tab, if any.
+    var thumbnail: ThumbnailSession?
     /// Transcribing again would replace edited transcripts: waiting for the user to confirm.
     var pendingTranscription: PendingTranscription?
     /// Captions worked out for a track at a store revision (redraws during playback reuse them).

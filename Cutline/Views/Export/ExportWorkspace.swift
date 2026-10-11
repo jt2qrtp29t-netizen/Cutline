@@ -36,7 +36,9 @@ extension ExportWorkspace {
     @ViewBuilder
     private func center(source: ExportSource, sourceEditor: EditorController) -> some View {
         let running = ExportQueue.shared.current
-        if let running, AppSettings.shared.showFramesWhileExporting {
+        if let session = editor.thumbnail {
+            ThumbnailStudio(editor: editor, session: session)
+        } else if let running, AppSettings.shared.showFramesWhileExporting {
             let (width, height) = running.snapshot.settings.resolution.size(for: running.snapshot.state.settings)
             ExportLiveView(job: running, aspectRatio: CGFloat(width) / CGFloat(max(height, 1)))
         } else {
