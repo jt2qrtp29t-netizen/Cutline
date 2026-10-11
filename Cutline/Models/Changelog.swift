@@ -11,6 +11,17 @@ enum Changelog {
     }
 
     static let entries: [Entry] = [
+        Entry(version: "3.8", title: "Audio tab", changes: [
+            "A new Audio tab (⌘4) between Color and Playground: a mixer, the preview, the selected clip's and track's settings and effects, and audio keyframe lanes under the timeline.",
+            "One audio engine for playback, scrubbing and export: each clip, track and the master run through the same chain and the same calculations, so what you hear is exactly what's exported. Everything runs at 48 kHz stereo; sources are converted once on the way in. Existing clips sound exactly as before.",
+            "Mixer: a strip per audio track with a dB fader, pan, mute, solo (solo overrides mute; several tracks can be soloed) and a live peak meter with a clip light, plus a master strip. Double-click a fader for 0 dB; hold ⌥ for fine control.",
+            "Clip tools: fade-in and fade-out handles on audio clips with linear, equal-power or logarithmic curves, crossfades between touching clips, clip gain in dB, and waveforms that follow gain, volume and fades.",
+            "Track effects, in any order and each with a bypass: a 4-band equalizer with low and high cut, compressor, noise gate, de-esser, limiter and a basic noise reduction. Presets for Voice (commentary), Game audio, Music bed and Radio / telephone set ordinary values you can keep editing.",
+            "Loudness: a master meter with momentary, short-term and integrated LUFS and true peak, and Normalize for a clip, a track or the whole project (−14 LUFS for YouTube, −16 or any target), applied as a gain you can see and change. A master limiter.",
+            "Ducking: a game or music track goes down automatically while the voice track talks, with threshold, amount, attack and release, worked out ahead of time so every playback and export is the same.",
+            "Volume, pan and every effect setting can be keyframed, with easing. Fader, mute, solo and setting changes glide over a few milliseconds, so nothing clicks; playback fades in and out on play and pause.",
+            "Tabs are now Edit, Effects, Color, Audio, Playground, Export (⌘1–⌘6).",
+        ]),
         Entry(version: "3.7", title: "Export finishing fix", changes: [
             "Fixed: an export could sit at 100% saying “Rendering” for a long time, ignoring Cancel and holding up the queue. Network optimization was copying the whole finished file in small pieces with no progress.",
             "Network optimization now copies in large blocks (about half a gigabyte in a fraction of a second), shows its own progress, and stops at once when canceled. It’s skipped for ProRes masters, which aren’t streamed.",

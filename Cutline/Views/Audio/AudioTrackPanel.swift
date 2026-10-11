@@ -20,6 +20,10 @@ struct AudioTrackPanel: View {
             if let track = editor.audioSettingsTrack {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 12) {
+                        if let clip = editor.audioClip {
+                            AudioClipSection(editor: editor, clip: clip)
+                                .id(clip.id)
+                        }
                         InspectorSection(title: "Level") {
                             AudioParameterRow(editor: editor, ref: .volume(track.id))
                             AudioParameterRow(editor: editor, ref: .pan(track.id))
@@ -363,6 +367,68 @@ private struct DuckingSection: View {
                                 editor.adjustDucking(keyPath, to: v, in: range)
                             },
                             onEnd: { editor.endAudioAdjustment("Change Ducking") })
+        }
+    }
+}
+
+/// The selected audio clip: volume and pan (keyframable), clip gain, fades and pitch.
+private struct AudioClipSection: View {
+    let editor: EditorController
+    let clip: Clip
+
+    var body: some View {
+        InspectorSection(title: "Clip · \(clip.name)") {
+            ParameterRow(editor: editor, clip: clip, property: .volume)
+            ParameterRow(editor: editor, clip: clip, property: .pan)
+            slider("Gain", value: clip.gainDB, range: -24...24, unit: " dB", digits: 1, step: 0.05) { $0.gainDB = $1 }
+            fadeRow("In", .leading, clip.fadeIn)
+            fadeRow("Out", .trailing, clip.fadeOut)
+            slider("Semitones", value: clip.pitchSemitones, range: -24...24, unit: "", digits: 0, step: 0.1) { $0.pitchSemitones = $1.rounded() }
+            slider("Cents", value: clip.pitchCents, range: -100...100, unit: "", digits: 0, step: 0.5) { $0.pitchCents = $1.rounded() }
+            HStack {
+                Button("Normalize Clip") { editor.normalize(.clip(clip.id)) }
+                    .controlSize(.small)
+                    .disabled(editor.audioActivity != nil)
+                Text("to " + String(format: "%.1f LUFS", editor.state.audio.loudnessTarget).replacingOccurrences(of: "-", with: "−"))
+                    .font(.system(size: 10))
+                    .foregroundStyle(Theme.textTertiary)
+                Spacer()
+                if clip.speed != 1 {
+                    Text("Speed \(Int((clip.speed * 100).rounded()))%")
+                        .font(.system(size: 10))
+                        .foregroundStyle(Theme.textTertiary)
+                }
+            }
+        }
+        .disabled(editor.state.isClipLocked(clip.id))
+    }
+
+    private func slider(_ title: String, value: Double, range: ClosedRange<Double>, unit: String, digits: Int, step: Double,
+                        apply: @escaping (inout Clip, Double) -> Void) -> some View {
+        let id = clip.id
+        return InspectorSlider(title: title, value: value, range: range, unit: unit, fractionDigits: digits, unitsPerPoint: step,
+                               onBegin: editor.beginAdjustment,
+                               onChange: { v in editor.adjustClip(id, actionName: "Change \(title)") { apply(&$0, v) } },
+                               onEnd: { editor.endAdjustment("Change \(title)") },
+                               onSet: { v in editor.adjustClip(id, actionName: "Change \(title)") { apply(&$0, v) } })
+    }
+
+    private func fadeRow(_ title: String, _ edge: ClipEdge, _ fade: AudioFade) -> some View {
+        let id = clip.id
+        return VStack(alignment: .leading, spacing: 4) {
+            InspectorSlider(title: "Fade \(title)", value: fade.duration.seconds, range: 0...max(clip.duration.seconds, 0.01),
+                            unit: " s", fractionDigits: 2, unitsPerPoint: 0.01,
+                            onBegin: editor.beginAdjustment,
+                            onChange: { editor.adjustFade(edge, of: id, to: Time(seconds: $0)) },
+                            onEnd: { editor.endAudioAdjustment("Change Fade \(title)") },
+                            onSet: { editor.setFade(edge, of: [id], to: Time(seconds: $0)) })
+            Picker("Curve", selection: Binding(get: { fade.curve }, set: { editor.setFadeCurve(edge, of: [id], to: $0) })) {
+                ForEach(FadeCurve.allCases) { Text($0.title).tag($0) }
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            .controlSize(.small)
+            .disabled(!fade.isActive)
         }
     }
 }

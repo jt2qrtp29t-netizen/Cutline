@@ -7,6 +7,7 @@ extension AnimatableProperty {
         case .scale, .opacity, .contrast, .saturation, .lutIntensity: 100
         case .brightness, .temperature, .tint, .highlights, .shadows: 100
         case .liftMaster, .gammaMaster, .gainMaster, .offsetMaster: 100
+        case .volume, .pan: 100
         default: 1
         }
     }
@@ -17,14 +18,14 @@ extension AnimatableProperty {
         case .scale, .opacity: "%"
         case .rotation, .yaw, .pitch: "°"
         case .exposure: "EV"
-        case .contrast, .saturation, .lutIntensity: "%"
+        case .contrast, .saturation, .lutIntensity, .volume: "%"
         default: ""
         }
     }
 
     var fractionDigits: Int {
         switch self {
-        case .opacity, .contrast, .saturation, .lutIntensity: 0
+        case .opacity, .contrast, .saturation, .lutIntensity, .volume, .pan: 0
         case .exposure: 2
         default: 1
         }

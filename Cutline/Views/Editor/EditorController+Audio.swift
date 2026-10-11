@@ -403,3 +403,56 @@ extension EditorController {
 
     func resetLoudness() { playback.audio.graph.loudness.resetRequested.store(true, ordering: .relaxed) }
 }
+
+// MARK: - Audio keyframe lanes
+
+extension EditorController {
+    /// The Audio tab's clip: exactly one selected clip on an audio track.
+    var audioClip: Clip? {
+        let selected = selectedClips
+        guard selected.count == 1, let clip = selected.first, state.track(ofClip: clip.id)?.kind == .audio else { return nil }
+        return clip
+    }
+
+    /// A track parameter's title for the keyframe lane: "Volume", or "Equalizer · Low Cut".
+    func trackParameterTitle(_ key: String, in track: Track) -> String {
+        if key == AudioParameter.volume.id { return "Volume" }
+        if key == AudioParameter.pan.id { return "Pan" }
+        let parts = key.split(separator: "/")
+        guard parts.count == 2, let effect = track.audio.effects.first(where: { $0.id.uuidString == parts[0] }),
+              let parameter = effect.kind.parameter(String(parts[1])) else { return key }
+        return "\(effect.kind.title) · \(parameter.title)"
+    }
+
+    /// Moves a track keyframe in time during a drag (one undo step; call `endAudioAdjustment`).
+    func moveTrackKeyframe(_ id: UUID, key: String, track trackID: UUID, by delta: Time) {
+        if !store.isLiveEditing { store.beginLiveEdit() }
+        guard let base = store.liveBase, let index = base.tracks.firstIndex(where: { $0.id == trackID }),
+              let frames = base.tracks[index].audio.keyframes[key], let original = frames.first(where: { $0.id == id }) else { return }
+        let time = max(.zero, original.time + delta).snappedToFrame(fps: fps)
+        store.liveEdit { state in
+            var moved = frames.filter { $0.id != id && $0.time != time }
+            var frame = original
+            frame.time = time
+            moved.append(frame)
+            state.tracks[index].audio.keyframes[key] = moved.sorted { $0.time < $1.time }
+        }
+    }
+
+    func deleteTrackKeyframe(_ id: UUID, key: String, track trackID: UUID) {
+        store.edit("Delete Keyframe") { state in
+            guard let index = state.tracks.firstIndex(where: { $0.id == trackID }) else { return }
+            var frames = state.tracks[index].audio.keyframes[key] ?? []
+            frames.removeAll { $0.id == id }
+            state.tracks[index].audio.keyframes[key] = frames.isEmpty ? nil : frames
+        }
+    }
+
+    func setTrackKeyframeEasing(_ easing: Easing, id: UUID, key: String, track trackID: UUID) {
+        store.edit("Change Easing") { state in
+            guard let index = state.tracks.firstIndex(where: { $0.id == trackID }),
+                  let k = state.tracks[index].audio.keyframes[key]?.firstIndex(where: { $0.id == id }) else { return }
+            state.tracks[index].audio.keyframes[key]?[k].easing = easing
+        }
+    }
+}

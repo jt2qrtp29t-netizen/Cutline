@@ -73,9 +73,13 @@ struct TimelinePanel: View {
             .scrollIndicators(.never)
             .background(Theme.background)
 
-            if editor.workspace == .effects || editor.workspace == .color || editor.isSandbox {
+            if editor.workspace == .effects || editor.workspace == .color || editor.workspace == .audio || editor.isSandbox {
                 Rectangle().fill(Theme.border).frame(height: 1)
                 KeyframeLane(editor: editor, layout: layout, visibleRect: visibleRect)
+            }
+            if editor.workspace == .audio && !editor.isSandbox {
+                Rectangle().fill(Theme.border).frame(height: 1)
+                TrackKeyframeLane(editor: editor, layout: layout, visibleRect: visibleRect)
             }
         }
         .background(Theme.background)
