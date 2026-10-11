@@ -157,6 +157,10 @@ nonisolated struct ExportSettings: Codable, Hashable, Sendable {
 
     func frameRate(for project: ProjectSettings) -> Int { frameRate ?? project.frameRate }
 
+    /// Network optimization applies to H.264 and HEVC files, made for sharing. ProRes
+    /// masters aren't streamed, and moving the index of such a large file takes long.
+    var usesNetworkOptimization: Bool { networkOptimized && codec != .proRes422 }
+
     /// Whether the faster hardware HEVC mode is in use.
     var usesFastEncoding: Bool { codec == .hevc && hardwareEncoding && fastEncoding }
     /// The extra bitrate that gives the faster mode the same quality as the normal one.

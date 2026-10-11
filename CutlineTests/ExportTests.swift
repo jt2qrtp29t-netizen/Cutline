@@ -116,9 +116,10 @@ enum ExportProbe {
         return ExportSnapshot(state: state, urls: urls, range: r, settings: settings)
     }
 
-    private func export(_ snapshot: ExportSnapshot, name: String = "out") async throws -> ExportResult {
+    private func export(_ snapshot: ExportSnapshot, name: String = "out", phases: PhaseLog? = nil) async throws -> ExportResult {
         let url = ExportProbe.folder().appendingPathComponent("\(name).\(snapshot.settings.effectiveContainer.fileExtension)")
-        return try await ExportRunner.run(snapshot, to: url, cancellation: ExportCancellation()) { _, _ in }
+        return try await ExportRunner.run(snapshot, to: url, cancellation: ExportCancellation(),
+                                          phase: { phases?.add($0) }) { _, _ in }
     }
 
     @Test func frameCountAndDurationMatchTheTimeline() async throws {
@@ -300,6 +301,39 @@ enum ExportProbe {
         #expect(small.extent.size == CGSize(width: 640, height: 360))
     }
 
+    @Test func exportsReportEachStageAndCancelDuringTheLast() async throws {
+        let (state, urls, _) = try await sunsetProject(seconds: 1)
+        var settings = ExportPreset.quickPreview.applied(to: ExportSettings())
+        settings.networkOptimized = true
+        let phases = PhaseLog()
+        let done = try await export(snapshot(state, urls: urls, settings: settings), name: "phases", phases: phases)
+        #expect(FileManager.default.fileExists(atPath: done.url.path))
+        let seen = phases.titles
+        #expect(seen.first == "Mixing audio" && seen.contains("Rendering") && seen.contains("Finishing the file")
+                && seen.last == "Optimizing for network", "\(seen)")
+
+        // Cancel once the network optimization starts: nothing is left behind.
+        let cancellation = ExportCancellation()
+        let destination = ExportProbe.folder().appendingPathComponent("cancel-late.mp4")
+        await #expect(throws: ExportError.cancelled) {
+            _ = try await ExportRunner.run(snapshot(state, urls: urls, settings: settings), to: destination,
+                                           cancellation: cancellation, phase: { phase in
+                if case .optimizing = phase { cancellation.cancel() }
+            }) { _, _ in }
+        }
+        #expect(!FileManager.default.fileExists(atPath: destination.path))
+
+        // ProRes masters skip it: their index stays at the end, and there's no copy.
+        var master = ExportPreset.proRes.applied(to: ExportSettings())
+        master.networkOptimized = true
+        #expect(!master.usesNetworkOptimization)
+        let proRes = PhaseLog()
+        let file = try await export(snapshot(state, urls: urls, settings: master), name: "master", phases: proRes)
+        #expect(!proRes.titles.contains("Optimizing for network"))
+        let boxes = try MovieFastStart.topLevelBoxes(file.url).map(\.type)
+        #expect(try #require(boxes.firstIndex(of: "mdat")) < (try #require(boxes.firstIndex(of: "moov"))))
+    }
+
     @Test func networkOptimizationPutsTheIndexFirst() async throws {
         let toneURL = FileManager.default.temporaryDirectory.appendingPathComponent("tone-\(UUID()).wav")
         try PlaybackTests.writeTone(to: toneURL, format: kAudioFormatLinearPCM, seconds: 1)
@@ -355,4 +389,14 @@ nonisolated private final class LiveFrames: @unchecked Sendable {
     private var stored: [(image: CGImage, index: Int)] = []
     var frames: [(image: CGImage, index: Int)] { lock.withLock { stored } }
     func add(_ image: CGImage, _ index: Int) { lock.withLock { stored.append((image, index)) } }
+}
+
+nonisolated private final class PhaseLog: @unchecked Sendable {
+    private let lock = NSLock()
+    private var stored: [String] = []
+    /// Distinct stages in the order they started.
+    var titles: [String] { lock.withLock { stored } }
+    func add(_ phase: ExportPhase) {
+        lock.withLock { if stored.last != phase.title { stored.append(phase.title) } }
+    }
 }

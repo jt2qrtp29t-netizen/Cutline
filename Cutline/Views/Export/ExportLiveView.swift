@@ -37,7 +37,7 @@ struct ExportLiveView: View {
     private var liveBadge: some View {
         HStack(spacing: 6) {
             Circle().fill(Theme.destructive).frame(width: 7, height: 7)
-            Text("RENDERING")
+            Text(job.isCanceling ? "CANCELING" : job.phase.title.uppercased())
                 .font(.system(size: 10, weight: .bold))
             Text(job.title)
                 .font(.system(size: 10.5))
@@ -56,8 +56,14 @@ struct ExportLiveView: View {
             let fps = snapshot.frameRate
             let frameTime = snapshot.range.start + Time(ticks: Time.frame(fps: fps).ticks * Int64(job.liveFrameIndex))
             HStack(spacing: 14) {
-                Text("Frame \(job.liveFrameIndex + 1) of \(job.totalFrames)")
-                    .frame(minWidth: 130, alignment: .leading)
+                Group {
+                    if job.phase == .rendering || job.phase == .mixingAudio {
+                        Text("Frame \(job.liveFrameIndex + 1) of \(job.totalFrames)")
+                    } else {
+                        Text(ExportJobRow.detail(of: job).components(separatedBy: " · ").last ?? "")
+                    }
+                }
+                .frame(minWidth: 130, alignment: .leading)
                 Text(Timecode.string(for: frameTime, fps: fps, alwaysShowHours: true))
                     .foregroundStyle(Theme.accent)
                 ProgressView(value: job.progress)

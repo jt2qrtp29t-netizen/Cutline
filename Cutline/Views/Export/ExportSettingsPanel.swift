@@ -132,10 +132,12 @@ struct ExportSettingsPanel: View {
                     .disabled(!settings.hardwareEncoding)
                     .help("Uses the hardware encoder’s faster mode, about 1.9× faster, and raises the bitrate 20% so the quality stays the same. Files are about 20% larger.")
             }
-            Toggle("Network optimization", isOn: Binding(get: { settings.networkOptimized },
-                                                          set: { on in change { $0.networkOptimized = on } }))
-                .font(.system(size: 11))
-                .help("Puts the movie’s index at the start of the file, so it starts playing while it downloads or uploads (web, YouTube and social). It doesn’t change the picture.")
+            if settings.codec != .proRes422 {
+                Toggle("Network optimization", isOn: Binding(get: { settings.networkOptimized },
+                                                              set: { on in change { $0.networkOptimized = on } }))
+                    .font(.system(size: 11))
+                    .help("Puts the movie’s index at the start of the file, so it starts playing while it downloads or uploads (web, YouTube and social). It doesn’t change the picture. Adds a quick copy of the finished file.")
+            }
         }
     }
 

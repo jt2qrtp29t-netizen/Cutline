@@ -38,6 +38,10 @@ final class ExportJob: Identifiable {
     /// The latest frame shown while rendering (scaled down), and its index in the export.
     var liveFrame: CGImage?
     var liveFrameIndex = 0
+    /// What the running export is doing.
+    var phase = ExportPhase.mixingAudio
+    /// Cancel was pressed; the export is stopping and cleaning up.
+    var isCanceling = false
 
     @ObservationIgnored let cancellation = ExportCancellation()
     /// The project to add the finished file to with "Add to Media".
@@ -95,6 +99,7 @@ final class ExportQueue {
             job.status = .canceled
             job.endDate = Date()
         case .rendering:
+            job.isCanceling = true
             job.cancellation.cancel()
         default:
             break
@@ -150,7 +155,12 @@ final class ExportQueue {
                 }
             } : nil
             let result = try await ExportRunner.run(job.snapshot, to: job.destination, cancellation: job.cancellation,
-                                                    frameTap: tap) { progress, frames in
+                                                    frameTap: tap, phase: { phase in
+                Task { @MainActor in
+                    guard job.status == .rendering else { return }
+                    job.phase = phase
+                }
+            }) { progress, frames in
                 Task { @MainActor in
                     guard job.status == .rendering else { return }
                     job.progress = max(job.progress, progress)
@@ -169,6 +179,7 @@ final class ExportQueue {
                 let predicted = ExportTimeEstimate.predicted(
                     frames: result.frames, width: w, height: h, project: snapshot.state.settings, encoder: encoder,
                     complexity: ExportTimeEstimate.complexity(of: snapshot.state, in: snapshot.range))
+                    + ExportTimeEstimate.networkOptimizationSeconds(snapshot.settings, frames: result.frames, project: snapshot.state.settings)
                 ExportTimeEstimate.learn(encoder: encoder, predicted: predicted, actual: Date().timeIntervalSince(start))
             }
         } catch ExportError.cancelled {

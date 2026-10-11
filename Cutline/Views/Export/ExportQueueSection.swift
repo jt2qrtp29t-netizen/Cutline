@@ -28,7 +28,7 @@ struct ExportQueueSection: View {
     }
 }
 
-private struct ExportJobRow: View {
+struct ExportJobRow: View {
     let job: ExportJob
     let now: Date
 
@@ -51,7 +51,8 @@ private struct ExportJobRow: View {
                         .background(Theme.sandboxMuted, in: .capsule)
                 }
                 Spacer()
-                Text(job.status.title)
+                Text(job.isCanceling && job.status == .rendering ? "Canceling…"
+                     : job.status == .rendering ? job.phase.title : job.status.title)
                     .font(.system(size: 10, weight: .medium))
                     .foregroundStyle(tint)
             }
@@ -64,7 +65,7 @@ private struct ExportJobRow: View {
                 ProgressView(value: job.progress)
                     .tint(job.isPlayground ? Theme.sandbox : Theme.accent)
                 HStack {
-                    Text("\(Int(job.progress * 100))% · frame \(job.framesDone) of \(job.totalFrames)")
+                    Text(Self.detail(of: job))
                     Spacer()
                     Text(timing)
                 }
@@ -91,7 +92,8 @@ private struct ExportJobRow: View {
             HStack(spacing: 6) {
                 switch job.status {
                 case .queued, .rendering:
-                    Button("Cancel") { ExportQueue.shared.cancel(job) }
+                    Button(job.isCanceling ? "Canceling…" : "Cancel") { ExportQueue.shared.cancel(job) }
+                        .disabled(job.isCanceling)
                 case .done:
                     Button("Show in Finder") { NSWorkspace.shared.activateFileViewerSelecting([job.destination]) }
                     Button("Open") { NSWorkspace.shared.open(job.destination) }
@@ -106,6 +108,16 @@ private struct ExportJobRow: View {
         }
         .padding(8)
         .background(Theme.raised.opacity(0.6), in: .rect(cornerRadius: 6))
+    }
+
+    /// Progress in words for the running stage.
+    static func detail(of job: ExportJob) -> String {
+        switch job.phase {
+        case .mixingAudio: "\(Int(job.progress * 100))% · mixing audio"
+        case .rendering: "\(Int(job.progress * 100))% · frame \(job.framesDone) of \(job.totalFrames)"
+        case .finishing: "\(Int(job.progress * 100))% · all frames done, finishing the file"
+        case .optimizing(let fraction): "\(Int(job.progress * 100))% · optimizing for network \(Int(fraction * 100))%"
+        }
     }
 
     private var timing: String {

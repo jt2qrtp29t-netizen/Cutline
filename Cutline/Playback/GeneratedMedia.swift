@@ -278,7 +278,7 @@ nonisolated enum MediaTranscoder {
         try writer.start()
         writer.startSession(atSourceTime: .zero)
 
-        let streams = TranscodeStreams(provider: provider, receiver: receiver)
+        let streams = TranscodeStreams(provider: provider, receiver: receiver, writer: writer)
         let total = max(timeRange.duration.seconds, 0.001)
         do {
             // Reading waits for each frame, so it runs on a thread of its own.
@@ -287,7 +287,15 @@ nonisolated enum MediaTranscoder {
                     if cancellation.isCancelled { throw CancellationError() }
                     guard case .pixelBuffer(let pixels) = sample.content else { continue }
                     let time = sample.presentationTimeStamp
-                    try await streams.receiver.append(pixels, with: time)
+                    // Offered without waiting, like exports: the awaiting append can stay
+                    // suspended forever if the writer never signals it's ready again.
+                    while try !streams.receiver.appendImmediately(pixels, with: time) {
+                        if cancellation.isCancelled { throw CancellationError() }
+                        if streams.writer.status == .failed {
+                            throw Failure.failed(streams.writer.error?.localizedDescription ?? "The encoder stopped.")
+                        }
+                        try await Task.sleep(for: .milliseconds(2))
+                    }
                     progress(min(1, max(0, CMTimeSubtract(time, timeRange.start).seconds / total)))
                 }
                 streams.receiver.finish()
@@ -313,5 +321,6 @@ nonisolated enum MediaTranscoder {
     private struct TranscodeStreams: @unchecked Sendable {
         let provider: AVAssetReaderOutput.Provider<CMReadySampleBuffer<CMSampleBuffer.DynamicContent>>
         let receiver: AVAssetWriterInput.PixelBufferReceiver
+        let writer: AVAssetWriter
     }
 }

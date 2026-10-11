@@ -54,6 +54,25 @@ nonisolated final class ExportCancellation: @unchecked Sendable {
     }
 }
 
+/// What a running export is doing.
+nonisolated enum ExportPhase: Equatable, Sendable {
+    case mixingAudio
+    case rendering
+    /// Writing the file's index after the last frame.
+    case finishing
+    /// Moving the index to the front for network use; 0...1.
+    case optimizing(Double)
+
+    var title: String {
+        switch self {
+        case .mixingAudio: "Mixing audio"
+        case .rendering: "Rendering"
+        case .finishing: "Finishing the file"
+        case .optimizing: "Optimizing for network"
+        }
+    }
+}
+
 nonisolated enum ExportError: LocalizedError, Equatable {
     case emptyTimeline
     case cancelled
@@ -75,9 +94,12 @@ nonisolated enum ExportError: LocalizedError, Equatable {
 nonisolated enum ExportRenderer {
     /// Renders video and the (already mixed) audio file into `output`. Reports progress
     /// as frames written. The file is only complete when this returns.
+    /// - Returns: warnings about things that didn't go as asked (the file is still complete).
+    @discardableResult
     static func render(_ snapshot: ExportSnapshot, audio: URL?, to output: URL,
                        cancellation: ExportCancellation, frameTap: ExportFrameTap? = nil,
-                       progress: @escaping @Sendable (Int) -> Void) async throws {
+                       phase: @escaping @Sendable (ExportPhase) -> Void = { _ in },
+                       progress: @escaping @Sendable (Int) -> Void) async throws -> [String] {
         guard snapshot.range.duration > .zero, snapshot.frameCount > 0 else { throw ExportError.emptyTimeline }
 
         // The timeline at the export frame rate; the compositor renders each output frame.
@@ -120,8 +142,6 @@ nonisolated enum ExportRenderer {
         do { writer = try AVAssetWriter(outputURL: output, fileType: fileType) } catch {
             throw ExportError.setupFailed(error.localizedDescription)
         }
-        // Network optimization: the movie's index goes at the start of the file.
-        writer.shouldOptimizeForNetworkUse = settings.networkOptimized
         let (width, height) = settings.resolution.size(for: state.settings)
         let videoInput = AVAssetWriterInput(mediaType: .video, outputSettings: videoSettings(settings, width: width, height: height,
                                                                                             project: state.settings))
@@ -225,6 +245,7 @@ nonisolated enum ExportRenderer {
             throw ExportError.writingFailed(error.localizedDescription)
         }
 
+        phase(.finishing)
         // Exactly as long as the range, however long the last frame's sample says.
         writer.endSession(atSourceTime: snapshot.range.duration.cmTime)
         await writer.finishWriting()
@@ -232,6 +253,26 @@ nonisolated enum ExportRenderer {
             try? FileManager.default.removeItem(at: output)
             throw ExportError.writingFailed(writer.error?.localizedDescription ?? "the file couldn’t be finished.")
         }
+
+        var warnings: [String] = []
+        // Network optimization: the index moves to the front, copying the file in large
+        // blocks with progress (cancel works throughout). If it can't be done the file
+        // is still complete, just not optimized.
+        if settings.usesNetworkOptimization {
+            phase(.optimizing(0))
+            do {
+                // A long, blocking copy: on a thread of its own.
+                try await Task.detached(executorPreference: MediaWorkThread(label: "app.cutline.faststart")) {
+                    try MovieFastStart.apply(to: output, isCancelled: { cancellation.isCancelled }) { phase(.optimizing($0)) }
+                }.value
+            } catch is CancellationError {
+                try? FileManager.default.removeItem(at: output)
+                throw ExportError.cancelled
+            } catch {
+                warnings.append("Network optimization was skipped (\(error.localizedDescription)). The file plays normally, but won’t start playing before it has fully downloaded.")
+            }
+        }
+        return warnings
     }
 
     static func videoSettings(_ settings: ExportSettings, width: Int, height: Int, project: ProjectSettings) -> [String: Any] {

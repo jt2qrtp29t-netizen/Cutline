@@ -65,12 +65,22 @@ nonisolated enum ExportTimeEstimate {
         return overheadSeconds + Double(frames) * perFrame
     }
 
+    /// Bytes per second read and written while moving a file's index to the front.
+    static let fileCopyBytesPerSecond = 1.0e9
+
+    /// Time for network optimization's copy of the finished file.
+    static func networkOptimizationSeconds(_ settings: ExportSettings, frames: Int, project: ProjectSettings) -> Double {
+        guard settings.usesNetworkOptimization else { return 0 }
+        let seconds = Double(frames) / Double(max(settings.frameRate(for: project), 1))
+        return settings.estimatedBytes(seconds: seconds, project: project) / fileCopyBytesPerSecond
+    }
+
     /// The prediction corrected by this Mac's past exports with the same encoder.
     static func seconds(frames: Int, width: Int, height: Int, project: ProjectSettings,
                         settings: ExportSettings, complexity: Double) -> Double {
         let encoder = Encoder(settings)
-        return predicted(frames: frames, width: width, height: height, project: project, encoder: encoder, complexity: complexity)
-            * correction(for: encoder)
+        return (predicted(frames: frames, width: width, height: height, project: project, encoder: encoder, complexity: complexity)
+            + networkOptimizationSeconds(settings, frames: frames, project: project)) * correction(for: encoder)
     }
 
     // MARK: Learning

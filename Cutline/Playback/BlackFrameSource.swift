@@ -36,7 +36,14 @@ nonisolated enum BlackFrameSource {
         frame.accessUnsafeMutableRawPlaneBytes { planes in
             for plane in planes { plane.bytes.initializeMemory(as: UInt8.self, repeating: 0) }
         }
-        try await receiver.append(CVReadOnlyPixelBuffer(frame), with: .zero)
+        // Offered without waiting (the awaiting append can stay suspended forever).
+        let pixels = CVReadOnlyPixelBuffer(frame)
+        var attempts = 0
+        while try !receiver.appendImmediately(pixels, with: .zero) {
+            attempts += 1
+            guard writer.status != .failed, attempts < 2_500 else { throw writer.error ?? CocoaError(.fileWriteUnknown) }
+            try await Task.sleep(for: .milliseconds(2))
+        }
         receiver.finish()
         writer.endSession(atSourceTime: CMTime(value: 1, timescale: 1))
         await writer.finishWriting()

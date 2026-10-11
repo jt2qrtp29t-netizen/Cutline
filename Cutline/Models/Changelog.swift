@@ -11,6 +11,12 @@ enum Changelog {
     }
 
     static let entries: [Entry] = [
+        Entry(version: "3.7", title: "Export finishing fix", changes: [
+            "Fixed: an export could sit at 100% saying “Rendering” for a long time, ignoring Cancel and holding up the queue. Network optimization was copying the whole finished file in small pieces with no progress.",
+            "Network optimization now copies in large blocks (about half a gigabyte in a fraction of a second), shows its own progress, and stops at once when canceled. It’s skipped for ProRes masters, which aren’t streamed.",
+            "Fixed: making optimized or proxy media could occasionally stop partway and never finish.",
+            "The queue and the live view say what an export is doing (mixing audio, rendering, finishing the file, optimizing for network), and Cancel shows “Canceling…” right away.",
+        ]),
         Entry(version: "3.6", title: "Live render view", changes: [
             "While an export runs, the Export tab’s viewer shows the frames being exported, live, framed exactly as in the file (cropped or letterboxed for vertical and square exports), with the frame number, timecode, progress and time left.",
             "Frames are shown a dozen times a second and prepared off the export’s thread, so exports don’t slow down. The eye button hides them; “Show Frames” over the preview brings them back.",
