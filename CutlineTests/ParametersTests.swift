@@ -103,5 +103,12 @@ import Testing
         #expect(numbers == numbers.sorted(by: >) && numbers.last == 1.0)
         #expect(Set(versions).count == versions.count)
         #expect(Changelog.entries.allSatisfy { !$0.changes.isEmpty })
+        // Every version is tagged FEATURE, BUG FIX or both, and a version listing a fix says so.
+        for entry in Changelog.entries {
+            #expect(!entry.tags.isEmpty && Set(entry.tags).count == entry.tags.count, "v\(entry.version) tags")
+            if entry.changes.contains(where: { $0.hasPrefix("Fixed") }) {
+                #expect(entry.tags.contains(.bugFix), "v\(entry.version) lists a fix")
+            }
+        }
     }
 }

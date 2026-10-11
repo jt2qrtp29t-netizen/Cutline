@@ -40,6 +40,9 @@ private struct ChangelogEntryView: View {
                 Text(entry.title)
                     .font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(Theme.textPrimary)
+                ForEach(entry.tags) { tag in
+                    ChangelogTagBadge(tag: tag)
+                }
                 Spacer()
                 if isCurrent {
                     Text("Current")
@@ -68,5 +71,23 @@ private struct ChangelogEntryView: View {
         .overlay {
             if isCurrent { RoundedRectangle(cornerRadius: 8).strokeBorder(Theme.accent.opacity(0.5)) }
         }
+    }
+}
+
+/// FEATURE or BUG FIX, next to a version's title.
+struct ChangelogTagBadge: View {
+    let tag: Changelog.Tag
+
+    var body: some View {
+        let color = tag == .feature ? Theme.changelogFeature : Theme.changelogBugFix
+        Text(tag.rawValue)
+            .font(.system(size: 9, weight: .bold))
+            .tracking(0.4)
+            .foregroundStyle(color)
+            .padding(.horizontal, 5)
+            .padding(.vertical, 1.5)
+            .background(color.opacity(0.14), in: .rect(cornerRadius: 3))
+            .overlay { RoundedRectangle(cornerRadius: 3).strokeBorder(color.opacity(0.45), lineWidth: 0.5) }
+            .fixedSize()
     }
 }

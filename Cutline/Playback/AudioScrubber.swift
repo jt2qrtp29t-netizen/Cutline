@@ -43,6 +43,10 @@ nonisolated struct ScrubSource: Sendable {
 /// Decodes and keeps the audio around the playhead for scrubbing, per clip.
 final class ScrubSourceLoader {
     private var buffers: [UUID: ScrubSource] = [:]
+    /// Buffers no longer needed, kept a few seconds before they're released here: the
+    /// audio thread may still hold them in a clip node's settings, and it must never be
+    /// the one to free megabytes of samples (that can make the sound drop out).
+    private var retired: [(until: ContinuousClock.Instant, source: ScrubSource)] = []
 
     /// How far around the playhead (in timeline seconds) audio is kept decoded.
     static let window = 3.0
@@ -70,11 +74,17 @@ final class ScrubSourceLoader {
                     source = Self.load(url, clip: clip, around: from...max(from, to), margin: Self.window * fastest)
                 }
                 guard let loaded = source?.retimed(for: clip, id: original.id) else { continue }
+                if let previous = buffers[original.id], previous.left.count != loaded.left.count || previous.bufferStart != loaded.bufferStart {
+                    retired.append((ContinuousClock.now + .seconds(3), previous))
+                }
                 buffers[original.id] = loaded
                 result.append(loaded)
             }
         }
         let kept = Set(result.map(\.clipID))
+        let now = ContinuousClock.now
+        retired.removeAll { $0.until < now }
+        for (id, source) in buffers where !kept.contains(id) { retired.append((now + .seconds(3), source)) }
         buffers = buffers.filter { kept.contains($0.key) }
         return result
     }

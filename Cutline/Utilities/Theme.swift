@@ -107,6 +107,9 @@ enum Theme {
     // MARK: Keyframes
 
     static let keyframe = Color(hex: 0xE8C547)
+    // Changelog tags.
+    static let changelogFeature = Color(hex: 0x3BD473)
+    static let changelogBugFix = Color(hex: 0xF2A93B)
     static let keyframeSelected = Color(hex: 0xFFFFFF)
     static let curve = Color(hex: 0x3BD473)
     static let curveHandle = Color(hex: 0x6FB7F0)

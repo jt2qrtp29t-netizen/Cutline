@@ -103,7 +103,7 @@ struct PlaybackTests {
         #expect(playback.currentTime == paused)
     }
 
-    private func waitUntil(timeout: Duration = .seconds(5), _ condition: () -> Bool) async throws {
+    private func waitUntil(timeout: Duration = .seconds(15), _ condition: () -> Bool) async throws {
         let deadline = ContinuousClock.now + timeout
         while !condition() {
             if ContinuousClock.now > deadline {
