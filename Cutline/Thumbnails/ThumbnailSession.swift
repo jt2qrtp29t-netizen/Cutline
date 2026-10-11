@@ -33,6 +33,8 @@ final class ThumbnailSession: Identifiable {
     private(set) var savedURL: URL?
     private(set) var saveMessage: String?
     @ObservationIgnored private var task: Task<Void, Never>?
+    /// The last thumbnail made, by what it was made from (redraws reuse it).
+    @ObservationIgnored private var rendered: (key: String, image: CGImage)?
 
     init(movie: URL, speech: [(time: Double, text: String)], client: OllamaClient = OllamaClient()) {
         self.movie = movie
@@ -47,6 +49,10 @@ final class ThumbnailSession: Identifiable {
         progress = 0
         picks = []
         savedURL = nil
+        guard FileManager.default.fileExists(atPath: movie.path) else {
+            phase = .failed("The exported movie isn't at \(movie.path) anymore.")
+            return
+        }
         let movie = movie, speech = speech, client = client
         let report: @Sendable (Double) -> Void = { [weak self] value in
             Task { @MainActor in self?.progress = value }
@@ -95,7 +101,12 @@ final class ThumbnailSession: Identifiable {
     /// The thumbnail as it will be saved.
     func render() -> CGImage? {
         guard let chosen else { return nil }
-        return ThumbnailComposer.compose(frame: chosen.candidate.image, title: showsTitle ? title : nil, style: preset.style)
+        let key = "\(chosen.id)|\(showsTitle ? title : "")|\(preset.rawValue)"
+        if let rendered, rendered.key == key { return rendered.image }
+        guard let image = ThumbnailComposer.compose(frame: chosen.candidate.image, title: showsTitle ? title : nil, style: preset.style)
+        else { return nil }
+        rendered = (key, image)
+        return image
     }
 
     /// Saves next to the movie: "<movie>-thumbnail.jpg" (or .png).

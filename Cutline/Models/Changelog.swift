@@ -19,6 +19,12 @@ enum Changelog {
     }
 
     static let entries: [Entry] = [
+        Entry(version: "4.6", title: "Smart thumbnails", tags: [.feature], changes: [
+            "Make Thumbnail on any finished export (Export tab): Cutline looks through the video and offers its 3 best frames as thumbnail candidates, each with why it was chosen. Pick one, add a title if you like, and save it next to the movie.",
+            "Frames are rated on this Mac with Apple's Vision framework (composition and sharpness, clear faces), together with loud moments and excited speech from the transcript (\u{201C}no way\u{201D}, \u{201C}let's go\u{201D}). Blurry, blank and near-identical frames are left out.",
+            "With Ollama and a vision model such as qwen2.5vl installed, the local AI chooses the final three and suggests a short title from what's said. Nothing leaves the Mac. Without it, the best-rated frames are offered, and Cutline says why.",
+            "Titles use the caption styles (Bold Center, Karaoke, Lower Third, Clean), drawn large enough to read on a phone. Thumbnails are 1280×720 (720×1280 for vertical video); JPEGs are always under YouTube's 2 MB limit.",
+        ]),
         Entry(version: "4.5", title: "Captions", tags: [.feature], changes: [
             "A new Captions tab (⌘5): transcribe the audio tracks on this Mac (nothing is uploaded) and get captions timed word by word. Playground is now ⌘6 and Export ⌘7.",
             "Caption tracks (CC) on the timeline: their captions come from the transcript and follow the audio through every move, trim, cut, ripple and speed change, so they never drift out of sync.",

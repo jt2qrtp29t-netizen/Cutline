@@ -26,7 +26,7 @@ struct ThumbnailStudio: View {
                 .font(.system(size: 12))
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             case .ready:
-                ScrollView { ready.padding(16) }
+                ScrollView { ThumbnailStudioContent(session: session).padding(16) }
             }
         }
         .background(Theme.background)
@@ -79,17 +79,20 @@ struct ThumbnailStudio: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
+}
 
-    @ViewBuilder
-    private var ready: some View {
+/// The thumbnail, the three candidates, the title and saving.
+struct ThumbnailStudioContent: View {
+    let session: ThumbnailSession
+
+    var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             if let image = session.render() {
                 Image(decorative: image, scale: 1)
                     .resizable()
                     .aspectRatio(contentMode: .fit)
-                    .frame(maxHeight: 420)
                     .clipShape(.rect(cornerRadius: 8))
-                    .frame(maxWidth: .infinity)
+                    .frame(maxWidth: .infinity, maxHeight: 420)
             }
             Group {
                 if let model = session.model {
@@ -150,6 +153,11 @@ struct ThumbnailStudio: View {
 }
 
 private struct CandidateCard: View {
+    /// Minutes and seconds into the movie ("1:23.4").
+    static func clock(_ seconds: Double) -> String {
+        String(format: "%d:%04.1f", Int(seconds) / 60, seconds.truncatingRemainder(dividingBy: 60))
+    }
+
     let pick: ThumbnailPicks.Pick
     let isSelected: Bool
     let select: () -> Void
@@ -157,16 +165,21 @@ private struct CandidateCard: View {
     var body: some View {
         Button(action: select) {
             VStack(alignment: .leading, spacing: 6) {
-                Image(decorative: pick.candidate.image, scale: 1)
-                    .resizable()
-                    .aspectRatio(16 / 9, contentMode: .fill)
+                // A 16:9 box as wide as the card's share of the row; the frame fills it.
+                Color.clear
+                    .aspectRatio(16 / 9, contentMode: .fit)
+                    .overlay {
+                        Image(decorative: pick.candidate.image, scale: 1)
+                            .resizable()
+                            .scaledToFill()
+                    }
                     .clipShape(.rect(cornerRadius: 6))
                 Text(pick.reason)
                     .font(.system(size: 10.5))
                     .foregroundStyle(Theme.textSecondary)
                     .lineLimit(3)
                     .fixedSize(horizontal: false, vertical: true)
-                Text(Timecode.string(for: Time(seconds: pick.candidate.time), fps: 30))
+                Text(Self.clock(pick.candidate.time))
                     .font(.system(size: 9.5).monospacedDigit())
                     .foregroundStyle(Theme.textTertiary)
             }
