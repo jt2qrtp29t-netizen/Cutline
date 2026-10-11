@@ -184,7 +184,7 @@ struct TextInspector: View {
 }
 
 /// Label plus system color well (with opacity).
-private struct ColorRow: View {
+struct ColorRow: View {
     let title: String
     let color: RGBAColor
     let onChange: (RGBAColor) -> Void

@@ -1,5 +1,6 @@
 import AVFoundation
 import Foundation
+import SwiftUI
 import Testing
 @testable import Cutline
 
@@ -214,5 +215,97 @@ enum SpeechKit {
         let layout = TimelineLayout(pixelsPerSecond: 50, tracks: editor.state.tracks)
         #expect(layout.rows.last?.kind == .caption && !layout.zones.contains { $0.kind == .caption })
         #expect(!TrackKind.caption.holdsClips && !TrackKind.caption.isVisual)
+    }
+}
+
+@MainActor struct TranscriptEditingTests {
+    /// "one two three four. five six" then, after a pause, "seven eight", every 0.5 s from 1 s.
+    private func project() -> (EditorController, UndoManager, UUID) {
+        var state = ProjectState()
+        let media = MediaItem(id: UUID(), name: "talk", path: "/talk.wav", duration: Time(seconds: 30), width: 0, height: 0,
+                              frameRate: 0, hasAudio: true)
+        state.media = [media]
+        let texts = ["one", "two", "three", "four.", "five", "six", "seven", "eight"]
+        var t = 1.0
+        let words = texts.enumerated().map { k, text -> TranscriptWord in
+            if k == 6 { t += 2 }
+            defer { t += 0.5 }
+            return TranscriptWord(text: text, start: t, end: t + 0.4)
+        }
+        state.transcripts[media.id] = Transcript(mediaID: media.id, locale: "en_US", words: words)
+        state.tracks[state.trackIndices(of: .audio)[0]].clips = [Clip(id: UUID(), mediaID: media.id, name: "talk", start: .zero,
+                                                                      duration: Time(seconds: 20), sourceStart: .zero)]
+        state.appendCaptionTrack()
+        let editor = EditorController(store: ProjectStore(state: state))
+        let undo = UndoManager()
+        undo.groupsByEvent = false
+        editor.store.undoManager = undo
+        return (editor, undo, media.id)
+    }
+
+    private func texts(_ editor: EditorController) -> [String] { editor.currentCaptions.map(\.text) }
+
+    private func step(_ undo: UndoManager, _ body: () -> Void) {
+        undo.beginUndoGrouping(); body(); undo.endUndoGrouping()
+    }
+
+    @Test func editingWordsAndCaptions() throws {
+        let (editor, undo, mediaID) = project()
+        #expect(texts(editor) == ["one two three four.", "five six", "seven eight"])
+        let words = editor.currentCaptions.flatMap(\.words)
+
+        step(undo) { editor.editWord(words[1], to: "TWO") }
+        step(undo) { editor.setWordHidden(words[2], true) }
+        #expect(texts(editor)[0] == "one TWO four.")
+        #expect(editor.state.transcripts[mediaID]!.words[2].isHidden, "hidden, not deleted")
+
+        step(undo) { editor.splitCaption(at: words[5]) }
+        #expect(texts(editor) == ["one TWO four.", "five", "six", "seven eight"])
+        step(undo) { editor.mergeWithPrevious(editor.currentCaptions[3]) }
+        #expect(texts(editor) == ["one TWO four.", "five", "six seven eight"], "merged across the pause")
+
+        // Same number of words: each keeps its timing.
+        let last = editor.currentCaptions[2]
+        step(undo) { editor.editCaption(last, to: "Six Seven Eight!") }
+        #expect(texts(editor)[2] == "Six Seven Eight!")
+        #expect(editor.currentCaptions[2].words.map(\.start) == last.words.map(\.start))
+        // A different number: spread over the same span.
+        let first = editor.currentCaptions[0]
+        step(undo) { editor.editCaption(first, to: "Hello there") }
+        let retyped = editor.currentCaptions[0]
+        #expect(retyped.text == "Hello there")
+        #expect(retyped.words.first?.start == first.words.first?.start && retyped.words.last?.end == first.words.last?.end)
+
+        // Each change is one undo step, all the way back.
+        for _ in 0..<6 { undo.undo() }
+        #expect(texts(editor) == ["one two three four.", "five six", "seven eight"])
+        #expect(try ProjectState.decode(editor.state.encoded()) == editor.state)
+    }
+
+    @Test func thePlayheadFindsItsCaptionAndWord() throws {
+        let (editor, _, _) = project()
+        let captions = editor.currentCaptions
+        let at = try #require(editor.captionPosition(in: captions, at: Time(seconds: 2.1)))
+        #expect(at.caption.text == "one two three four." && at.word?.text == "three")
+        #expect(editor.captionPosition(in: captions, at: Time(seconds: 0.5)) == nil, "before the first word")
+        #expect(editor.captionPosition(in: captions, at: Time(seconds: 30)) == nil)
+    }
+
+    @Test func theCaptionsTabSitsBetweenAudioAndPlayground() {
+        #expect(Workspace.allCases == [.edit, .effects, .color, .audio, .captions, .playground, .export])
+        #expect(Workspace.allCases.firstIndex(of: .captions) == 4, "⌘5")
+        let editor = EditorController(store: ProjectStore(state: ProjectState()))
+        editor.transcribeForCaptions()
+        #expect(editor.captionTrackIndices.count == 1, "transcribing from the tab makes a caption track")
+    }
+
+    @Test func theTranscriptPanelDraws() throws {
+        let (editor, _, _) = project()
+        editor.playback.seek(to: Time(seconds: 2.1))
+        let renderer = ImageRenderer(content: TranscriptPanel(editor: editor).frame(width: 400, height: 300)
+            .environment(\.colorScheme, .dark))
+        renderer.scale = 1
+        let image = try #require(renderer.cgImage)
+        #expect(image.width == 400 && image.height == 300)
     }
 }

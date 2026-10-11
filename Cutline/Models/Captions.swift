@@ -84,6 +84,11 @@ nonisolated struct CaptionWord: Hashable, Sendable {
     let end: Time
     /// The transcript asks for a new caption here.
     let startsCaption: Bool
+    /// The transcript keeps this word with the one before (a merged caption).
+    var keepsWithPrevious = false
+    /// Hidden from the captions; still counted for timing, so hiding a word never
+    /// reads as a pause that splits its caption.
+    var isHidden = false
 }
 
 /// One caption: words shown together, from `start` until `end`.
@@ -108,7 +113,7 @@ nonisolated extension ProjectState {
     /// words of its media whose middle falls inside the part of the source it plays, at
     /// the times its position and speed curve give them. Muted clips and tracks, and
     /// hidden words, are left out.
-    func captionWords(for settings: CaptionSettings) -> [CaptionWord] {
+    func captionWords(for settings: CaptionSettings, includingHidden: Bool = false) -> [CaptionWord] {
         let sources = Set(settings.sourceTrackIDs)
         var result: [CaptionWord] = []
         for index in trackIndices(of: .audio) {
@@ -118,7 +123,7 @@ nonisolated extension ProjectState {
                 guard let transcript = transcripts[clip.mediaID] else { continue }
                 let from = clip.sourceStart.seconds, to = clip.sourceEnd.seconds
                 let remap = clip.remap
-                for word in transcript.words where !word.isHidden {
+                for word in transcript.words where includingHidden || !word.isHidden {
                     let middle = (word.start + word.end) / 2
                     guard middle >= from, middle < to else { continue }
                     func timeline(_ source: Double) -> Time {
@@ -128,7 +133,8 @@ nonisolated extension ProjectState {
                     let start = timeline(word.start), end = timeline(word.end)
                     guard end > start else { continue }
                     result.append(CaptionWord(wordID: word.id, mediaID: clip.mediaID, text: word.text, start: start, end: end,
-                                              startsCaption: word.startsCaption))
+                                              startsCaption: word.startsCaption, keepsWithPrevious: word.keepsWithPrevious,
+                                              isHidden: word.isHidden))
                 }
             }
         }
@@ -142,17 +148,19 @@ nonisolated extension ProjectState {
     /// time when there's room before the next).
     func captions(onTrack index: Int) -> [Caption] {
         guard tracks.indices.contains(index), let settings = tracks[index].captions else { return [] }
-        let words = captionWords(for: settings)
+        let words = captionWords(for: settings, includingHidden: true)
         var groups: [[CaptionWord]] = []
         var current: [CaptionWord] = []
         let pause = Time(seconds: settings.pauseSplit), longest = Time(seconds: settings.maxDuration)
         for word in words {
-            if let first = current.first, let last = current.last {
+            if let first = current.first, let last = current.last, !(word.keepsWithPrevious && !word.startsCaption) {
+                let shown = current.filter { !$0.isHidden }
                 let breaks = word.startsCaption
-                    || current.count >= max(settings.maxWords, 1)
+                    || (!word.isHidden && shown.count >= max(settings.maxWords, 1))
                     || word.start - last.end >= pause
                     || word.end - first.start > longest
-                    || (settings.splitsSentences && last.text.last.map { ".?!".contains($0) } == true)
+                    || (settings.splitsSentences && shown.last?.text.last.map { ".?!".contains($0) } == true && !word.isHidden
+                        && shown.last == last)
                 if breaks {
                     groups.append(current)
                     current = []
@@ -161,6 +169,8 @@ nonisolated extension ProjectState {
             current.append(word)
         }
         if !current.isEmpty { groups.append(current) }
+        // Hidden words have done their job (timing): leave them out of what's shown.
+        groups = groups.map { $0.filter { !$0.isHidden } }.filter { !$0.isEmpty }
 
         var captions: [Caption] = []
         let minimum = Time(seconds: settings.minDuration)

@@ -97,3 +97,128 @@ extension EditorController {
         if store.isLiveEditing { store.liveEdit(apply) } else { store.edit(actionName, apply) }
     }
 }
+
+// MARK: Transcript editing
+
+extension EditorController {
+    /// The caption track the Captions tab shows (the chosen one, or the first).
+    var captionTrackID: UUID? {
+        let ids = captionTrackIndices.map { state.tracks[$0].id }
+        if let chosen = selectedCaptionTrackID, ids.contains(chosen) { return chosen }
+        return ids.first
+    }
+
+    var captionTrackIndex: Int? {
+        captionTrackID.flatMap { id in state.tracks.firstIndex { $0.id == id } }
+    }
+
+    /// The captions the Captions tab shows.
+    var currentCaptions: [Caption] {
+        captionTrackIndex.map { state.captions(onTrack: $0) } ?? []
+    }
+
+    /// Transcribes everything on the audio tracks and makes sure there's a caption track
+    /// to show the result (the Captions tab's Transcribe button).
+    func transcribeForCaptions(locale: Locale? = nil) {
+        if captionTrackIndices.isEmpty { selectedCaptionTrackID = addCaptionTrack() }
+        transcribe(locale: locale)
+    }
+
+    private func updateWord(_ word: CaptionWord, actionName: String, coalesce: Bool = false,
+                            _ body: @escaping (inout TranscriptWord) -> Void) {
+        store.edit(actionName, coalescingKey: coalesce ? "word/\(word.wordID)" : nil) { state in
+            guard let index = state.transcripts[word.mediaID]?.words.firstIndex(where: { $0.id == word.wordID }) else { return }
+            body(&state.transcripts[word.mediaID]!.words[index])
+        }
+    }
+
+    /// Changes a word's text (empty text hides the word).
+    func editWord(_ word: CaptionWord, to text: String) {
+        let cleaned = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard cleaned != word.text else { return }
+        if cleaned.isEmpty {
+            setWordHidden(word, true)
+            return
+        }
+        updateWord(word, actionName: "Edit Word") { $0.text = cleaned }
+    }
+
+    /// Hides a word from the captions (or shows it again). Hidden words stay in the transcript.
+    func setWordHidden(_ word: CaptionWord, _ hidden: Bool) {
+        updateWord(word, actionName: hidden ? "Hide Word" : "Show Word") { $0.isHidden = hidden }
+    }
+
+    /// Hides or shows a word by its place in a transcript (the transcript list shows hidden words too).
+    func setWordHidden(mediaID: UUID, wordID: UUID, _ hidden: Bool) {
+        store.edit(hidden ? "Hide Word" : "Show Word") { state in
+            guard let index = state.transcripts[mediaID]?.words.firstIndex(where: { $0.id == wordID }) else { return }
+            state.transcripts[mediaID]!.words[index].isHidden = hidden
+        }
+    }
+
+    /// Starts a new caption at this word.
+    func splitCaption(at word: CaptionWord) {
+        updateWord(word, actionName: "Split Caption") { w in
+            w.startsCaption = true
+            w.keepsWithPrevious = false
+        }
+    }
+
+    /// Joins a caption to the one before it: all its words stay with the previous caption,
+    /// whatever the grouping rules (pauses, length, word count) would do.
+    func mergeWithPrevious(_ caption: Caption) {
+        guard !caption.words.isEmpty else { return }
+        store.edit("Merge Captions") { state in
+            for word in caption.words {
+                guard let i = state.transcripts[word.mediaID]?.words.firstIndex(where: { $0.id == word.wordID }) else { continue }
+                state.transcripts[word.mediaID]!.words[i].startsCaption = false
+                state.transcripts[word.mediaID]!.words[i].keepsWithPrevious = true
+            }
+        }
+    }
+
+    /// Replaces a caption's words with new text. The same number of words keeps every
+    /// word's timing; a different number spreads the new words evenly over the same span
+    /// (of the same recording), so the caption keeps its place.
+    func editCaption(_ caption: Caption, to text: String) {
+        let newWords = text.split(whereSeparator: \.isWhitespace).map(String.init)
+        guard newWords != caption.words.map(\.text) else { return }
+        let ids = caption.words.map(\.wordID)
+        store.edit("Edit Caption") { state in
+            if newWords.count == caption.words.count {
+                for (word, newText) in zip(caption.words, newWords) {
+                    guard let i = state.transcripts[word.mediaID]?.words.firstIndex(where: { $0.id == word.wordID }) else { continue }
+                    state.transcripts[word.mediaID]!.words[i].text = newText
+                }
+                return
+            }
+            // Different word count: one recording's span, spread evenly.
+            guard let mediaID = caption.words.first?.mediaID, var transcript = state.transcripts[mediaID] else { return }
+            let mine = transcript.words.enumerated().filter { ids.contains($0.element.id) }
+            guard let firstIndex = mine.first?.offset, let lastIndex = mine.last?.offset else { return }
+            let start = transcript.words[firstIndex].start, end = transcript.words[lastIndex].end
+            let leading = transcript.words[firstIndex]
+            transcript.words.removeAll { ids.contains($0.id) }
+            if !newWords.isEmpty {
+                let step = (end - start) / Double(newWords.count)
+                let replacements = newWords.enumerated().map { k, newText -> TranscriptWord in
+                    var w = TranscriptWord(text: newText, start: start + step * Double(k), end: start + step * Double(k + 1))
+                    if k == 0 {
+                        w.startsCaption = leading.startsCaption
+                        w.keepsWithPrevious = leading.keepsWithPrevious
+                    }
+                    return w
+                }
+                let at = transcript.words.firstIndex { $0.start >= start } ?? transcript.words.count
+                transcript.words.insert(contentsOf: replacements, at: at)
+            }
+            state.transcripts[mediaID] = transcript
+        }
+    }
+
+    /// The caption and word under the playhead (for highlighting and following playback).
+    func captionPosition(in captions: [Caption], at time: Time) -> (caption: Caption, word: CaptionWord?)? {
+        guard let caption = captions.last(where: { $0.start <= time }), time < caption.end else { return nil }
+        return (caption, caption.word(at: time))
+    }
+}

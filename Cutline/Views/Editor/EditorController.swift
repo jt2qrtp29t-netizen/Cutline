@@ -103,6 +103,8 @@ final class EditorController {
     /// Why the last transcription stopped, if it failed.
     var transcriptionMessage: String?
     @ObservationIgnored var transcriptionTask: Task<Void, Never>?
+    /// The caption track the Captions tab is showing.
+    var selectedCaptionTrackID: UUID?
     var audioMessage: String?
     var selectedKeyframes: Set<KeyframeRef> = []
     /// The grade on the clipboard (Copy Grade / Paste Grade).

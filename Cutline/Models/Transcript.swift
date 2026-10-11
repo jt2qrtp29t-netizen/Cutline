@@ -15,6 +15,8 @@ nonisolated struct TranscriptWord: Codable, Hashable, Sendable, Identifiable {
     var isHidden = false
     /// A new caption starts at this word, whatever the grouping would do.
     var startsCaption = false
+    /// This word stays in the same caption as the one before it (merged captions).
+    var keepsWithPrevious = false
 
     init(text: String, start: Double, end: Double, confidence: Double? = nil) {
         self.text = text
@@ -32,6 +34,7 @@ nonisolated struct TranscriptWord: Codable, Hashable, Sendable, Identifiable {
         confidence = try c.decodeIfPresent(Double.self, forKey: .confidence)
         isHidden = try c.decodeIfPresent(Bool.self, forKey: .isHidden) ?? false
         startsCaption = try c.decodeIfPresent(Bool.self, forKey: .startsCaption) ?? false
+        keepsWithPrevious = try c.decodeIfPresent(Bool.self, forKey: .keepsWithPrevious) ?? false
     }
 }
 

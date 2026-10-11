@@ -364,6 +364,12 @@ private struct AudioClipMenuItems: View {
         Button("Normalize Clip to " + String(format: "%.0f LUFS", editor.state.audio.loudnessTarget).replacingOccurrences(of: "-", with: "−")) {
             editor.normalize(.clip(clip.id))
         }
+        Button(editor.state.transcripts[clip.mediaID] == nil ? "Transcribe for Captions" : "Transcribe Again for Captions") {
+            let media = Set(targets.compactMap { editor.state.clip($0)?.mediaID } + [clip.mediaID])
+            if editor.captionTrackIndices.isEmpty { editor.selectedCaptionTrackID = editor.addCaptionTrack() }
+            editor.transcribe(media)
+        }
+        .disabled(editor.isTranscribing)
         .disabled(editor.audioActivity != nil)
         Button("Crossfade with Previous Clip") { editor.addCrossfade(to: clip.id, after: false) }
             .disabled(editor.neighbor(of: clip.id, after: false) == nil)
