@@ -150,7 +150,10 @@ nonisolated final class AudioGraph {
 
     /// Builds and schedules a voice for every clip that still sounds after `time`.
     /// - Parameter sources: each media item's prepared 48 kHz stereo sound.
-    func prepareVoices(_ state: ProjectState, from time: Time, ducking: DuckingCurve? = nil, sources: (MediaItem) -> PreparedAudio?) {
+    /// - Parameter retimed: the clip's sound rendered at its speed curve (for ramps and
+    ///   tape-style speed), or nil if it isn't ready (the clip is silent until it is).
+    func prepareVoices(_ state: ProjectState, from time: Time, ducking: DuckingCurve? = nil, sources: (MediaItem) -> PreparedAudio?,
+                       retimed: (Clip, PreparedAudio) -> PreparedAudio? = { try? RetimedAudio.prepare($0, source: $1) }) {
         if let ducking { self.ducking = ducking }
         removeVoices()
         syncTracks(state)
@@ -161,16 +164,26 @@ nonisolated final class AudioGraph {
                 let envelope = ClipEnvelope(clip, track: track, isActive: state.isClipActive(clip, onTrack: index),
                                             monoSource: prepared.isMono)
                 // The clip as it sounds, widened across its crossfades.
-                let playing = envelope.playbackClip(clip)
-                guard playing.end > time,
-                      // Each voice reads through its own file object.
-                      let file = try? AVAudioFile(forReading: prepared.url),
+                var playing = envelope.playbackClip(clip)
+                guard playing.end > time else { continue }
+                var url = prepared.url
+                var rate = clip.speed
+                if RetimedAudio.needsRendering(clip) {
+                    // Rendered in timeline time: play it as is, from the clip's start.
+                    guard let rendered = retimed(playing, prepared) else { continue }
+                    url = rendered.url
+                    rate = 1
+                    playing.sourceStart = .zero
+                    playing.speed = 1
+                    playing.animation.keyframes[.speed] = nil
+                }
+                guard let file = try? AVAudioFile(forReading: url),  // Each voice reads through its own file object.
                       let plan = AudioVoicePlan.make(for: playing, from: time, sampleRate: AudioGraphFormat.sampleRate,
                                                      fileLength: file.length) else { continue }
                 let player = AVAudioPlayerNode()
                 // Speed and pitch need the time-pitch unit; without them the sound passes untouched.
-                let timePitch = clip.speed != 1 || clip.pitchShiftCents != 0 ? AVAudioUnitTimePitch() : nil
-                timePitch?.rate = Float(clip.speed)
+                let timePitch = rate != 1 || clip.pitchShiftCents != 0 ? AVAudioUnitTimePitch() : nil
+                timePitch?.rate = Float(rate)
                 timePitch?.pitch = Float(clip.pitchShiftCents)
                 let voice = makeVoice(clip: clip, trackID: track.id, player: player, timePitch: timePitch, isMono: prepared.isMono)
                 voice.unit.programs.post(ClipProgram(envelope: envelope))

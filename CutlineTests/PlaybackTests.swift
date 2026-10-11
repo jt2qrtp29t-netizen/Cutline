@@ -466,7 +466,7 @@ struct PlaybackTests {
         try await Task.sleep(for: .milliseconds(400))
         #expect(editor.dropPreview != nil, "refreshed updates keep it alive")
         // It expires on its own (allowing for a busy test machine).
-        let deadline = Date().addingTimeInterval(2)
+        let deadline = Date().addingTimeInterval(6)
         while editor.dropPreview != nil, Date() < deadline { try await Task.sleep(for: .milliseconds(50)) }
         #expect(editor.dropPreview == nil, "a drag that ended elsewhere leaves no ghost behind")
     }

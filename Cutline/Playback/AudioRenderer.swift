@@ -53,7 +53,13 @@ final class AudioRenderer {
         // added to a running offline engine would join a render cycle late.
         if engine.isInManualRenderingMode { engine.stop() }
         if !engine.isInManualRenderingMode { guard startEngine() else { return } }
-        graph.prepareVoices(state, from: time, ducking: DuckingCenter.shared.curve(for: state)) { AudioSourceCache.shared.prepared(for: $0) }
+        if engine.isInManualRenderingMode {
+            graph.prepareVoices(state, from: time, ducking: DuckingCenter.shared.curve(for: state)) { AudioSourceCache.shared.prepared(for: $0) }
+        } else {
+            graph.prepareVoices(state, from: time, ducking: DuckingCenter.shared.curve(for: state),
+                                sources: { AudioSourceCache.shared.prepared(for: $0) },
+                                retimed: { RetimedAudioCenter.shared.ready($0, source: $1) })
+        }
         if engine.isInManualRenderingMode { guard startEngine() else { return } }
         graph.start(at: time, hostTime: hostTime)
         isPlaying = true

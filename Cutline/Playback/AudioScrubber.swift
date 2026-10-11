@@ -7,9 +7,9 @@ nonisolated struct ScrubSource: Sendable {
     /// The clip's span on the timeline, in samples.
     let clipStart: Int64
     let clipEnd: Int64
-    /// Source time (seconds) at the clip's start, and source seconds per timeline second.
+    /// Source time (seconds) at the clip's start, and the clip's speed curve.
     let sourceStart: Double
-    let speed: Double
+    let remap: TimeRemap
     /// Source time of the first decoded sample.
     let bufferStart: Double
     let left: [Float]
@@ -24,7 +24,7 @@ nonisolated struct ScrubSource: Sendable {
     /// The source's sound at a timeline sample (silence outside the clip or the buffer).
     func sample(atTimeline s: Int64) -> (Float, Float) {
         guard s >= clipStart, s < clipEnd else { return (0, 0) }
-        let sourceTime = sourceStart + Double(s - clipStart) / AudioGraphFormat.sampleRate * speed
+        let sourceTime = sourceStart + remap.sourceSeconds(at: Double(s - clipStart) / AudioGraphFormat.sampleRate)
         let position = (sourceTime - bufferStart) * AudioGraphFormat.sampleRate
         let index = Int(position)
         guard index >= 0, index + 1 < left.count else { return (0, 0) }
@@ -36,7 +36,7 @@ nonisolated struct ScrubSource: Sendable {
     /// The same samples for a clip whose timing or speed changed.
     func retimed(for clip: Clip, id: UUID) -> ScrubSource {
         ScrubSource(clipID: id, clipStart: AudioGraphFormat.sample(of: clip.start), clipEnd: AudioGraphFormat.sample(of: clip.end),
-                    sourceStart: clip.sourceStart.seconds, speed: clip.speed, bufferStart: bufferStart, left: left, right: right)
+                    sourceStart: clip.sourceStart.seconds, remap: clip.remap, bufferStart: bufferStart, left: left, right: right)
     }
 }
 
@@ -62,11 +62,12 @@ final class ScrubSourceLoader {
                       let media = state.mediaItem(clip.mediaID),
                       let url = AudioSourceCache.shared.readableURL(for: media) else { continue }
                 // The source span the window needs, within the clip.
-                let from = clip.sourceStart.seconds + (max(window.lowerBound, start) - start) * clip.speed
-                let to = clip.sourceStart.seconds + (min(window.upperBound, end) - start) * clip.speed
+                let from = clip.sourceTime(at: Time(seconds: max(window.lowerBound, start))).seconds
+                let to = clip.sourceTime(at: Time(seconds: min(window.upperBound, end))).seconds
+                let fastest = clip.remap.extremes(over: clip.duration.seconds).upperBound
                 var source = buffers[original.id]
                 if source == nil || !source!.covers(from...max(from, to)) {
-                    source = Self.load(url, clip: clip, around: from...max(from, to), margin: Self.window * clip.speed)
+                    source = Self.load(url, clip: clip, around: from...max(from, to), margin: Self.window * fastest)
                 }
                 guard let loaded = source?.retimed(for: clip, id: original.id) else { continue }
                 buffers[original.id] = loaded
@@ -91,7 +92,7 @@ final class ScrubSourceLoader {
         let frames = Int(pcm.frameLength)
         let left = Array(UnsafeBufferPointer(start: data[0], count: frames))
         let right = pcm.format.channelCount > 1 ? Array(UnsafeBufferPointer(start: data[1], count: frames)) : left
-        return ScrubSource(clipID: clip.id, clipStart: 0, clipEnd: 0, sourceStart: 0, speed: clip.speed,
+        return ScrubSource(clipID: clip.id, clipStart: 0, clipEnd: 0, sourceStart: 0, remap: clip.remap,
                            bufferStart: Double(first) / rate, left: left, right: right)
     }
 }

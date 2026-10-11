@@ -10,6 +10,8 @@ nonisolated enum DiskCache: String, CaseIterable, Identifiable, Sendable {
     case waveforms = "Waveforms"
     /// Optimized and proxy media.
     case media = "Media"
+    /// The sound of speed-ramped and tape-speed clips, rendered ahead of time.
+    case retimed = "RetimedAudio"
 
     var id: String { rawValue }
 
@@ -18,6 +20,7 @@ nonisolated enum DiskCache: String, CaseIterable, Identifiable, Sendable {
         case .audio: "Audio previews"
         case .waveforms: "Waveforms"
         case .media: "Optimized and proxy media"
+        case .retimed: "Speed-changed audio"
         }
     }
 
@@ -72,14 +75,15 @@ nonisolated enum DiskCache: String, CaseIterable, Identifiable, Sendable {
         for file in files(in: folder) {
             let name = file.deletingPathExtension().lastPathComponent
             let parts = name.split(separator: "-")
-            guard name.count > 36, UUID(uuidString: String(name.prefix(36))) != nil, parts.count >= 7 else { continue }
-            let kind = parts.count > 7 ? parts[7...].joined(separator: "-") : ""
-            let group = "\(name.prefix(36))|\(kind)|\(file.pathExtension)"
             let date = (try? file.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast
             if removingUnused, now.timeIntervalSince(date) > maxAge {
                 stale.append(file)
                 continue
             }
+            // Files named by content (not by source) have no older versions to replace.
+            guard name.count > 36, UUID(uuidString: String(name.prefix(36))) != nil, parts.count >= 7 else { continue }
+            let kind = parts.count > 7 ? parts[7...].joined(separator: "-") : ""
+            let group = "\(name.prefix(36))|\(kind)|\(file.pathExtension)"
             if let other = newest[group] {
                 // Two versions for one source: keep the one made from the newer file.
                 let (keep, drop) = sourceSeconds(name) >= sourceSeconds(other.url.deletingPathExtension().lastPathComponent)

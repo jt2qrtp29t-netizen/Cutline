@@ -22,6 +22,7 @@ struct KeyframeLane: View {
             return AnimatableProperty.grade.filter { clip.isAnimated($0) }
         }
         let speed: [AnimatableProperty] = clip.isAnimated(.speed) ? [.speed] : []
+        if editor.workspace == .edit && !editor.isSandbox { return speed }
         if editor.workspace == .audio {
             return AnimatableProperty.audio.filter { clip.isAnimated($0) } + speed
         }
@@ -29,7 +30,14 @@ struct KeyframeLane: View {
     }
 
     /// The clip whose keyframes show: an audio clip in the Audio tab, otherwise a video or text clip.
-    private var clip: Clip? { editor.workspace == .audio && !editor.isSandbox ? editor.audioClip : editor.effectsClip }
+    private var clip: Clip? {
+        if editor.isSandbox { return editor.effectsClip }
+        switch editor.workspace {
+        case .audio: return editor.audioClip
+        case .edit: return editor.speedLaneClip
+        default: return editor.effectsClip
+        }
+    }
 
     var body: some View {
         if let clip, !rows(for: clip).isEmpty {

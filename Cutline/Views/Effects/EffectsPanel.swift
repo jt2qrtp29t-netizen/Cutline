@@ -32,10 +32,6 @@ struct EffectsPanel: View {
                                 .fixedSize(horizontal: false, vertical: true)
                         }
                         .disabled(clip.isLocked)
-                        if !clip.isText && clip.generator == nil {
-                            SpeedChangeSection(editor: editor, clip: clip)
-                                .disabled(clip.isLocked)
-                        }
                         PresetsSection(editor: editor, clip: clip)
                             .disabled(clip.isLocked)
                         SelectedKeyframeSection(editor: editor, clip: clip)
@@ -296,7 +292,7 @@ struct SpeedChangeSection: View {
         InspectorSection(title: "Speed Change", onReset: { editor.setSpeed(1, for: clip.id) }) {
             ParameterRow(editor: editor, clip: clip, property: .speed)
             SpeedRangeNote(clip: clip)
-            Text("Keyframe the speed to ramp it. The clip's length follows (later clips move), and linked video and audio share the curve.")
+            Text("Keyframe the speed for a multi-point ramp. The clip's length follows (later clips move), and linked video and audio share the curve.")
                 .font(.system(size: 10))
                 .foregroundStyle(Theme.textTertiary)
                 .fixedSize(horizontal: false, vertical: true)

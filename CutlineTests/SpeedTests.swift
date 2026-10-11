@@ -281,3 +281,20 @@ import Testing
         #expect(between[1] > dark + 30 && between[1] < bright - 20, "each partly there: \(between[1])")
     }
 }
+
+@MainActor struct SpeedLaneTests {
+    @Test func speedKeyframesShowInTheEditTabLane() {
+        var state = ProjectState()
+        var clip = Clip(id: UUID(), mediaID: UUID(), name: "c", start: .zero, duration: Time(seconds: 4), sourceStart: .zero)
+        state.tracks[0].clips = [clip]
+        let editor = EditorController(store: ProjectStore(state: state))
+        editor.selection = [clip.id]
+        editor.workspace = .edit
+        let lane = KeyframeLane(editor: editor, layout: TimelineLayout(pixelsPerSecond: 50, tracks: state.tracks), visibleRect: .zero)
+        #expect(lane.rows(for: clip).isEmpty, "a constant speed has no lane")
+        clip.animation.keyframes[.speed] = [Keyframe(time: .zero, value: 1), Keyframe(time: Time(seconds: 3), value: 2)]
+        #expect(lane.rows(for: clip) == [.speed])
+        editor.workspace = .effects
+        #expect(lane.rows(for: clip).contains(.speed))
+    }
+}

@@ -30,6 +30,7 @@ final class PlaybackController {
     @ObservationIgnored private var mediaObserver: (any NSObjectProtocol)?
     @ObservationIgnored private var generatedMediaObserver: (any NSObjectProtocol)?
     @ObservationIgnored private var duckingObserver: (any NSObjectProtocol)?
+    @ObservationIgnored private var retimedObserver: (any NSObjectProtocol)?
     @ObservationIgnored private var startTask: Task<Void, Never>?
 
     /// Lead time so the video and audio can both be ready to start on the same host tick.
@@ -77,12 +78,26 @@ final class PlaybackController {
                 self.audio.update(state)
             }
         }
+        // A speed-changed clip's sound finished rendering: play it from here on.
+        retimedObserver = NotificationCenter.default.addObserver(
+            forName: .retimedAudioReady, object: nil, queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated { self?.restartAudioIfPlaying() }
+        }
         // Rebuild when optimized or proxy copies appear or go, or playback switches files.
         generatedMediaObserver = NotificationCenter.default.addObserver(
             forName: .generatedMediaChanged, object: nil, queue: .main
         ) { [weak self] _ in
             MainActor.assumeIsolated { self?.reloadVideo() }
         }
+    }
+
+    /// Restarts the sound in step with the picture (when a voice's audio became ready mid-play).
+    private func restartAudioIfPlaying() {
+        guard isPlaying, player.rate != 0, let latestState else { return }
+        let hostTime = mach_absolute_time() + AVAudioTime.hostTime(forSeconds: Self.startLatency)
+        let time = Time(player.currentTime()) + Time(seconds: Self.startLatency)
+        audio.start(latestState, at: time, hostTime: hostTime)
     }
 
     /// Rebuilds the composition with the files playback should now read.
@@ -105,6 +120,7 @@ final class PlaybackController {
         if let mediaObserver { NotificationCenter.default.removeObserver(mediaObserver) }
         if let generatedMediaObserver { NotificationCenter.default.removeObserver(generatedMediaObserver) }
         if let duckingObserver { NotificationCenter.default.removeObserver(duckingObserver) }
+        if let retimedObserver { NotificationCenter.default.removeObserver(retimedObserver) }
         rebuildTask?.cancel()
     }
 
@@ -215,6 +231,7 @@ final class PlaybackController {
         frameDuration = state.settings.frameDuration
         latestState = state
         AudioSourceCache.shared.prefetch(state)
+        if !isLiveEdit { RetimedAudioCenter.shared.prefetch(state) }
         let timing = TimingSignature(state)
 
         if timing == installedTiming, let installed, let item = player.currentItem {

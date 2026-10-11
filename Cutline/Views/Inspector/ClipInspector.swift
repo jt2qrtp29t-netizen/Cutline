@@ -49,6 +49,7 @@ struct ClipInspector: View {
                 }
 
                 SpeedSection(editor: editor, clip: clip, kind: kind)
+                SpeedChangeSection(editor: editor, clip: clip)
             }
             .disabled(clip.isLocked)
         }
@@ -185,7 +186,7 @@ struct ClipInspector: View {
                           action: "Change Pitch")
             roundedSlider("Cents", \.pitchCents, range: -100...100, unitsPerPoint: 0.5, step: 1,
                           action: "Change Pitch")
-            Text("Pitch changes don't affect speed; speed changes keep the pitch.")
+            Text("Pitch changes don't affect speed. With Preserve Pitch (Speed) on, speed changes keep the pitch; off, they change it like tape, and these settings add to that.")
                 .font(.system(size: 10))
                 .foregroundStyle(Theme.textTertiary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -371,7 +372,7 @@ struct SpeedSection: View {
                 onSetEnd: { editor.setSpeedEnd($0, of: id) }
             )
             if clip.animation.keyframes(for: .speed).count > 2 {
-                Text("A multi-point ramp: Start and End edit its first and last keyframes. Edit the points in Speed Change (Effects tab).")
+                Text("A multi-point ramp: Start and End edit its first and last keyframes; Speed Change below edits every point.")
                     .font(.system(size: 10))
                     .foregroundStyle(Theme.textTertiary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -391,6 +392,22 @@ struct SpeedSection: View {
                     .controlSize(.small)
                 }
                 .help("How frames between source frames are shown: repeated (Nearest) or mixed from their neighbors (Frame Blend).")
+            }
+            if kind == .audio {
+                Toggle(isOn: Binding(get: { clip.preservesPitch },
+                                     set: { on in editor.adjustClip(id, actionName: on ? "Preserve Pitch" : "Tape-Style Speed") { $0.preservesPitch = on } })) {
+                    Text("Preserve pitch")
+                        .font(.system(size: 11))
+                        .foregroundStyle(Theme.textSecondary)
+                }
+                .toggleStyle(.switch)
+                .controlSize(.mini)
+                .help("On: the voice keeps its pitch at any speed. Off: pitch follows speed, like a tape or record.")
+                if RetimedAudio.needsRendering(clip) && RetimedAudioCenter.shared.isRendering(clip.id) {
+                    Label("Preparing the sound at the new speed…", systemImage: "waveform")
+                        .font(.system(size: 10))
+                        .foregroundStyle(Theme.textTertiary)
+                }
             }
             SpeedRangeNote(clip: clip)
         }

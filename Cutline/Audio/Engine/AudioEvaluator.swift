@@ -125,12 +125,18 @@ nonisolated struct ClipEnvelope: Sendable {
     func playbackClip(_ clip: Clip) -> Clip {
         let span = span
         var lead = clip.start - span.start
-        let available = clip.sourceStart.scaled(by: 1 / max(clip.speed, 0.0001))
+        let startSpeed = clip.hasSpeedRamp ? clip.remap.speed(at: 0) : clip.speed
+        let available = clip.sourceStart.scaled(by: 1 / max(startSpeed, 0.0001))
         if lead > available { lead = available }
         var c = clip
         c.start = clip.start - lead
-        c.sourceStart = clip.sourceStart - lead.scaled(by: clip.speed)
+        // A ramp's curve continues at its first speed before the clip (as the picture does),
+        // and its keyframes keep their places on the timeline.
+        c.sourceStart = clip.hasSpeedRamp ? clip.sourceTime(at: c.start) : clip.sourceStart - lead.scaled(by: clip.speed)
         c.duration = clip.duration + lead + (span.end - clip.end)
+        if clip.hasSpeedRamp, lead != .zero {
+            c.animation.keyframes[.speed] = clip.animation.keyframes(for: .speed).map { var f = $0; f.time = f.time + lead; return f }
+        }
         return c
     }
 

@@ -73,7 +73,8 @@ struct TimelinePanel: View {
             .scrollIndicators(.never)
             .background(Theme.background)
 
-            if editor.workspace == .effects || editor.workspace == .color || editor.workspace == .audio || editor.isSandbox {
+            if editor.workspace == .effects || editor.workspace == .color || editor.workspace == .audio || editor.isSandbox
+                || (editor.workspace == .edit && editor.speedLaneClip?.hasSpeedRamp == true) {
                 Rectangle().fill(Theme.border).frame(height: 1)
                 KeyframeLane(editor: editor, layout: layout, visibleRect: visibleRect)
             }
