@@ -11,6 +11,10 @@ enum Changelog {
     }
 
     static let entries: [Entry] = [
+        Entry(version: "4.1", title: "Clean scrubbing", changes: [
+            "Fixed: dragging the playhead could add a muffled, fluttering sound over the audio. When the scrub head had to catch up with the playhead, it crossfaded between two unrelated points of the waveform, which partly cancelled each other many times a second.",
+            "The scrub head now lands each catch-up within 10 ms of the playhead at the spot whose waveform matches what was just playing, so the sound stays full and steady at any drag speed.",
+        ]),
         Entry(version: "4.0", title: "Edit Adjustments: speed ramps and crop softness", changes: [
             "Speed in the Edit tab (video and audio clips) now has a lock, like Position. Locked, the clip plays at one speed exactly as before. Unlock it and an End value appears, starting equal to Start, so nothing changes until you move it. The clip then ramps smoothly from Start to End. Locking again goes back to a constant speed.",
             "Speed Change, just below, keyframes the speed for multi-point ramps, with ◆ and ◀︎ ▶︎ like other animated values, and its keyframes appear in the lane under the timeline. Start and End are its first and last keyframes.",

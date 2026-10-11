@@ -285,7 +285,8 @@ nonisolated final class AudioGraph {
         if let previous = scrubPlan, !previous.isSilent(at: now) {
             let head = previous.read(at: now).current
             if abs(head - target) > resync {
-                plan = ScrubPlan(head: target, engineSample: now, previousHead: head, idleAt: now + idle)
+                let aligned = Self.alignedJump(to: target, continuing: head, sources: sources)
+                plan = ScrubPlan(head: aligned, engineSample: now, previousHead: head, idleAt: now + idle)
             } else {
                 plan = previous
                 plan.idleAt = now + idle
@@ -296,6 +297,52 @@ nonisolated final class AudioGraph {
         scrubPlan = plan
         transport.set(.scrub(plan))
         master.unit.runControl.run.store(true, ordering: .relaxed)
+    }
+
+    /// Where to land a jump of the scrub head: within ±10 ms of `target`, the spot whose
+    /// sound best matches the continuation of the current read position, so the jump's
+    /// crossfade joins two in-step waveforms. (Crossfading two unrelated spots makes them
+    /// partly cancel, which sounds muffled and fluttery while dragging.)
+    static func alignedJump(to target: Int64, continuing head: Int64, sources: [ScrubSource]) -> Int64 {
+        guard !sources.isEmpty else { return target }
+        let length = 480, reach = 480
+        func mix(_ s: Int64) -> Double {
+            var sum: Float = 0
+            for source in sources {
+                let (l, r) = source.sample(atTimeline: s)
+                sum += l + r
+            }
+            return Double(sum)
+        }
+        let current = (0..<length).map { mix(head + Int64($0)) }
+        let currentEnergy = current.reduce(0) { $0 + $1 * $1 }
+        guard currentEnergy > 1e-9 else { return target }
+        let base = target - Int64(reach)
+        let candidates = (0..<(2 * reach + length)).map { mix(base + Int64($0)) }
+        // Normalized correlation, coarse (every 2nd offset and sample) then refined.
+        func score(_ offset: Int, stride step: Int) -> Double {
+            var dot = 0.0, energy = 0.0
+            var k = 0
+            while k < length {
+                let y = candidates[offset + k]
+                dot += current[k] * y
+                energy += y * y
+                k += step
+            }
+            return energy > 1e-12 ? dot / energy.squareRoot() : -.infinity
+        }
+        var best = reach, bestScore = -Double.infinity
+        for offset in stride(from: 0, through: 2 * reach, by: 2) {
+            let value = score(offset, stride: 2)
+            if value > bestScore { bestScore = value; best = offset }
+        }
+        let coarse = best
+        bestScore = -.infinity
+        for offset in max(0, coarse - 2)...min(2 * reach, coarse + 2) {
+            let value = score(offset, stride: 1)
+            if value > bestScore { bestScore = value; best = offset }
+        }
+        return base + Int64(best)
     }
 
     /// Lets the scrub head come to rest; it fades out.
