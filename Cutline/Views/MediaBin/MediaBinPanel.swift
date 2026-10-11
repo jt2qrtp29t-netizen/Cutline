@@ -108,6 +108,21 @@ struct MediaBinPanel: View {
         Button("Reveal in Finder") {
             NSWorkspace.shared.activateFileViewerSelecting([MediaURLCache.shared.url(for: media)])
         }
+        if media.hasVideo {
+            Divider()
+            let library = GeneratedMediaLibrary.shared
+            ForEach(GeneratedMediaKind.allCases) { kind in
+                switch library.status(of: media, kind: kind) {
+                case .ready:
+                    Button("Delete \(kind.title) Media") { library.delete(kind, for: [media]) }
+                case .queued, .creating:
+                    Button("Stop Creating \(kind.title) Media") { library.delete(kind, for: [media]) }
+                case .none, .failed:
+                    Button("Create \(kind.title) Media") { library.create(kind, for: [media]) }
+                        .disabled(!MediaURLCache.shared.isAvailable(media))
+                }
+            }
+        }
         Divider()
         Button("Remove from Project", role: .destructive) {
             editor.removeMedia([media.id])
@@ -139,6 +154,7 @@ private struct MediaBinItem: View {
                         }
                     }
                     .clipShape(.rect(cornerRadius: 6))
+                    .overlay(alignment: .topLeading) { GeneratedMediaBadges(media: media).padding(4) }
                 Text(Timecode.string(for: media.duration, fps: fps))
                     .font(.system(size: 9, weight: .semibold).monospacedDigit())
                     .foregroundStyle(Theme.textPrimary)
@@ -163,6 +179,55 @@ private struct MediaBinItem: View {
         .help(media.hasVideo
               ? "\(media.name)\n\(media.width)×\(media.height) · \(String(format: "%.2f", media.frameRate)) fps\(media.hasAudio ? " · with audio" : "")"
               : "\(media.name)\nAudio")
+    }
+}
+
+/// Small tags for a media item's optimized ("O") and proxy ("P") copies: a progress
+/// ring while one is being made.
+private struct GeneratedMediaBadges: View {
+    let media: MediaItem
+    private var library: GeneratedMediaLibrary { .shared }
+
+    var body: some View {
+        let _ = library.revision
+        HStack(spacing: 3) {
+            ForEach(GeneratedMediaKind.allCases) { kind in
+                badge(kind, status: library.status(of: media, kind: kind))
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func badge(_ kind: GeneratedMediaKind, status: GeneratedMediaLibrary.Status) -> some View {
+        let letter = kind == .optimized ? "O" : "P"
+        switch status {
+        case .none:
+            EmptyView()
+        case .ready:
+            tag(letter, color: Theme.accent)
+                .help("\(kind.title) media ready")
+        case .queued:
+            tag(letter, color: Theme.textTertiary)
+                .help("\(kind.title) media: waiting")
+        case .creating(let fraction):
+            ProgressView(value: fraction)
+                .progressViewStyle(.circular)
+                .controlSize(.mini)
+                .tint(Theme.accent)
+                .frame(width: 14, height: 14)
+                .help("Creating \(kind.title.lowercased()) media… \(Int(fraction * 100))%")
+        case .failed(let message):
+            tag("!", color: Theme.destructive)
+                .help("\(kind.title) media failed: \(message)")
+        }
+    }
+
+    private func tag(_ text: String, color: Color) -> some View {
+        Text(text)
+            .font(.system(size: 8, weight: .heavy))
+            .foregroundStyle(Theme.textPrimary)
+            .frame(width: 14, height: 14)
+            .background(color.opacity(0.9), in: .rect(cornerRadius: 3))
     }
 }
 

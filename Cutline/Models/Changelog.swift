@@ -16,6 +16,8 @@ enum Changelog {
             "Faster Encoding now keeps the quality: it raises the bitrate 20% to make up for the encoder’s faster mode, which is still about 1.9× faster. It’s only offered for HEVC, the codec it speeds up.",
             "Network Optimization in the Export tab (on by default): the movie’s index goes at the start of the file, so it starts playing while it downloads or uploads.",
             "Twice as fast drawing of video frames in 4K: the GPU now reads frames in the decoder’s own format instead of converting each one first. 10-bit footage keeps its full precision, and clips with transparency still work.",
+            "Optimized media (full size ProRes 422) and proxy media (half size ProRes 422 Proxy): right-click a clip in the media bin to create them, with progress and status tags on each item. They keep every frame time of the original, so they stand in anywhere on the timeline.",
+            "Choose what playback reads with the new film button next to the mute button: Original, Optimized or Proxy (falling back to the original when there’s no copy). The viewer says when it shows copies, and exports always use the original files.",
             "Fixed: exports could freeze when several frames were drawn or several exports ran at once, and an export could fail with “the audio mix stopped early” on a busy Mac.",
         ]),
         Entry(version: "3.4", title: "Faster exports", changes: [

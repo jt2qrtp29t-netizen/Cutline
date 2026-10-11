@@ -719,16 +719,19 @@ final class EditorController {
             let result = await loadMedia(urls)
             guard !result.items.isEmpty else { return }
             var created: [UUID] = []
+            var placed: [MediaItem] = []
             store.edit(result.items.count == 1 ? "Add Clip" : "Add Clips") { state in
                 var cursor = time
                 for item in result.items {
                     let media = Self.existingOrAppend(item, in: &state)
+                    placed.append(media)
                     // After the first file, later files follow on the track it went to.
                     let ids = TimelineEditing.place(media, at: cursor, on: Self.resolved(target, after: created, in: state), in: &state)
                     created += ids
                     cursor = ids.compactMap { state.clip($0)?.end }.max() ?? cursor
                 }
             }
+            GeneratedMediaLibrary.shared.createAutomatically(for: placed)
             if created.isEmpty { NSSound.beep() } else { selection = Set(created) }
         }
     }
@@ -756,6 +759,7 @@ final class EditorController {
         store.edit(actionName) { state in
             items = result.items.map { Self.existingOrAppend($0, in: &state) }
         }
+        GeneratedMediaLibrary.shared.createAutomatically(for: items)
         return items
     }
 

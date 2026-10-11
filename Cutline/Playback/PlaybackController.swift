@@ -26,6 +26,7 @@ final class PlaybackController {
     @ObservationIgnored private var frameDuration = Time.frame(fps: 30)
     @ObservationIgnored private var latestState: ProjectState?
     @ObservationIgnored private var mediaObserver: (any NSObjectProtocol)?
+    @ObservationIgnored private var generatedMediaObserver: (any NSObjectProtocol)?
     @ObservationIgnored private var startTask: Task<Void, Never>?
 
     /// Lead time so the video and audio can both be ready to start on the same host tick.
@@ -64,6 +65,18 @@ final class PlaybackController {
             let ids = notification.object as? Set<UUID> ?? []
             MainActor.assumeIsolated { self?.reloadMedia(ids) }
         }
+        // Rebuild when optimized or proxy copies appear or go, or playback switches files.
+        generatedMediaObserver = NotificationCenter.default.addObserver(
+            forName: .generatedMediaChanged, object: nil, queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated { self?.reloadVideo() }
+        }
+    }
+
+    /// Rebuilds the composition with the files playback should now read.
+    func reloadVideo() {
+        installedTiming = nil
+        if let latestState { update(with: latestState, isLiveEdit: false) }
     }
 
     /// Forgets prepared media for `ids` and rebuilds the composition.
@@ -78,6 +91,7 @@ final class PlaybackController {
         if let timeObserver { player.removeTimeObserver(timeObserver) }
         if let endObserver { NotificationCenter.default.removeObserver(endObserver) }
         if let mediaObserver { NotificationCenter.default.removeObserver(mediaObserver) }
+        if let generatedMediaObserver { NotificationCenter.default.removeObserver(generatedMediaObserver) }
         rebuildTask?.cancel()
     }
 
@@ -229,7 +243,9 @@ final class PlaybackController {
 
     private func scheduleRebuild(_ state: ProjectState, timing: TimingSignature) {
         rebuildTask?.cancel()
-        let urls = Dictionary(uniqueKeysWithValues: state.media.map { ($0.id, MediaURLCache.shared.url(for: $0)) })
+        // Optimized or proxy copies when the Parameters ask for them (exports use originals).
+        let library = GeneratedMediaLibrary.shared
+        let urls = Dictionary(uniqueKeysWithValues: state.media.map { ($0.id, library.playbackSourceURL(for: $0)) })
         rebuildTask = Task {
             try? await Task.sleep(for: .milliseconds(40))
             guard !Task.isCancelled else { return }

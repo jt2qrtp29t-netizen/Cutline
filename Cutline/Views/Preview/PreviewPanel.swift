@@ -14,6 +14,7 @@ struct PreviewPanel: View {
                 }
                 .shadow(color: Theme.shadow, radius: 12, y: 4)
                 .overlay(alignment: .top) { OfflineMediaBanner(editor: editor).padding(10) }
+                .overlay(alignment: .topTrailing) { PlaybackMediaBadge(editor: editor).padding(10) }
                 .overlay(alignment: .topLeading) {
                     if editor.showsUngraded {
                         Text("BEFORE · UNGRADED")
@@ -80,6 +81,7 @@ private struct TransportBar: View {
                 .frame(width: 96, alignment: .trailing)
 
             Rectangle().fill(Theme.border).frame(width: 1, height: 18)
+            PlaybackMediaMenu()
             MuteButton()
         }
         .padding(.horizontal, 16)
@@ -108,6 +110,62 @@ private struct TransportButton: View {
         .buttonStyle(.plain)
         .help(help)
         .onHover { isHovering = $0 }
+    }
+}
+
+/// Chooses whether playback reads the original files or their optimized or proxy copies.
+struct PlaybackMediaMenu: View {
+    @Bindable private var settings = AppSettings.shared
+    @State private var isHovering = false
+
+    var body: some View {
+        Menu {
+            Picker("Playback Media", selection: $settings.playbackMedia) {
+                ForEach(PlaybackMedia.allCases) { Text($0.title).tag($0) }
+            }
+            .pickerStyle(.inline)
+            Divider()
+            Text("Exports always use the original files.")
+        } label: {
+            Image(systemName: settings.playbackMedia == .original ? "film" : "film.stack")
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(settings.playbackMedia == .original
+                                 ? (isHovering ? Theme.textPrimary : Theme.textSecondary) : Theme.accent)
+                .frame(width: 28, height: 28)
+                .contentShape(.rect)
+        }
+        .menuStyle(.button)
+        .buttonStyle(.plain)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .help("Playback Media: \(settings.playbackMedia.title)")
+        .onHover { isHovering = $0 }
+    }
+}
+
+/// Says when the viewer shows optimized or proxy copies instead of the originals, so
+/// a softer proxy picture is never mistaken for the real thing.
+private struct PlaybackMediaBadge: View {
+    let editor: EditorController
+    private var library: GeneratedMediaLibrary { .shared }
+
+    var body: some View {
+        let _ = library.revision
+        let choice = AppSettings.shared.playbackMedia
+        let used = Set(editor.state.allClips.map(\.mediaID))
+        let kinds = Set(editor.state.media.filter { used.contains($0.id) }.compactMap { media in
+            choice.preference.first { library.status(of: media, kind: $0) == .ready }
+        })
+        if !kinds.isEmpty {
+            Text(kinds.contains(.proxy) ? "PROXY" : "OPTIMIZED")
+                .font(.system(size: 10, weight: .bold))
+                .foregroundStyle(Theme.textPrimary)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 4)
+                .background(Theme.raised.opacity(0.9), in: .capsule)
+                .help(kinds.contains(.proxy) ? "Playing proxy copies (half size). Exports use the original files."
+                      : "Playing optimized copies. Exports use the original files.")
+        }
     }
 }
 

@@ -69,7 +69,11 @@ final class AudioSourceCache {
         if FileManager.default.fileExists(atPath: proxy.path) { return proxy }
         try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         let temp = folder.appendingPathComponent("\(UUID().uuidString).tmp.caf")
-        guard await decode(url, to: temp) else {
+        // Reading waits for each sample, so it runs on a thread of its own.
+        let decoded = await withTaskExecutorPreference(MediaWorkThread(label: "app.cutline.audio-proxy")) {
+            await decode(url, to: temp)
+        }
+        guard decoded else {
             try? FileManager.default.removeItem(at: temp)
             return nil
         }

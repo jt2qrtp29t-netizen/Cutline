@@ -36,20 +36,6 @@ nonisolated struct ExportSnapshot: Sendable {
     }
 }
 
-/// A thread of its own for an export's reading and writing. AVFoundation's sample
-/// providers wait for each sample synchronously, so on Swift's shared threads (one per
-/// core) a few exports at once could block all of them, including threads the samples
-/// they're waiting for need. A dedicated serial queue can wait without starving anything.
-nonisolated final class ExportThread: TaskExecutor {
-    private let queue = DispatchQueue(label: "app.cutline.export", qos: .userInitiated)
-
-    func enqueue(_ job: consuming ExecutorJob) {
-        let job = UnownedJob(job)
-        let executor = asUnownedTaskExecutor()
-        queue.async { job.runSynchronously(on: executor) }
-    }
-}
-
 /// Stops a running export from any thread.
 nonisolated final class ExportCancellation: @unchecked Sendable {
     private let lock = NSLock()
@@ -187,7 +173,7 @@ nonisolated enum ExportRenderer {
         let streams = Streams(video: video, audio: audioStream)
         do {
             // On the export's own thread: the providers wait for samples synchronously.
-            try await Task.detached(executorPreference: ExportThread()) {
+            try await Task.detached(executorPreference: MediaWorkThread(label: "app.cutline.export")) {
                 var written = 0
                 func nextVideo() async throws -> (pixels: CVReadOnlyPixelBuffer, time: CMTime)? {
                     while written < total, let sample = try await streams.video.provider.next() {

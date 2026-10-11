@@ -62,6 +62,25 @@ final class AppSettings {
         didSet { Self.defaults.set(scrubAudio, forKey: "playback.scrubAudio") }
     }
 
+    /// Which files playback reads: originals, or optimized or proxy copies where they exist.
+    /// Exports always use the originals.
+    var playbackMedia: PlaybackMedia = PlaybackMedia(rawValue: value("playback.media", default: "original")) ?? .original {
+        didSet {
+            Self.defaults.set(playbackMedia.rawValue, forKey: "playback.media")
+            NotificationCenter.default.post(name: .generatedMediaChanged, object: Set<UUID>())
+        }
+    }
+
+    /// Make optimized (ProRes 422) copies of video files as they're imported.
+    var createOptimizedOnImport: Bool = value("media.optimizeOnImport", default: false) {
+        didSet { Self.defaults.set(createOptimizedOnImport, forKey: "media.optimizeOnImport") }
+    }
+
+    /// Make proxy (half size ProRes 422 Proxy) copies of video files as they're imported.
+    var createProxyOnImport: Bool = value("media.proxyOnImport", default: false) {
+        didSet { Self.defaults.set(createProxyOnImport, forKey: "media.proxyOnImport") }
+    }
+
     // MARK: Effects
 
     /// Length of newly added transitions, in seconds.
@@ -86,7 +105,8 @@ final class AppSettings {
     func resetToDefaults() {
         for key in ["general.showWelcome", "media.watchOffline", "timeline.snapByDefault", "timeline.snapDistance",
                     "timeline.followPlayhead", "timeline.fineScrubPointsPerFrame", "playback.scrubAudio",
-                    "transitions.duration", "mouse.scrollSwitchesTabs", "mouse.reverseTabScrolling"] {
+                    "transitions.duration", "mouse.scrollSwitchesTabs", "mouse.reverseTabScrolling",
+                    "playback.media", "media.optimizeOnImport", "media.proxyOnImport"] {
             Self.defaults.removeObject(forKey: key)
         }
         showWelcomeAtLaunch = true
@@ -99,5 +119,8 @@ final class AppSettings {
         transitionLength = Transition.defaultDuration.seconds
         scrollSwitchesTabs = true
         reverseTabScrolling = false
+        playbackMedia = .original
+        createOptimizedOnImport = false
+        createProxyOnImport = false
     }
 }
