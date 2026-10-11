@@ -262,12 +262,49 @@ nonisolated final class ClipAudioUnit: CutlineAudioUnit, @unchecked Sendable {
     }
 }
 
+/// One effect as the track node runs it: its settings over time, plus a ready-made
+/// processor for when the effect is new (built here, off the render thread).
+nonisolated final class EffectProgram: @unchecked Sendable {
+    let id: UUID
+    let kind: AudioEffectKind
+    let isBypassed: Bool
+    private let parameters: [AudioParameter]
+    private let statics: [Double]
+    private let frames: [[Keyframe]]
+    let prototype: EffectDSP
+
+    init(_ effect: AudioEffect, track: TrackAudio) {
+        id = effect.id
+        kind = effect.kind
+        isBypassed = effect.isBypassed
+        parameters = effect.kind.parameters
+        statics = parameters.map { effect.value($0) }
+        frames = parameters.map { track.keyframes[effect.keyframeKey($0)] ?? [] }
+        prototype = EffectDSPFactory.make(effect.kind)
+    }
+
+    /// Parameter values at a timeline sample.
+    func values(at sample: Int64) -> [Double] {
+        let time = Time(seconds: AudioGraphFormat.seconds(ofSample: sample))
+        return parameters.indices.map { i in
+            frames[i].isEmpty ? statics[i] : parameters[i].clamped(ClipAnimation.interpolate(frames[i], atOffset: time))
+        }
+    }
+}
+
 /// The settings a track node applies.
 nonisolated final class TrackProgram: Sendable {
     let envelope: TrackEnvelope
+    let effects: [EffectProgram]
 
-    init(envelope: TrackEnvelope) {
+    init(envelope: TrackEnvelope, effects: [EffectProgram] = []) {
         self.envelope = envelope
+        self.effects = effects
+    }
+
+    convenience init(track: Track, isActive: Bool) {
+        self.init(envelope: TrackEnvelope(track, isActive: isActive),
+                  effects: track.audio.effects.map { EffectProgram($0, track: track.audio) })
     }
 
     func gains(at sample: Int64) -> (left: Double, right: Double) {
@@ -275,7 +312,58 @@ nonisolated final class TrackProgram: Sendable {
     }
 }
 
-/// One track: its clips' sum goes through the fader and pan (and, later, its effects),
+/// A running effect in a track's chain: its processor, its smoothed parameters, and
+/// how much of its output is heard (gliding to 0 when bypassed, so it never clicks).
+nonisolated final class EffectSlot {
+    let id: UUID
+    let kind: AudioEffectKind
+    let dsp: EffectDSP
+    var program: EffectProgram
+    var mix: Double
+    var smoothed: [Double] = []
+
+    init(_ program: EffectProgram) {
+        id = program.id
+        kind = program.kind
+        dsp = program.prototype
+        self.program = program
+        mix = program.isBypassed ? 0 : 1
+    }
+
+    /// Moves the parameters toward their values at `sample` (a few milliseconds' glide).
+    func updateParameters(at sample: Int64) {
+        let target = program.values(at: sample)
+        if smoothed.count != target.count {
+            smoothed = target
+        } else {
+            for i in target.indices { smoothed[i] += (target[i] - smoothed[i]) * 0.5 }
+        }
+        dsp.update(smoothed)
+    }
+
+    @inline(__always) func process(_ l: Double, _ r: Double) -> (Double, Double) {
+        let wanted = program.isBypassed ? 0.0 : 1.0
+        let step = 1 / Double(AudioGraphFormat.rampLength)
+        if mix != wanted { mix = wanted > mix ? min(wanted, mix + step) : max(wanted, mix - step) }
+        if mix == 0 { return (l, r) }
+        let (wl, wr) = dsp.process(l, r)
+        if mix == 1 { return (wl, wr) }
+        return (l + (wl - l) * mix, r + (wr - r) * mix)
+    }
+
+    /// The chain for a new program, keeping the running effects (and their state) by ID.
+    static func chain(_ old: [EffectSlot], for program: TrackProgram) -> [EffectSlot] {
+        program.effects.map { effect in
+            if let slot = old.first(where: { $0.id == effect.id && $0.kind == effect.kind }) {
+                slot.program = effect
+                return slot
+            }
+            return EffectSlot(effect)
+        }
+    }
+}
+
+/// One track: its clips' sum goes through the effect chain, then the fader and pan,
 /// and its peak level is measured for the mixer.
 nonisolated final class TrackAudioUnit: CutlineAudioUnit, @unchecked Sendable {
     static let componentDescription = description("ctlt")
@@ -288,8 +376,14 @@ nonisolated final class TrackAudioUnit: CutlineAudioUnit, @unchecked Sendable {
         let programs = self.programs, transportBox = self.transport, meter = self.meter
         var gains = ProgramGains<TrackProgram>()
         var clock = TransportClock()
+        var chain: [EffectSlot] = []
+        var sinceUpdate = Int.max
         return { left, right, frames, timestamp, _ in
-            if let new = programs.take() { gains.install(new, glide: true) }
+            if let new = programs.take() {
+                gains.install(new, glide: true)
+                chain = EffectSlot.chain(chain, for: new)
+                sinceUpdate = .max
+            }
             guard let transport = transportBox.transport else { return }
             let position = clock.position(transport, timestamp)
             var peakL: Float = 0, peakR: Float = 0
@@ -299,6 +393,19 @@ nonisolated final class TrackAudioUnit: CutlineAudioUnit, @unchecked Sendable {
                 case .running(let first): sample = first + Int64(i)
                 case .stopped(let at): sample = at
                 case let .scrubbing(plan, engineSample): sample = plan.read(at: engineSample + Int64(i)).current
+                }
+                // The effect chain (before the fader); parameters follow the timeline
+                // every control interval, at fixed timeline positions.
+                if !chain.isEmpty {
+                    if sinceUpdate >= Int(AudioGraphFormat.controlInterval) || sample % AudioGraphFormat.controlInterval == 0 {
+                        for slot in chain { slot.updateParameters(at: sample) }
+                        sinceUpdate = 0
+                    }
+                    sinceUpdate &+= 1
+                    var l = Double(left[i]), r = Double(right[i])
+                    for slot in chain { (l, r) = slot.process(l, r) }
+                    left[i] = Float(l)
+                    right[i] = Float(r)
                 }
                 let (gl, gr) = gains.gains(at: sample) { $0.gains(at: $1) }
                 left[i] *= gl
@@ -310,7 +417,6 @@ nonisolated final class TrackAudioUnit: CutlineAudioUnit, @unchecked Sendable {
         }
     }
 }
-
 /// What the master node applies.
 nonisolated final class MasterProgram: Sendable {
     let envelope: MasterEnvelope

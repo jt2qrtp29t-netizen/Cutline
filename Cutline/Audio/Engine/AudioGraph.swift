@@ -91,7 +91,7 @@ nonisolated final class AudioGraph {
         syncTracks(state)
         for index in state.trackIndices(of: .audio) {
             let track = state.tracks[index]
-            tracks[track.id]?.unit.programs.post(TrackProgram(envelope: TrackEnvelope(track, isActive: state.isTrackActive(index))))
+            tracks[track.id]?.unit.programs.post(TrackProgram(track: track, isActive: state.isTrackActive(index)))
         }
         for index in state.trackIndices(of: .audio) {
             for clip in state.tracks[index].clips {

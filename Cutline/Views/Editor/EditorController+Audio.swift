@@ -154,3 +154,179 @@ extension EditorController {
         }
     }
 }
+
+// MARK: - Track effect chains
+
+/// A keyframable track parameter: the track's volume or pan, or an effect parameter.
+nonisolated struct TrackParameterRef: Hashable, Sendable {
+    let trackID: UUID
+    /// Keyframe key on the track: "volume", "pan" or "<effect ID>/<parameter>".
+    let key: String
+    let parameter: AudioParameter
+    let effectID: UUID?
+
+    static func volume(_ track: UUID) -> TrackParameterRef { TrackParameterRef(trackID: track, key: AudioParameter.volume.id, parameter: .volume, effectID: nil) }
+    static func pan(_ track: UUID) -> TrackParameterRef { TrackParameterRef(trackID: track, key: AudioParameter.pan.id, parameter: .pan, effectID: nil) }
+    static func effect(_ effect: AudioEffect, _ parameter: AudioParameter, track: UUID) -> TrackParameterRef {
+        TrackParameterRef(trackID: track, key: effect.keyframeKey(parameter), parameter: parameter, effectID: effect.id)
+    }
+}
+
+nonisolated extension TrackAudio {
+    /// Sets a parameter: a keyframe at `time` if it's animated, otherwise its plain value.
+    mutating func set(_ ref: TrackParameterRef, _ value: Double, at time: Time) {
+        let value = ref.parameter.clamped(value)
+        if let frames = keyframes[ref.key], !frames.isEmpty {
+            keyframes[ref.key] = ClipAnimation.setting(frames, at: time, value: value)
+            return
+        }
+        if let effectID = ref.effectID {
+            guard let index = effects.firstIndex(where: { $0.id == effectID }) else { return }
+            effects[index].values[ref.parameter.id] = value
+        } else {
+            set(ref.parameter, value, at: time)
+        }
+    }
+
+    func value(_ ref: TrackParameterRef, at time: Time) -> Double {
+        if let effectID = ref.effectID {
+            guard let effect = effects.first(where: { $0.id == effectID }) else { return ref.parameter.defaultValue }
+            return value(of: ref.parameter, in: effect, at: time)
+        }
+        if let frames = keyframes[ref.key], !frames.isEmpty { return ClipAnimation.interpolate(frames, atOffset: time) }
+        return ref.parameter.id == AudioParameter.volume.id ? volumeDB : pan
+    }
+
+    /// Removes an effect and its keyframes.
+    mutating func removeEffect(_ id: UUID) {
+        effects.removeAll { $0.id == id }
+        keyframes = keyframes.filter { !$0.key.hasPrefix(id.uuidString + "/") }
+    }
+}
+
+extension EditorController {
+    /// The audio track the Audio tab's settings show: the one picked in the mixer, else
+    /// the track of a selected audio clip, else the first audio track.
+    var audioSettingsTrack: Track? {
+        if let id = selectedAudioTrackID, let track = state.tracks.first(where: { $0.id == id && $0.kind == .audio }) { return track }
+        if let clip = selectedClips.first, let track = state.track(ofClip: clip.id), track.kind == .audio { return track }
+        return audioTrackIndices.first.map { state.tracks[$0] }
+    }
+
+    private func editTrackAudio(_ id: UUID, _ actionName: String, _ body: @escaping (inout TrackAudio) -> Void) {
+        store.edit(actionName) { state in
+            guard let index = state.tracks.firstIndex(where: { $0.id == id }) else { return }
+            body(&state.tracks[index].audio)
+        }
+    }
+
+    func addEffect(_ kind: AudioEffectKind, to track: UUID) {
+        editTrackAudio(track, "Add \(kind.title)") { $0.effects.append(AudioEffect(kind: kind)) }
+    }
+
+    func removeEffect(_ effect: UUID, from track: UUID) {
+        editTrackAudio(track, "Remove Effect") { $0.removeEffect(effect) }
+    }
+
+    /// Moves an effect earlier (−1) or later (+1) in the chain.
+    func moveEffect(_ effect: UUID, by offset: Int, in track: UUID) {
+        editTrackAudio(track, "Move Effect") { audio in
+            guard let from = audio.effects.firstIndex(where: { $0.id == effect }) else { return }
+            let to = min(max(from + offset, 0), audio.effects.count - 1)
+            guard to != from else { return }
+            audio.effects.insert(audio.effects.remove(at: from), at: to)
+        }
+    }
+
+    func setBypassed(_ bypassed: Bool, effect: UUID, in track: UUID) {
+        editTrackAudio(track, bypassed ? "Bypass Effect" : "Enable Effect") { audio in
+            guard let index = audio.effects.firstIndex(where: { $0.id == effect }) else { return }
+            audio.effects[index].isBypassed = bypassed
+        }
+    }
+
+    /// Replaces a track's chain with a preset's (ordinary, editable effects).
+    func applyPreset(_ preset: AudioPreset, to track: UUID) {
+        editTrackAudio(track, "Apply \(preset.name)") { audio in
+            for effect in audio.effects { audio.removeEffect(effect.id) }
+            audio.effects = preset.makeEffects()
+            audio.presetName = preset.name
+        }
+    }
+
+    func clearEffects(of track: UUID) {
+        editTrackAudio(track, "Remove All Effects") { audio in
+            for effect in audio.effects { audio.removeEffect(effect.id) }
+            audio.presetName = nil
+        }
+    }
+
+    // MARK: Parameters
+
+    func trackParameterValue(_ ref: TrackParameterRef) -> Double {
+        state.tracks.first { $0.id == ref.trackID }?.audio.value(ref, at: playback.currentTime) ?? ref.parameter.defaultValue
+    }
+
+    /// Changes a parameter during a drag (one undo step; call `endAudioAdjustment`).
+    func adjustTrackParameter(_ ref: TrackParameterRef, to value: Double) {
+        if !store.isLiveEditing { store.beginLiveEdit() }
+        let time = playback.currentTime.snappedToFrame(fps: fps)
+        store.liveEdit { state in
+            guard let index = state.tracks.firstIndex(where: { $0.id == ref.trackID }) else { return }
+            state.tracks[index].audio.set(ref, value, at: time)
+        }
+    }
+
+    /// Sets a parameter in one step (typed values, resets).
+    func setTrackParameter(_ ref: TrackParameterRef, to value: Double) {
+        let time = playback.currentTime.snappedToFrame(fps: fps)
+        editTrackAudio(ref.trackID, "Change \(ref.parameter.title)") { $0.set(ref, value, at: time) }
+    }
+
+    func trackKeyframes(_ ref: TrackParameterRef) -> [Keyframe] {
+        state.tracks.first { $0.id == ref.trackID }?.audio.keyframes[ref.key] ?? []
+    }
+
+    /// The keyframe of a parameter under the playhead (within half a frame), if any.
+    func trackKeyframeAtPlayhead(_ ref: TrackParameterRef) -> Keyframe? {
+        let half = Time(ticks: Time.frame(fps: fps).ticks / 2)
+        let now = playback.currentTime
+        return trackKeyframes(ref).first { abs(($0.time - now).ticks) <= half.ticks }
+    }
+
+    /// Adds a keyframe with the current value at the playhead, or removes the one there.
+    func toggleTrackKeyframe(_ ref: TrackParameterRef) {
+        let time = playback.currentTime.snappedToFrame(fps: fps)
+        if let existing = trackKeyframeAtPlayhead(ref) {
+            editTrackAudio(ref.trackID, "Remove Keyframe") { audio in
+                var frames = audio.keyframes[ref.key] ?? []
+                frames.removeAll { $0.id == existing.id }
+                audio.keyframes[ref.key] = frames.isEmpty ? nil : frames
+            }
+        } else {
+            let value = trackParameterValue(ref)
+            editTrackAudio(ref.trackID, "Add Keyframe") { audio in
+                audio.keyframes[ref.key] = ClipAnimation.setting(audio.keyframes[ref.key] ?? [], at: time, value: value)
+            }
+        }
+    }
+
+    /// Removes a parameter's keyframes, keeping the value at the playhead as its plain value.
+    func clearTrackKeyframes(_ ref: TrackParameterRef) {
+        let value = trackParameterValue(ref)
+        let time = playback.currentTime
+        editTrackAudio(ref.trackID, "Remove Keyframes") { audio in
+            audio.keyframes[ref.key] = nil
+            audio.set(ref, value, at: time)
+        }
+    }
+
+    func jumpToTrackKeyframe(_ ref: TrackParameterRef, next: Bool) {
+        let now = playback.currentTime
+        let times = trackKeyframes(ref).map(\.time)
+        let target = next ? times.first { $0 > now + Time(ticks: 1) } : times.last { $0 < now - Time(ticks: 1) }
+        guard let target else { NSSound.beep(); return }
+        playback.pause()
+        playback.seek(to: target, audible: false)
+    }
+}
