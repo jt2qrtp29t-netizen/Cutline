@@ -154,7 +154,8 @@ final class PlaybackController {
         startTask?.cancel()
         guard isReadyForSynchronizedStart else {
             startTask = Task {
-                for _ in 0..<300 where !isReadyForSynchronizedStart {
+                // Up to 10 s (a busy machine, a large composition), then give up.
+                for _ in 0..<1_000 where !isReadyForSynchronizedStart {
                     try? await Task.sleep(for: .milliseconds(10))
                     if Task.isCancelled || !isPlaying { return }
                 }

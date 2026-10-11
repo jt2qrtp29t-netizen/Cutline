@@ -196,6 +196,36 @@ nonisolated final class LayerCompositor: NSObject, AVVideoCompositing, @unchecke
         }
     }
 
+    /// Fades an image's edges to transparent over `softness` × half its smaller side: each
+    /// edge eases (an S-curve) from clear at the edge to opaque inside; corners multiply.
+    static func feathered(_ image: CIImage, softness: Double) -> CIImage {
+        let rect = image.extent
+        let width = softness * min(rect.width, rect.height) / 2
+        guard width > 0.01 else { return image }
+        let opaque = CIColor(red: 1, green: 1, blue: 1, alpha: 1), clear = CIColor(red: 1, green: 1, blue: 1, alpha: 0)
+        func ramp(from edge: CGPoint, to inside: CGPoint) -> CIImage {
+            CIImage(color: clear).applyingFilter("CISmoothLinearGradient", parameters: [
+                "inputPoint0": CIVector(cgPoint: edge), "inputPoint1": CIVector(cgPoint: inside),
+                "inputColor0": clear, "inputColor1": opaque,
+            ]).cropped(to: rect)
+        }
+        let ramps = [
+            ramp(from: CGPoint(x: rect.minX, y: rect.midY), to: CGPoint(x: rect.minX + width, y: rect.midY)),
+            ramp(from: CGPoint(x: rect.maxX, y: rect.midY), to: CGPoint(x: rect.maxX - width, y: rect.midY)),
+            ramp(from: CGPoint(x: rect.midX, y: rect.minY), to: CGPoint(x: rect.midX, y: rect.minY + width)),
+            ramp(from: CGPoint(x: rect.midX, y: rect.maxY), to: CGPoint(x: rect.midX, y: rect.maxY - width)),
+        ]
+        // Multiply the four ramps' alphas into one mask.
+        var mask = ramps[0]
+        for next in ramps.dropFirst() {
+            mask = next.applyingFilter("CIMultiplyCompositing", parameters: [kCIInputBackgroundImageKey: mask])
+        }
+        let transparent = CIImage(color: CIColor(red: 0, green: 0, blue: 0, alpha: 0)).cropped(to: rect)
+        return image.applyingFilter("CIBlendWithAlphaMask", parameters: [
+            kCIInputBackgroundImageKey: transparent, kCIInputMaskImageKey: mask.cropped(to: rect),
+        ]).cropped(to: rect)
+    }
+
     /// Orients, flips, crops, fits, positions, rotates and grades one layer in
     /// render (Core Image, y-up) space.
     static func process(_ source: CIImage, layer: CompositorLayer, renderSize: CGSize, at time: Time) -> CIImage {
@@ -232,6 +262,12 @@ nonisolated final class LayerCompositor: NSObject, AVVideoCompositing, @unchecke
                               width: max(size.width - left - right, 1),
                               height: max(size.height - top - bottom, 1))
             image = image.cropped(to: rect)
+        }
+
+        // Feather the visible edges (after the crop, before placement and opacity).
+        let softness = clip.value(of: .cropSoftness, at: time).clamped(to: 0...1)
+        if softness > 0 {
+            image = feathered(image, softness: softness)
         }
 
         let fit = isText ? 1 : min(renderSize.width / size.width, renderSize.height / size.height)

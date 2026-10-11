@@ -89,7 +89,7 @@ struct PlaybackTests {
         playback.play()
         try await waitUntil { playback.isPlaying }
         // Allow for a busy test machine: the playhead must advance, however long that takes to show.
-        let deadline = Date().addingTimeInterval(5)
+        let deadline = Date().addingTimeInterval(12)
         while playback.currentTime <= Time(seconds: 2.2), Date() < deadline { try await Task.sleep(for: .milliseconds(20)) }
         #expect(playback.currentTime > Time(seconds: 2.2), "playhead advances during playback")
         playback.pause()

@@ -108,12 +108,18 @@ struct ClipInspector: View {
         }
 
         InspectorSection(title: "Crop", onReset: {
-            editor.adjustClip(clip.id, actionName: "Reset Crop") { $0.crop = .none }
+            editor.adjustClip(clip.id, actionName: "Reset Crop") {
+                $0.crop = .none
+                $0.cropSoftness = 0
+                $0.animation.keyframes[.cropSoftness] = nil
+            }
         }) {
             cropSlider("Top", \.top, opposite: \.bottom)
             cropSlider("Bottom", \.bottom, opposite: \.top)
             cropSlider("Left", \.left, opposite: \.right)
             cropSlider("Right", \.right, opposite: \.left)
+            ParameterRow(editor: editor, clip: clip, property: .cropSoftness)
+                .help("Feathers the crop edges so they fade out instead of cutting off.")
         }
 
         InspectorSection(title: "Compositing", onReset: {

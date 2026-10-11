@@ -407,10 +407,10 @@ extension EditorController {
 // MARK: - Audio keyframe lanes
 
 extension EditorController {
-    /// The Edit tab's speed lane clip: exactly one selected video or audio clip.
-    var speedLaneClip: Clip? {
+    /// The Edit tab's keyframe lane clip (speed and crop softness): exactly one selected clip.
+    var editLaneClip: Clip? {
         let selected = selectedClips
-        guard selected.count == 1, let clip = selected.first, !clip.isText, clip.generator == nil else { return nil }
+        guard selected.count == 1, let clip = selected.first else { return nil }
         return clip
     }
 

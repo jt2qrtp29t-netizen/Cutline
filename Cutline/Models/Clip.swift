@@ -72,6 +72,9 @@ nonisolated struct Clip: Identifiable, Codable, Hashable, Sendable {
     var preservesPitch = true
     var transform: ClipTransform = .identity
     var crop: CropInsets = .none
+    /// Feathers the crop edges (0…1): the share of half the visible frame's smaller side
+    /// over which the edges fade out.
+    var cropSoftness: Double = 0
     var opacity: Double = 1
     /// The clip's color grade (Color tab). Stored as "color" so older projects load.
     var color: ColorGrade = .neutral
@@ -127,6 +130,7 @@ nonisolated struct Clip: Identifiable, Codable, Hashable, Sendable {
         preservesPitch = try c.decodeIfPresent(Bool.self, forKey: .preservesPitch) ?? true
         transform = try c.decodeIfPresent(ClipTransform.self, forKey: .transform) ?? .identity
         crop = try c.decodeIfPresent(CropInsets.self, forKey: .crop) ?? .none
+        cropSoftness = try c.decodeIfPresent(Double.self, forKey: .cropSoftness) ?? 0
         opacity = try c.decodeIfPresent(Double.self, forKey: .opacity) ?? 1
         color = try c.decodeIfPresent(ColorGrade.self, forKey: .color) ?? .neutral
         volume = try c.decodeIfPresent(Double.self, forKey: .volume) ?? 1

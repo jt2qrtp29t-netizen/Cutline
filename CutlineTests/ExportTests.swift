@@ -178,6 +178,12 @@ enum ExportProbe {
             c.animation.setKeyframe(.saturation, at: .zero, value: 1.4)
             c.animation.setKeyframe(.saturation, at: Time(seconds: 2), value: 0.6)
             c.labs = [LabEffect(experimentID: "rgbSplit", values: ["amount": 10, "glitch": 0.6, "speed": 6])]
+            // v4.0: a speed ramp (Frame Blend) and keyframed crop softness.
+            c.retiming = .frameBlend
+            c.animation.keyframes[.speed] = [Keyframe(time: .zero, value: 0.8), Keyframe(time: Time(seconds: 2), value: 1)]
+            c.crop = CropInsets(top: 0.1, bottom: 0.05, left: 0.15, right: 0.1)
+            c.animation.setKeyframe(.cropSoftness, at: .zero, value: 0.1)
+            c.animation.setKeyframe(.cropSoftness, at: Time(seconds: 2), value: 0.7)
         }
         var settings = ExportPreset.proRes.applied(to: ExportSettings())
         settings.frameRate = 30

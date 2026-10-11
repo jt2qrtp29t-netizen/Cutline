@@ -115,6 +115,8 @@ nonisolated enum AnimatableProperty: String, Codable, CaseIterable, Identifiable
     case volume, pan
     // Speed Change (a speed ramp; video and audio).
     case speed
+    // Crop softness (Edit tab).
+    case cropSoftness
 
     var id: String { rawValue }
 
@@ -123,11 +125,14 @@ nonisolated enum AnimatableProperty: String, Codable, CaseIterable, Identifiable
     var isMotion: Bool { Self.motion.contains(self) }
     var isColor: Bool { Self.grade.contains(self) }
     var isAudio: Bool { Self.audio.contains(self) }
-    /// Speed keyframes, edited by Speed (Edit tab) and Speed Change (Effects and Audio tabs).
+    /// Speed keyframes, edited by Speed and Speed Change (Edit tab).
     var isSpeed: Bool { self == .speed }
+    /// Keyframed in the Edit tab's adjustments (shown in its keyframe lane).
+    var isEditAdjustment: Bool { Self.editAdjustments.contains(self) }
+    static let editAdjustments: [AnimatableProperty] = [.speed, .cropSoftness]
     static let motion: [AnimatableProperty] = [.positionX, .positionY, .scale, .rotation, .opacity, .yaw, .pitch]
     static let audio: [AnimatableProperty] = [.volume, .pan]
-    static let grade: [AnimatableProperty] = allCases.filter { !motion.contains($0) && !audio.contains($0) && $0 != .speed }
+    static let grade: [AnimatableProperty] = allCases.filter { !motion.contains($0) && !audio.contains($0) && !editAdjustments.contains($0) }
 
     var title: String {
         switch self {
@@ -162,6 +167,7 @@ nonisolated enum AnimatableProperty: String, Codable, CaseIterable, Identifiable
         case .volume: "Volume"
         case .pan: "Pan"
         case .speed: "Speed"
+        case .cropSoftness: "Softness"
         }
     }
 
@@ -206,6 +212,7 @@ nonisolated enum AnimatableProperty: String, Codable, CaseIterable, Identifiable
         case .volume: \.volume
         case .pan: \.pan
         case .speed: \.speed
+        case .cropSoftness: \.cropSoftness
         }
     }
 
@@ -223,6 +230,7 @@ nonisolated enum AnimatableProperty: String, Codable, CaseIterable, Identifiable
         // Linear gain: silence to +12 dB.
         case .volume: 0...AudioLevel.linear(fromDB: 12)
         case .speed: TimeRemap.range
+        case .cropSoftness: 0...1
         default: -1...1
         }
     }

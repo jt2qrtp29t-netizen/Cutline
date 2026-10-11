@@ -74,7 +74,7 @@ struct TimelinePanel: View {
             .background(Theme.background)
 
             if editor.workspace == .effects || editor.workspace == .color || editor.workspace == .audio || editor.isSandbox
-                || (editor.workspace == .edit && editor.speedLaneClip?.hasSpeedRamp == true) {
+                || (editor.workspace == .edit && editor.editLaneClip.map { c in AnimatableProperty.editAdjustments.contains { c.isAnimated($0) } } == true) {
                 Rectangle().fill(Theme.border).frame(height: 1)
                 KeyframeLane(editor: editor, layout: layout, visibleRect: visibleRect)
             }

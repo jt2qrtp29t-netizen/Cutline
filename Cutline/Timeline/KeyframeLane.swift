@@ -22,7 +22,7 @@ struct KeyframeLane: View {
             return AnimatableProperty.grade.filter { clip.isAnimated($0) }
         }
         let speed: [AnimatableProperty] = clip.isAnimated(.speed) ? [.speed] : []
-        if editor.workspace == .edit && !editor.isSandbox { return speed }
+        if editor.workspace == .edit && !editor.isSandbox { return AnimatableProperty.editAdjustments.filter { clip.isAnimated($0) } }
         if editor.workspace == .audio {
             return AnimatableProperty.audio.filter { clip.isAnimated($0) } + speed
         }
@@ -34,7 +34,7 @@ struct KeyframeLane: View {
         if editor.isSandbox { return editor.effectsClip }
         switch editor.workspace {
         case .audio: return editor.audioClip
-        case .edit: return editor.speedLaneClip
+        case .edit: return editor.editLaneClip
         default: return editor.effectsClip
         }
     }
