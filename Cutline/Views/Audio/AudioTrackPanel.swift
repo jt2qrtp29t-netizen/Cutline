@@ -393,8 +393,8 @@ private struct AudioClipSection: View {
                     .font(.system(size: 10))
                     .foregroundStyle(Theme.textTertiary)
                 Spacer()
-                if clip.speed != 1 {
-                    Text("Speed \(Int((clip.speed * 100).rounded()))%")
+                if let label = clip.speedLabel {
+                    Text("Speed \(label)")
                         .font(.system(size: 10))
                         .foregroundStyle(Theme.textTertiary)
                 }

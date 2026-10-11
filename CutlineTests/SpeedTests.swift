@@ -107,9 +107,12 @@ import Testing
         step(undo) { editor.setAnimationEnd(.positionX, of: clip.id, to: editor.state.clip(clip.id)!.transform.positionX, actionName: "Move") }
         #expect(editor.animationEnds(of: .positionX, in: editor.state.clip(clip.id)!).end == 0)
 
-        // Undo walks back each step.
-        undo.undo(); undo.undo(); undo.undo(); undo.undo(); undo.undo()
-        #expect(editor.animationEnds(of: .speed, in: editor.state.clip(clip.id)!).end == 2 || true)
+        // Undo walks back each step: the four Position steps, the second unlock, the lock.
+        for _ in 0..<5 { undo.undo() }
+        #expect(!editor.state.clip(clip.id)!.hasSpeedRamp, "back to locked")
+        undo.undo()
+        #expect(editor.animationEnds(of: .speed, in: editor.state.clip(clip.id)!).end == 2, "back to the ramp to 200%")
+        #expect(abs(editor.state.clip(clip.id)!.duration.seconds - 4 / 1.5) < 1e-3)
     }
 
     @Test func speedChangeKeyframesDriveStartAndEnd() throws {
@@ -279,6 +282,48 @@ import Testing
         // Mixed in linear light, half of each reads brighter than the plain average.
         #expect(abs(between[1] - between[2]) < 6, "frames 1 and 2 at equal strength: \(between[1]), \(between[2])")
         #expect(between[1] > dark + 30 && between[1] < bright - 20, "each partly there: \(between[1])")
+    }
+}
+
+@MainActor struct SpeedEditingTests {
+    @Test func trimmingARampStopsAtTheEndsOfTheMedia() throws {
+        var state = ProjectState()
+        let media = MediaItem(id: UUID(), name: "m", path: "/m.mov", duration: Time(seconds: 10), width: 1920, height: 1080,
+                              frameRate: 30, hasAudio: false)
+        state.media = [media]
+        var clip = Clip(id: UUID(), mediaID: media.id, name: "c", start: Time(seconds: 5), duration: Time(seconds: 2), sourceStart: Time(seconds: 2))
+        clip.animation.keyframes[.speed] = [Keyframe(time: .zero, value: 2), Keyframe(time: Time(seconds: 2), value: 1)]
+        state.tracks[0].clips = [clip]
+        // Leading: 2 s of media before the in-point at 200% is 1 s of timeline.
+        let leading = TimelineEditing.trimBounds(for: clip, edge: .leading, in: state)
+        #expect(abs(leading.lowerBound.seconds - 4) < 1e-6)
+        // Trailing: the curve reaches the media's end (10 s) exactly at the bound.
+        let trailing = TimelineEditing.trimBounds(for: clip, edge: .trailing, in: state)
+        var extended = clip
+        extended.duration = trailing.upperBound - clip.start
+        #expect(abs(extended.sourceEnd.seconds - 10) < 1e-3, "\(extended.sourceEnd.seconds)")
+    }
+
+    /// Speed and softness edits in the Playground stay there.
+    @Test func thePlaygroundHasItsOwnSpeedAndSoftness() async throws {
+        var state = ProjectState()
+        state.id = UUID()
+        let media = MediaItem(id: UUID(), name: "m", path: "/m.mov", duration: Time(seconds: 30), width: 1920, height: 1080,
+                              frameRate: 30, hasAudio: false)
+        state.media = [media]
+        let clip = Clip(id: UUID(), mediaID: media.id, name: "c", start: .zero, duration: Time(seconds: 4), sourceStart: .zero)
+        state.tracks[0].clips = [clip]
+        let editor = EditorController(store: ProjectStore(state: state))
+        editor.playgroundFolder = FileManager.default.temporaryDirectory.appendingPathComponent("pg-\(UUID().uuidString)")
+        editor.sendToPlayground([clip.id])
+        let sandbox = try #require(editor.playground?.editor)
+        let copy = try #require(sandbox.state.tracks.flatMap(\.clips).first)
+        sandbox.setSpeedEnd(1, of: copy.id)
+        sandbox.setSpeedEnd(2, of: copy.id)
+        sandbox.adjustClip(copy.id, actionName: "Softness") { $0.cropSoftness = 0.4 }
+        let edited = try #require(sandbox.state.clip(copy.id))
+        #expect(edited.hasSpeedRamp && edited.cropSoftness == 0.4 && edited.duration < Time(seconds: 4))
+        #expect(editor.state == state, "nothing reaches the project")
     }
 }
 

@@ -139,8 +139,8 @@ struct ClipView: View {
             }
             Text(clip.name)
                 .lineLimit(1)
-            if clip.speed != 1 {
-                Text(String(format: "%.0f%%", clip.speed * 100))
+            if let label = clip.speedLabel {
+                Text(label)
                     .padding(.horizontal, 3)
                     .background(fill, in: .rect(cornerRadius: 3))
             }
@@ -278,7 +278,7 @@ private struct ClipContextMenu: View {
                 Button {
                     editor.setSpeed(speed, of: targets)
                 } label: {
-                    if abs(clip.speed - speed) < 0.0001 {
+                    if !clip.hasSpeedRamp && abs(clip.speed - speed) < 0.0001 {
                         Label("\(Int(speed * 100))%", systemImage: "checkmark")
                     } else {
                         Text("\(Int(speed * 100))%")
@@ -552,7 +552,9 @@ private struct Filmstrip: View {
         let last = min(Int((width / tileWidth).rounded(.down)), Int((visibleRange.upperBound / tileWidth).rounded(.up)))
         guard first <= last else { return [] }
 
-        let tileSourceSeconds = Double(tileWidth) / layout.pixelsPerSecond * clip.speed
+        // Source seconds per tile (on average, for a ramp).
+        let meanSpeed = clip.duration > .zero ? clip.sourceDuration.seconds / clip.duration.seconds : clip.speed
+        let tileSourceSeconds = Double(tileWidth) / layout.pixelsPerSecond * meanSpeed
         let step = ThumbnailCache.quantum(forTileDuration: tileSourceSeconds, fps: fps)
         let url = MediaURLCache.shared.url(for: media)
         let lastFrame = media.duration - Time.frame(fps: fps)

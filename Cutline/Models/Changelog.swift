@@ -11,6 +11,16 @@ enum Changelog {
     }
 
     static let entries: [Entry] = [
+        Entry(version: "4.0", title: "Edit Adjustments: speed ramps and crop softness", changes: [
+            "Speed in the Edit tab (video and audio clips) now has a lock, like Position. Locked, the clip plays at one speed exactly as before. Unlock it and an End value appears, starting equal to Start, so nothing changes until you move it. The clip then ramps smoothly from Start to End. Locking again goes back to a constant speed.",
+            "Speed Change, just below, keyframes the speed for multi-point ramps, with ◆ and ◀︎ ▶︎ like other animated values, and its keyframes appear in the lane under the timeline. Start and End are its first and last keyframes.",
+            "A clip keeps the same piece of its media whatever its speed curve: its length follows the curve and the clips after it move along. Linked video and audio share one curve and stay in sync, and cutting a ramped clip keeps its speed and picture continuous.",
+            "Slow motion for video: Nearest repeats source frames; Frame Blend (the default for new clips) mixes neighboring frames for smoother slow motion. Clips from older projects keep Nearest, so they look exactly as before.",
+            "Preserve Pitch for audio: on, voices keep their pitch at any speed; off, pitch follows speed like tape or a record. Semitones and cents still add on top. Ramped and tape-style sound is rendered ahead of time from the same curve as the picture, changes speed smoothly with no clicks, and is identical in playback and export. Fades and volume stay in timeline time.",
+            "A warning shows when a clip's speed goes below 25% or above 400%, where picture and sound lose quality.",
+            "Crop Softness (0–100%) in the Crop section feathers the cropped edges so they fade out, with keyframes, reset and undo. 0% looks exactly as before.",
+            "Fixed: pressing Play on a busy Mac could do nothing if the player took more than 3 seconds to get ready; it now waits up to 10.",
+        ]),
         Entry(version: "3.9", title: "Window size", changes: [
             "Project windows can't be made narrower than 1536 points (about 60% of a 27″ display), so the Effects, Color and Audio tabs always have room for their panels beside the preview. On a smaller screen the limit is the screen's width.",
             "New project windows open 1680 points wide (or as wide as the screen).",

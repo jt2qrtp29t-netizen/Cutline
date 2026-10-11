@@ -106,6 +106,15 @@ nonisolated extension Clip {
     /// The clip's speed changes over time (it has speed keyframes).
     var hasSpeedRamp: Bool { !animation.keyframes(for: .speed).isEmpty }
 
+    /// A short label for the clip's speed ("150%", or "50→200%" for a ramp); nil at 100%.
+    var speedLabel: String? {
+        let frames = animation.keyframes(for: .speed)
+        if let first = frames.first, let last = frames.last {
+            return String(format: "%.0f→%.0f%%", first.value * 100, last.value * 100)
+        }
+        return speed != 1 ? String(format: "%.0f%%", speed * 100) : nil
+    }
+
     /// Played at anything other than constant 100%.
     var isRetimed: Bool { hasSpeedRamp || speed != 1 }
 

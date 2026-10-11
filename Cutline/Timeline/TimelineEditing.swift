@@ -240,13 +240,18 @@ nonisolated enum TimelineEditing {
         }
         switch edge {
         case .leading:
-            let mediaLimit = clip.start - clip.sourceStart.scaled(by: 1 / clip.speed)
+            // Before a ramp's first keyframe its curve holds the first speed.
+            let mediaLimit = clip.hasSpeedRamp
+                ? clip.start - Time(seconds: clip.sourceStart.seconds / max(clip.remap.speed(at: 0), 0.0001))
+                : clip.start - clip.sourceStart.scaled(by: 1 / clip.speed)
             let neighbourLimit = neighbours.filter { $0.end <= clip.start }.map(\.end).max() ?? .zero
             let lower = max(mediaLimit, neighbourLimit, .zero)
             return lower...(clip.end - minDuration)
         case .trailing:
             let mediaDuration = state.mediaItem(clip.mediaID)?.duration ?? clip.sourceEnd
-            let mediaLimit = clip.start + (mediaDuration - clip.sourceStart).scaled(by: 1 / clip.speed)
+            let mediaLimit = clip.hasSpeedRamp
+                ? clip.start + Time(seconds: clip.remap.offset(forSourceSeconds: (mediaDuration - clip.sourceStart).seconds))
+                : clip.start + (mediaDuration - clip.sourceStart).scaled(by: 1 / clip.speed)
             let neighbourLimit = neighbours.filter { $0.start >= clip.end }.map(\.start).min()
             let upper = min(mediaLimit, neighbourLimit ?? mediaLimit)
             return (clip.start + minDuration)...max(upper, clip.start + minDuration)
