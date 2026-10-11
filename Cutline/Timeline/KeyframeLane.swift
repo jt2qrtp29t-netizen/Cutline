@@ -21,10 +21,11 @@ struct KeyframeLane: View {
         if editor.workspace == .color {
             return AnimatableProperty.grade.filter { clip.isAnimated($0) }
         }
+        let speed: [AnimatableProperty] = clip.isAnimated(.speed) ? [.speed] : []
         if editor.workspace == .audio {
-            return AnimatableProperty.audio.filter { clip.isAnimated($0) }
+            return AnimatableProperty.audio.filter { clip.isAnimated($0) } + speed
         }
-        return AnimatableProperty.motion.filter { clip.isAnimated($0) || $0 == editor.effectsProperty }
+        return AnimatableProperty.motion.filter { clip.isAnimated($0) || $0 == editor.effectsProperty } + speed
     }
 
     /// The clip whose keyframes show: an audio clip in the Audio tab, otherwise a video or text clip.

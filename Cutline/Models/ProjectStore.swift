@@ -56,6 +56,7 @@ final class ProjectStore {
         if isLiveEditing { cancelLiveEdit() }
         var next = state
         body(&next)
+        next.refitSpeedChanges(from: state)
         next.pruneTransitions()
         next.pruneDucking()
         guard next != state else { return }
@@ -84,6 +85,7 @@ final class ProjectStore {
         guard isLiveEditing, let base = liveBase else { return }
         var next = base
         body(&next)
+        next.refitSpeedChanges(from: base)
         next.pruneTransitions()
         next.pruneDucking()
         if next != state { state = next }

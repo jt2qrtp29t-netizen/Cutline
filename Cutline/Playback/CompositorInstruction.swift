@@ -12,8 +12,27 @@ nonisolated struct CompositorLayer: Sendable, Equatable {
     var transition: TransitionBlend?
     /// The clip's media file is missing; a "Media Offline" slate is drawn instead.
     var isOffline = false
+    /// Frame Blend for retimed clips: where the next source frame comes from.
+    var retime: RetimedVideo?
 
     var text: TextStyle? { clip.text }
+}
+
+/// A retimed clip's frame-blend source: a second composition track that always shows
+/// the source frame after the one on the main track, and the source's frame length, so
+/// the compositor can mix them by how far between the two frames the moment is.
+nonisolated struct RetimedVideo: Sendable, Equatable {
+    var nextFrameTrackID: CMPersistentTrackID
+    /// Seconds per source frame.
+    var sourceFrameDuration: Double
+
+    /// The source frame shown on the main track at a timeline time, and how far toward
+    /// the next frame the moment is (0…1). The composition is built from the same numbers.
+    static func position(of clip: Clip, at time: Time, frameDuration: Double) -> (frame: Int, fraction: Double) {
+        let p = clip.sourceTime(at: time).seconds / frameDuration
+        let frame = Int((p + 1e-6).rounded(.down))
+        return (frame, min(max(p - Double(frame), 0), 1))
+    }
 }
 
 /// A transition from the layer's clip (outgoing) to `incoming`, or, on an open
@@ -26,13 +45,14 @@ nonisolated struct TransitionBlend: Sendable, Equatable {
     var incomingClip: Clip?
     var incomingSourceTransform: CGAffineTransform = .identity
     var incomingIsOffline = false
+    var incomingRetime: RetimedVideo?
     /// On an open start the layer's clip is the one coming in (from nothing).
     var layerIsIncoming = false
 
     var incomingLayer: CompositorLayer? {
         incomingClip.map {
             CompositorLayer(trackID: incomingTrackID, clip: $0, sourceTransform: incomingSourceTransform,
-                            isOffline: incomingIsOffline)
+                            isOffline: incomingIsOffline, retime: incomingRetime)
         }
     }
 
@@ -56,6 +76,7 @@ nonisolated final class CompositorInstruction: NSObject, AVVideoCompositionInstr
         self.timeRange = timeRange
         self.layers = layers
         let sources = layers.compactMap(\.trackID) + layers.compactMap { $0.transition?.incomingTrackID }
+            + layers.compactMap { $0.retime?.nextFrameTrackID } + layers.compactMap { $0.transition?.incomingRetime?.nextFrameTrackID }
         self.requiredSourceTrackIDs = sources.isEmpty ? nil : sources.map { NSNumber(value: $0) }
         super.init()
     }

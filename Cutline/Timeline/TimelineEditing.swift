@@ -384,6 +384,8 @@ nonisolated enum TimelineEditing {
             duration = min(duration, maxDuration)
         }
         state.updateClip(id) { c in
+            // A constant speed replaces any speed ramp.
+            c.animation.keyframes[.speed] = nil
             c.speed = newSpeed
             c.duration = max(duration, Time(ticks: minimumClipTicks))
         }

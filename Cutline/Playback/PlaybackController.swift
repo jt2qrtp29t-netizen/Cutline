@@ -221,7 +221,8 @@ final class PlaybackController {
             if installed.videoComposition != nil {
                 item.videoComposition = CompositionBuilder.makeVideoComposition(
                     for: prepared(state), duration: installed.duration,
-                    clipTrackIDs: installed.clipTrackIDs, sourceTransforms: installed.sourceTransforms
+                    clipTrackIDs: installed.clipTrackIDs, sourceTransforms: installed.sourceTransforms,
+                    retimed: installed.retimed
                 )
             }
             audio.update(state)

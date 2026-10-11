@@ -113,6 +113,8 @@ nonisolated enum AnimatableProperty: String, Codable, CaseIterable, Identifiable
     case lutIntensity
     // Audio clips (Audio tab).
     case volume, pan
+    // Speed Change (a speed ramp; video and audio).
+    case speed
 
     var id: String { rawValue }
 
@@ -121,9 +123,11 @@ nonisolated enum AnimatableProperty: String, Codable, CaseIterable, Identifiable
     var isMotion: Bool { Self.motion.contains(self) }
     var isColor: Bool { Self.grade.contains(self) }
     var isAudio: Bool { Self.audio.contains(self) }
+    /// Speed keyframes, edited by Speed (Edit tab) and Speed Change (Effects and Audio tabs).
+    var isSpeed: Bool { self == .speed }
     static let motion: [AnimatableProperty] = [.positionX, .positionY, .scale, .rotation, .opacity, .yaw, .pitch]
     static let audio: [AnimatableProperty] = [.volume, .pan]
-    static let grade: [AnimatableProperty] = allCases.filter { !motion.contains($0) && !audio.contains($0) }
+    static let grade: [AnimatableProperty] = allCases.filter { !motion.contains($0) && !audio.contains($0) && $0 != .speed }
 
     var title: String {
         switch self {
@@ -157,12 +161,13 @@ nonisolated enum AnimatableProperty: String, Codable, CaseIterable, Identifiable
         case .lutIntensity: "LUT Intensity"
         case .volume: "Volume"
         case .pan: "Pan"
+        case .speed: "Speed"
         }
     }
 
     var defaultValue: Double {
         switch self {
-        case .scale, .opacity, .contrast, .saturation, .lutIntensity, .volume: 1
+        case .scale, .opacity, .contrast, .saturation, .lutIntensity, .volume, .speed: 1
         default: 0
         }
     }
@@ -200,6 +205,7 @@ nonisolated enum AnimatableProperty: String, Codable, CaseIterable, Identifiable
         case .lutIntensity: \.color.lutIntensity
         case .volume: \.volume
         case .pan: \.pan
+        case .speed: \.speed
         }
     }
 
@@ -216,6 +222,7 @@ nonisolated enum AnimatableProperty: String, Codable, CaseIterable, Identifiable
         case .lutIntensity: 0...1
         // Linear gain: silence to +12 dB.
         case .volume: 0...AudioLevel.linear(fromDB: 12)
+        case .speed: TimeRemap.range
         default: -1...1
         }
     }

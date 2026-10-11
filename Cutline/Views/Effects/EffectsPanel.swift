@@ -32,6 +32,10 @@ struct EffectsPanel: View {
                                 .fixedSize(horizontal: false, vertical: true)
                         }
                         .disabled(clip.isLocked)
+                        if !clip.isText && clip.generator == nil {
+                            SpeedChangeSection(editor: editor, clip: clip)
+                                .disabled(clip.isLocked)
+                        }
                         PresetsSection(editor: editor, clip: clip)
                             .disabled(clip.isLocked)
                         SelectedKeyframeSection(editor: editor, clip: clip)
@@ -279,5 +283,38 @@ private struct PresetButton: View {
         .buttonStyle(.plain)
         .help(help)
         .onHover { isHovering = $0 }
+    }
+}
+
+/// Speed Change: a multi-point speed ramp with keyframes (the same curve as Speed in
+/// the Edit tab, whose Start and End are its first and last keyframes).
+struct SpeedChangeSection: View {
+    let editor: EditorController
+    let clip: Clip
+
+    var body: some View {
+        InspectorSection(title: "Speed Change", onReset: { editor.setSpeed(1, for: clip.id) }) {
+            ParameterRow(editor: editor, clip: clip, property: .speed)
+            SpeedRangeNote(clip: clip)
+            Text("Keyframe the speed to ramp it. The clip's length follows (later clips move), and linked video and audio share the curve.")
+                .font(.system(size: 10))
+                .foregroundStyle(Theme.textTertiary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+}
+
+/// A warning when a clip's speed goes outside the range that plays well (25–400%).
+struct SpeedRangeNote: View {
+    let clip: Clip
+
+    var body: some View {
+        let range = clip.remap.extremes(over: clip.duration.seconds)
+        if range.lowerBound < 0.25 - 1e-9 || range.upperBound > 4 + 1e-9 {
+            Label("Below 25% or above 400% the picture and sound lose quality.", systemImage: "exclamationmark.triangle.fill")
+                .font(.system(size: 10.5))
+                .foregroundStyle(Theme.sandbox)
+                .fixedSize(horizontal: false, vertical: true)
+        }
     }
 }

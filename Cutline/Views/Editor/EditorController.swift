@@ -643,6 +643,44 @@ final class EditorController {
         }
     }
 
+    /// Speed's main slider: the constant speed, or (unlocked) the first keyframe of the ramp.
+    func setSpeedStart(_ value: Double, of id: UUID) {
+        guard let clip = state.clip(id) else { return }
+        if clip.hasSpeedRamp {
+            adjustClip(id, actionName: "Change Speed") { c in
+                guard var frames = c.animation.keyframes[.speed], !frames.isEmpty else { return }
+                frames[0].value = value.clamped(to: TimeRemap.range)
+                c.animation.keyframes[.speed] = frames
+            }
+        } else {
+            setSpeed(value, for: id)
+        }
+    }
+
+    /// Speed's End slider. Unlocking (the first value) starts the ramp with End equal to
+    /// Start, so nothing changes until End moves; nil locks back to a constant speed (the
+    /// start speed), and the End value isn't kept, exactly like Position.
+    func setSpeedEnd(_ value: Double?, of id: UUID) {
+        adjustClip(id, actionName: value == nil ? "Lock Speed" : "Change Speed") { c in
+            let frames = c.animation.keyframes(for: .speed)
+            let start = frames.first?.value ?? c.speed
+            guard let value else {
+                c.animation.keyframes[.speed] = nil
+                c.speed = start
+                return
+            }
+            let v = value.clamped(to: TimeRemap.range)
+            if frames.count >= 2 {
+                var updated = frames
+                updated[updated.count - 1].value = v
+                c.animation.keyframes[.speed] = updated
+            } else {
+                let last = max(c.duration - Time(ticks: 1), .zero)
+                c.animation.keyframes[.speed] = [Keyframe(time: .zero, value: start), Keyframe(time: last, value: v)]
+            }
+        }
+    }
+
     func beginAdjustment() { store.beginLiveEdit() }
     func endAdjustment(_ actionName: String) { store.commitLiveEdit(actionName) }
 

@@ -235,9 +235,13 @@ struct AnimatedValueRow: View {
     /// Nil while locked.
     let end: Double?
     let range: ClosedRange<Double>
+    var displayScale: Double = 1
     var unit = "px"
     var fractionDigits = 1
     var unitsPerPoint: Double = 1
+    /// Help for the lock button (locked, unlocked).
+    var lockHelp = ("Unlock the end position to move the clip over its duration", "Lock the end position (no movement)")
+    var endHelp = "End position at the clip's last frame"
     let onBegin: () -> Void
     let onEnd: () -> Void
     /// Live change during a drag (inside a begin/end pair).
@@ -251,7 +255,7 @@ struct AnimatedValueRow: View {
         VStack(alignment: .leading, spacing: 5) {
             HStack(spacing: 4) {
                 InspectorLabel(title)
-                NumberField(value: start, range: range, unit: unit, fractionDigits: fractionDigits,
+                NumberField(value: start, range: range, displayScale: displayScale, unit: unit, fractionDigits: fractionDigits,
                             step: unitsPerPoint * 10, onSet: onSetStart)
                 Button {
                     // Unlocking starts the end where the clip currently is.
@@ -264,13 +268,12 @@ struct AnimatedValueRow: View {
                         .contentShape(.rect)
                 }
                 .buttonStyle(.plain)
-                .help(end == nil ? "Unlock the end position to move the clip over its duration"
-                                 : "Lock the end position (no movement)")
-                NumberField(value: end ?? start, range: range, unit: unit, fractionDigits: fractionDigits,
+                .help(end == nil ? lockHelp.0 : lockHelp.1)
+                NumberField(value: end ?? start, range: range, displayScale: displayScale, unit: unit, fractionDigits: fractionDigits,
                             step: unitsPerPoint * 10, onSet: { onSetEnd($0) })
                     .disabled(end == nil)
                     .opacity(end == nil ? 0.45 : 1)
-                    .help("End position at the clip's last frame")
+                    .help(endHelp)
             }
             HStack(spacing: 8) {
                 InspectorLabel(end == nil ? "" : "Start")

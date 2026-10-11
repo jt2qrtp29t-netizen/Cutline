@@ -63,7 +63,13 @@ nonisolated struct Clip: Identifiable, Codable, Hashable, Sendable {
     var start: Time
     var duration: Time
     var sourceStart: Time
+    /// Constant speed; with speed keyframes (`animation[.speed]`) the speed follows them.
     var speed: Double = 1
+    /// How slowed or sped video shows in-between frames. Clips from before v4.0 keep
+    /// Nearest, so they look exactly as they did.
+    var retiming = RetimeQuality.frameBlend
+    /// Audio keeps its pitch when the speed changes (off: tape-style, pitch follows speed).
+    var preservesPitch = true
     var transform: ClipTransform = .identity
     var crop: CropInsets = .none
     var opacity: Double = 1
@@ -117,6 +123,8 @@ nonisolated struct Clip: Identifiable, Codable, Hashable, Sendable {
         duration = try c.decode(Time.self, forKey: .duration)
         sourceStart = try c.decode(Time.self, forKey: .sourceStart)
         speed = try c.decodeIfPresent(Double.self, forKey: .speed) ?? 1
+        retiming = try c.decodeIfPresent(RetimeQuality.self, forKey: .retiming) ?? .nearest
+        preservesPitch = try c.decodeIfPresent(Bool.self, forKey: .preservesPitch) ?? true
         transform = try c.decodeIfPresent(ClipTransform.self, forKey: .transform) ?? .identity
         crop = try c.decodeIfPresent(CropInsets.self, forKey: .crop) ?? .none
         opacity = try c.decodeIfPresent(Double.self, forKey: .opacity) ?? 1
@@ -166,13 +174,7 @@ nonisolated struct Clip: Identifiable, Codable, Hashable, Sendable {
 
     var end: Time { start + duration }
     var range: TimeRange { TimeRange(start: start, end: end) }
-    var sourceDuration: Time { duration.scaled(by: speed) }
-    var sourceEnd: Time { sourceStart + sourceDuration }
     /// Total pitch shift in cents (100 per semitone).
     var pitchShiftCents: Double { pitchSemitones * 100 + pitchCents }
-
-    /// Source media time shown at a given timeline time.
-    func sourceTime(at timelineTime: Time) -> Time {
-        sourceStart + (timelineTime - start).scaled(by: speed)
-    }
+    // Source time, source span and speed over time: Speed.swift (one time-remap function).
 }

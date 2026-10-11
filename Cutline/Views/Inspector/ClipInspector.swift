@@ -48,18 +48,7 @@ struct ClipInspector: View {
                     audioSections
                 }
 
-                InspectorSection(title: "Speed", onReset: {
-                    editor.setSpeed(1, for: clip.id)
-                }) {
-                    InspectorSlider(
-                        title: "Speed", value: clip.speed, range: 0.25...4, displayScale: 100, unit: "%",
-                        unitsPerPoint: 0.005,
-                        onBegin: editor.beginAdjustment,
-                        onChange: { editor.setSpeed($0, for: clip.id) },
-                        onEnd: { editor.endAdjustment("Change Speed") },
-                        onSet: { editor.setSpeed($0, for: clip.id) }
-                    )
-                }
+                SpeedSection(editor: editor, clip: clip, kind: kind)
             }
             .disabled(clip.isLocked)
         }
@@ -353,5 +342,57 @@ struct ClipInspector: View {
         guard !trimmed.isEmpty else { name = clip.name; return }
         guard trimmed != clip.name else { return }
         editor.adjustClip(clip.id, actionName: "Rename Clip") { $0.name = trimmed }
+    }
+}
+
+/// Speed: one slider and a lock, like Position. Locked, the clip plays at a constant
+/// speed (as it always has). Unlocked, the slider is the start speed and an End slider
+/// appears: the clip ramps from Start to End (the first and last keyframes of its speed
+/// curve, which Speed Change in the Effects tab edits point by point).
+struct SpeedSection: View {
+    let editor: EditorController
+    let clip: Clip
+    let kind: TrackKind
+
+    var body: some View {
+        let ends = editor.animationEnds(of: .speed, in: clip)
+        let id = clip.id
+        InspectorSection(title: "Speed", onReset: { editor.setSpeed(1, for: id) }) {
+            AnimatedValueRow(
+                title: "Speed", start: ends.start, end: ends.end, range: 0.25...4,
+                displayScale: 100, unit: "%", fractionDigits: 0, unitsPerPoint: 0.005,
+                lockHelp: ("Unlock to ramp the speed from Start to End over the clip", "Lock to a constant speed"),
+                endHelp: "Speed at the clip's end",
+                onBegin: editor.beginAdjustment,
+                onEnd: { editor.endAdjustment("Change Speed") },
+                onChangeStart: { editor.setSpeedStart($0, of: id) },
+                onChangeEnd: { editor.setSpeedEnd($0, of: id) },
+                onSetStart: { editor.setSpeedStart($0, of: id) },
+                onSetEnd: { editor.setSpeedEnd($0, of: id) }
+            )
+            if clip.animation.keyframes(for: .speed).count > 2 {
+                Text("A multi-point ramp: Start and End edit its first and last keyframes. Edit the points in Speed Change (Effects tab).")
+                    .font(.system(size: 10))
+                    .foregroundStyle(Theme.textTertiary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            if kind == .video {
+                HStack {
+                    Text("Slow motion")
+                        .font(.system(size: 11))
+                        .foregroundStyle(Theme.textSecondary)
+                        .frame(width: 82, alignment: .leading)
+                    Picker("Slow motion", selection: Binding(get: { clip.retiming },
+                                                             set: { q in editor.adjustClip(id, actionName: "Change Slow Motion") { $0.retiming = q } })) {
+                        ForEach(RetimeQuality.allCases) { Text($0.title).tag($0) }
+                    }
+                    .pickerStyle(.segmented)
+                    .labelsHidden()
+                    .controlSize(.small)
+                }
+                .help("How frames between source frames are shown: repeated (Nearest) or mixed from their neighbors (Frame Blend).")
+            }
+            SpeedRangeNote(clip: clip)
+        }
     }
 }
