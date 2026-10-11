@@ -114,6 +114,10 @@ nonisolated struct ExportSettings: Codable, Hashable, Sendable {
     var audioBitrate = 192
     var audioSampleRate = 48_000
     var audioChannels = 2
+    /// Caption tracks set to burn in are drawn into the picture.
+    var burnsInCaptions = true
+    /// Also writes each caption track as a SubRip (.srt) file next to the movie.
+    var savesSubtitles = false
 
     var range = ExportRangeKind.all
     var inPoint: Time?
@@ -142,6 +146,8 @@ nonisolated struct ExportSettings: Codable, Hashable, Sendable {
         audioBitrate = try c.decodeIfPresent(Int.self, forKey: .audioBitrate) ?? d.audioBitrate
         audioSampleRate = try c.decodeIfPresent(Int.self, forKey: .audioSampleRate) ?? d.audioSampleRate
         audioChannels = try c.decodeIfPresent(Int.self, forKey: .audioChannels) ?? d.audioChannels
+        burnsInCaptions = try c.decodeIfPresent(Bool.self, forKey: .burnsInCaptions) ?? d.burnsInCaptions
+        savesSubtitles = try c.decodeIfPresent(Bool.self, forKey: .savesSubtitles) ?? d.savesSubtitles
         range = try c.decodeIfPresent(ExportRangeKind.self, forKey: .range) ?? d.range
         inPoint = try c.decodeIfPresent(Time.self, forKey: .inPoint)
         outPoint = try c.decodeIfPresent(Time.self, forKey: .outPoint)

@@ -36,6 +36,39 @@ nonisolated struct CaptionStyle: Codable, Hashable, Sendable {
     }
 }
 
+/// Ready-made caption looks. Applying one sets the whole style (still editable after).
+nonisolated enum CaptionPreset: String, CaseIterable, Identifiable, Sendable {
+    case boldCenter, karaoke, lowerThird, clean
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .boldCenter: "Bold Center"
+        case .karaoke: "Karaoke"
+        case .lowerThird: "Lower Third"
+        case .clean: "Clean"
+        }
+    }
+
+    var style: CaptionStyle {
+        var s = CaptionStyle()
+        switch self {
+        case .boldCenter:
+            s.fontName = "Helvetica-Bold"; s.size = 72; s.strokeWidth = 7; s.position = 0.5; s.isUppercase = true
+        case .karaoke:
+            s.fontName = "Helvetica-Bold"; s.size = 68; s.strokeWidth = 7; s.position = 0.72; s.isUppercase = true
+            s.highlightsWord = true; s.highlightColor = RGBAColor(red: 1, green: 0.82, blue: 0.2, alpha: 1)
+        case .lowerThird:
+            s.fontName = "HelveticaNeue-Medium"; s.size = 46; s.strokeWidth = 0; s.showsBox = true; s.position = 0.86
+        case .clean:
+            s.fontName = "HelveticaNeue-Medium"; s.size = 52; s.strokeWidth = 3
+            s.strokeColor = RGBAColor(red: 0, green: 0, blue: 0, alpha: 0.75); s.position = 0.86
+        }
+        return s
+    }
+}
+
 /// A caption track's settings: which audio it captions, how words group into captions,
 /// and how they look.
 nonisolated struct CaptionSettings: Codable, Hashable, Sendable {

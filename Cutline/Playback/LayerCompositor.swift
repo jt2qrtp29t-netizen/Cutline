@@ -74,6 +74,11 @@ nonisolated final class LayerCompositor: NSObject, AVVideoCompositing, @unchecke
                 let mixed = Self.blend(blend.kind, from: from, to: to, progress: blend.progress(at: time), canvas: canvas)
                 output = mixed.composited(over: output)
             }
+            for overlay in instruction.captions {
+                if let caption = CaptionRenderer.image(for: overlay, at: time, renderSize: renderSize) {
+                    output = caption.composited(over: output)
+                }
+            }
         }
 
         let pixelBuffer = try request.renderContext.makeMutablePixelBuffer()

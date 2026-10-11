@@ -317,6 +317,11 @@ nonisolated enum CompositionBuilder {
             }
         }
         let sorted = boundaries.filter { $0 >= .zero && $0 <= duration }.sorted()
+        // Burned-in caption tracks (shown, not hidden or left out by solo), bottom to top.
+        let captionTracks: [(style: CaptionStyle, captions: [Caption])] = state.trackIndices(of: .caption).compactMap { index in
+            guard let settings = state.tracks[index].captions, settings.isBurnedIn, state.isTrackActive(index) else { return nil }
+            return (settings.style, state.captions(onTrack: index))
+        }
 
         /// The layer for a clip, or nil if it has nothing to show. Video clips that
         /// didn't make it into the composition (their file is missing) show a slate.
@@ -367,7 +372,10 @@ nonisolated enum CompositionBuilder {
                       let single = layer(for: clip, onTrack: index) else { continue }
                 layers.append(single)
             }
-            instructions.append(CompositorInstruction(timeRange: span.cmTimeRange, layers: layers))
+            let overlays = captionTracks.map { track in
+                CaptionOverlay(style: track.style, captions: track.captions.filter { $0.range.overlaps(span) })
+            }.filter { !$0.captions.isEmpty }
+            instructions.append(CompositorInstruction(timeRange: span.cmTimeRange, layers: layers, captions: overlays))
         }
 
         let configuration = AVVideoComposition.Configuration(

@@ -1,4 +1,5 @@
 import SwiftUI
+import UniformTypeIdentifiers
 
 /// The Captions tab: the transcript (left), the preview, and the caption track's
 /// settings and style (right). The timeline underneath shows the caption track.
@@ -352,6 +353,18 @@ struct CaptionSettingsForm: View {
     let track: Track
     let settings: CaptionSettings
 
+    private func exportSubtitles() {
+        guard let index = editor.state.tracks.firstIndex(where: { $0.id == track.id }) else { return }
+        let panel = NSSavePanel()
+        panel.allowedContentTypes = [.init(filenameExtension: "srt") ?? .plainText]
+        panel.nameFieldStringValue = "\(editor.state.settings.name).srt"
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        let text = SubtitleFile.srt(editor.state.captions(onTrack: index), uppercase: settings.style.isUppercase)
+        do { try text.write(to: url, atomically: true, encoding: .utf8) } catch {
+            editor.transcriptionMessage = "Couldn't save the captions: \(error.localizedDescription)"
+        }
+    }
+
     private func adjust(_ name: String, _ body: @escaping (inout CaptionSettings) -> Void) {
         editor.adjustCaptions(track.id, actionName: name, body)
     }
@@ -415,6 +428,13 @@ struct CaptionSettingsForm: View {
             }
 
             InspectorSection(title: "Style", onReset: { adjust("Reset Caption Style") { $0.style = CaptionStyle() } }) {
+                HStack(spacing: 6) {
+                    ForEach(CaptionPreset.allCases) { preset in
+                        Button(preset.title) { adjust("Caption Style: \(preset.title)") { $0.style = preset.style } }
+                            .controlSize(.small)
+                            .help("Use the \(preset.title) look (everything stays editable)")
+                    }
+                }
                 FontPicker(postScriptName: settings.style.fontName) { name in adjust("Change Caption Font") { $0.style.fontName = name } }
                 slider("Size", settings.style.size, 16...200, unit: " px", digits: 0, action: "Change Caption Size") { $0.style.size = $1 }
                 ColorRow(title: "Color", color: settings.style.color) { c in adjust("Change Caption Color") { $0.style.color = c } }
@@ -452,6 +472,9 @@ struct CaptionSettingsForm: View {
                     .font(.system(size: 10))
                     .foregroundStyle(Theme.textTertiary)
                     .fixedSize(horizontal: false, vertical: true)
+                Button("Export Captions as .srt…") { exportSubtitles() }
+                    .controlSize(.small)
+                    .help("Saves the captions as a SubRip file, for YouTube or any player.")
             }
         }
     }

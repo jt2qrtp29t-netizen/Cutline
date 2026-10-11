@@ -67,6 +67,13 @@ enum ExportRunner {
         } catch {
             throw ExportError.writingFailed("the finished file couldn’t be saved (\(error.localizedDescription)).")
         }
+        if snapshot.settings.savesSubtitles {
+            for (url, text) in SubtitleFile.files(for: snapshot.state, range: snapshot.range, next: destination) {
+                do { try text.write(to: url, atomically: true, encoding: .utf8) } catch {
+                    throw ExportError.writingFailed("the captions file couldn’t be saved (\(error.localizedDescription)).")
+                }
+            }
+        }
 
         let warnings = snapshot.labEffects.compactMap { item -> String? in
             guard let error = LabStatus.currentError(item.effect.id) else { return nil }

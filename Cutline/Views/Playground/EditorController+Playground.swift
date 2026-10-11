@@ -25,6 +25,10 @@ nonisolated enum ClipTransfer {
         for media in source.media where mediaIDs.contains(media.id) && !target.media.contains(where: { $0.id == media.id }) {
             target.media.append(media)
         }
+        // Their transcripts come along (captions), unless the target already has its own.
+        for id in mediaIDs where target.transcripts[id] == nil {
+            if let transcript = source.transcripts[id] { target.transcripts[id] = transcript }
+        }
 
         var newIDs: [UUID: UUID] = [:]
         var newLinks: [UUID: UUID] = [:]
@@ -95,6 +99,13 @@ extension EditorController {
         let source = state
         sandbox.store.edit(clipIDs.count == 1 ? "Send Clip to Playground" : "Send Clips to Playground") { scratch in
             newIDs = ClipTransfer.copy(clipIDs, from: source, to: &scratch, at: start)
+            // Captions show there too, styled like the project's first caption track.
+            if scratch.trackIndices(of: .caption).isEmpty, let first = source.trackIndices(of: .caption).first,
+               var settings = source.tracks[first].captions {
+                settings.sourceTrackIDs = []
+                let index = scratch.appendCaptionTrack()
+                scratch.tracks[index].captions = settings
+            }
         }
         for (original, copy) in newIDs { playground.origins[copy] = original }
         workspace = .playground

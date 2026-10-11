@@ -116,14 +116,17 @@ nonisolated struct TransitionBlend: Sendable, Equatable {
 nonisolated final class CompositorInstruction: NSObject, AVVideoCompositionInstructionProtocol, @unchecked Sendable {
     let timeRange: CMTimeRange
     let layers: [CompositorLayer]
+    /// Burned-in caption tracks, drawn over everything (CC1 below CC2).
+    let captions: [CaptionOverlay]
     let enablePostProcessing = false
     let containsTweening = true
     let passthroughTrackID = kCMPersistentTrackID_Invalid
     let requiredSourceTrackIDs: [NSValue]?
 
-    init(timeRange: CMTimeRange, layers: [CompositorLayer]) {
+    init(timeRange: CMTimeRange, layers: [CompositorLayer], captions: [CaptionOverlay] = []) {
         self.timeRange = timeRange
         self.layers = layers
+        self.captions = captions
         let sources = layers.compactMap(\.trackID) + layers.compactMap { $0.transition?.incomingTrackID }
             + layers.compactMap { $0.retime?.nextFrameTrackID } + layers.compactMap { $0.transition?.incomingRetime?.nextFrameTrackID }
         self.requiredSourceTrackIDs = sources.isEmpty ? nil : sources.map { NSNumber(value: $0) }

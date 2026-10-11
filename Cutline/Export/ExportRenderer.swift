@@ -105,6 +105,9 @@ nonisolated enum ExportRenderer {
         // The timeline at the export frame rate; the compositor renders each output frame.
         var state = snapshot.state
         state.settings.frameRate = snapshot.frameRate
+        if !snapshot.settings.burnsInCaptions {
+            for index in state.trackIndices(of: .caption) { state.tracks[index].captions?.isBurnedIn = false }
+        }
         let built = try await CompositionBuilder.build(state, urls: snapshot.urls)
         guard let videoComposition = built.videoComposition else { throw ExportError.emptyTimeline }
         let videoTracks = try await built.composition.loadTracks(withMediaType: .video)

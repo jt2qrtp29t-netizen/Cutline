@@ -36,6 +36,7 @@ struct ExportSettingsPanel: View {
                 VStack(alignment: .leading, spacing: 12) {
                     videoSection(settings, project: project)
                     audioSection(settings)
+                    captionsSection(settings)
                     estimateSection(settings, project: project)
                     outputSection(settings)
                     ExportQueueSection()
@@ -137,6 +138,23 @@ struct ExportSettingsPanel: View {
                                                               set: { on in change { $0.networkOptimized = on } }))
                     .font(.system(size: 11))
                     .help("Puts the movie’s index at the start of the file, so it starts playing while it downloads or uploads (web, YouTube and social). It doesn’t change the picture. Adds a quick copy of the finished file.")
+            }
+        }
+    }
+
+    /// Shown when the timeline has caption tracks.
+    @ViewBuilder
+    private func captionsSection(_ settings: ExportSettings) -> some View {
+        if !editor.exportEditor(for: source).state.trackIndices(of: .caption).isEmpty {
+            InspectorSection(title: "Captions") {
+                Toggle("Burn captions into the picture", isOn: Binding(get: { settings.burnsInCaptions },
+                                                                       set: { on in change { $0.burnsInCaptions = on } }))
+                    .font(.system(size: 11))
+                    .help("Draws caption tracks set to burn in (Captions tab) into the exported movie.")
+                Toggle("Save captions as .srt next to the movie", isOn: Binding(get: { settings.savesSubtitles },
+                                                                                set: { on in change { $0.savesSubtitles = on } }))
+                    .font(.system(size: 11))
+                    .help("A SubRip file YouTube and players can show as switchable subtitles, timed to the export.")
             }
         }
     }

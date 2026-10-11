@@ -309,3 +309,130 @@ enum SpeechKit {
         #expect(image.width == 400 && image.height == 300)
     }
 }
+
+@MainActor struct CaptionRenderingTests {
+    /// A 4 s tone on A1, its "transcript" two captions: "hello there" (0.5–1.5 s) and
+    /// "general kenobi" (2–3 s), a caption track over it.
+    private func project(_ style: CaptionStyle = CaptionPreset.boldCenter.style) async throws -> (ProjectState, [UUID: URL]) {
+        let url = try AudioTestKit.tone(seconds: 4, amplitude: 0.1, sameInBoth: true)
+        var (state, _) = try await AudioTestKit.project([url])
+        let media = try #require(state.media.first)
+        state.transcripts[media.id] = Transcript(mediaID: media.id, locale: "en_US", words: [
+            TranscriptWord(text: "hello", start: 0.5, end: 0.9), TranscriptWord(text: "there.", start: 1.0, end: 1.5),
+            TranscriptWord(text: "general", start: 2.0, end: 2.5), TranscriptWord(text: "kenobi", start: 2.5, end: 3.0),
+        ])
+        let index = state.appendCaptionTrack()
+        state.tracks[index].captions?.style = style
+        state.tracks[index].captions?.minDuration = 0
+        return (state, [media.id: url])
+    }
+
+    /// Bright pixels (text) and highlight-colored pixels in a frame.
+    private func count(_ image: CGImage) throws -> (bright: Int, yellow: Int) {
+        var bright = 0, yellow = 0
+        for y in stride(from: 0, to: image.height, by: 4) {
+            for x in stride(from: 0, to: image.width, by: 4) {
+                let p = try TextRenderTests.pixel(image, x: x, y: y)
+                if p.r > 200 && p.g > 200 && p.b > 200 { bright += 1 }
+                if p.r > 200 && p.g > 150 && p.b < 110 { yellow += 1 }
+            }
+        }
+        return (bright, yellow)
+    }
+
+    @Test func burnedInCaptionsShowWhenTheyAreSpoken() async throws {
+        var (state, urls) = try await project()
+        state.settings = ProjectSettings(name: "C", width: 640, height: 360, frameRate: 30)
+        let during = try count(try await ExportProbe.previewFrame(state, urls: urls, at: 1.0))
+        let between = try count(try await ExportProbe.previewFrame(state, urls: urls, at: 1.75))
+        #expect(during.bright > 40, "text on screen: \(during)")
+        #expect(between.bright == 0, "nothing between captions: \(between)")
+        // Not burned in, or the track hidden: nothing drawn.
+        var off = state
+        off.tracks[off.trackIndices(of: .caption)[0]].captions?.isBurnedIn = false
+        #expect(try count(try await ExportProbe.previewFrame(off, urls: urls, at: 1.0)).bright == 0)
+        var hidden = state
+        hidden.tracks[hidden.trackIndices(of: .caption)[0]].isMuted = true
+        #expect(try count(try await ExportProbe.previewFrame(hidden, urls: urls, at: 1.0)).bright == 0)
+    }
+
+    @Test func karaokeHighlightsTheSpokenWord() async throws {
+        var (state, urls) = try await project(CaptionPreset.karaoke.style)
+        state.settings = ProjectSettings(name: "C", width: 640, height: 360, frameRate: 30)
+        let first = try count(try await ExportProbe.previewFrame(state, urls: urls, at: 2.2))   // "GENERAL" highlighted
+        let second = try count(try await ExportProbe.previewFrame(state, urls: urls, at: 2.7))  // "KENOBI" highlighted
+        #expect(first.yellow > 10 && second.yellow > 10, "\(first) \(second)")
+        #expect(first.bright > 10 && second.bright > 10, "the other word stays white")
+        // Without highlighting, no yellow at all.
+        var plain = state
+        plain.tracks[plain.trackIndices(of: .caption)[0]].captions?.style.highlightsWord = false
+        #expect(try count(try await ExportProbe.previewFrame(plain, urls: urls, at: 2.2)).yellow == 0)
+    }
+
+    @Test func captionsScaleWithTheFramesShorterSide() throws {
+        let words = [CaptionWord(wordID: UUID(), mediaID: UUID(), text: "same", start: .zero, end: Time(seconds: 1), startsCaption: false)]
+        let overlay = CaptionOverlay(style: CaptionStyle(), captions: [Caption(words: words, start: .zero, end: Time(seconds: 1))])
+        let wide = try #require(CaptionRenderer.image(for: overlay, at: Time(seconds: 0.5), renderSize: CGSize(width: 1920, height: 1080)))
+        let tall = try #require(CaptionRenderer.image(for: overlay, at: Time(seconds: 0.5), renderSize: CGSize(width: 1080, height: 1920)))
+        #expect(wide.extent.size == tall.extent.size, "vertical exports keep the caption size")
+        let half = try #require(CaptionRenderer.image(for: overlay, at: Time(seconds: 0.5), renderSize: CGSize(width: 960, height: 540)))
+        #expect(abs(half.extent.height * 2 - wide.extent.height) <= 6, "half size (a fixed 2 px margin aside)")
+        // Centered, at the style's height.
+        #expect(abs(wide.extent.midX - 960) < 2 && abs(wide.extent.midY - 1080 * (1 - 0.82)) < 2)
+    }
+
+    @Test func subtitlesAreValidSubRip() {
+        let w = { (t: String, s: Double, e: Double) in
+            CaptionWord(wordID: UUID(), mediaID: UUID(), text: t, start: Time(seconds: s), end: Time(seconds: e), startsCaption: false)
+        }
+        let captions = [Caption(words: [w("Hello", 1, 1.5), w("there.", 1.5, 2)], start: Time(seconds: 1), end: Time(seconds: 2)),
+                        Caption(words: [w("Bye", 3661.25, 3662)], start: Time(seconds: 3661.25), end: Time(seconds: 3662.5))]
+        #expect(SubtitleFile.srt(captions) == "1\n00:00:01,000 --> 00:00:02,000\nHello there.\n\n2\n01:01:01,250 --> 01:01:02,500\nBye\n")
+        // Timed from an export range's start, clipped to it.
+        let ranged = SubtitleFile.srt(captions, range: TimeRange(start: Time(seconds: 1.5), end: Time(seconds: 10)), uppercase: true)
+        #expect(ranged == "1\n00:00:00,000 --> 00:00:00,500\nHELLO THERE.\n")
+    }
+
+    @Test func exportsBurnInMatchThePreviewAndSaveSubtitles() async throws {
+        var (state, urls) = try await project()
+        state.settings = ProjectSettings(name: "C", width: 640, height: 360, frameRate: 30)
+        var settings = ExportPreset.proRes.applied(to: ExportSettings())
+        settings.frameRate = 30
+        settings.savesSubtitles = true
+        let folder = ExportProbe.folder()
+        func export(_ settings: ExportSettings, name: String) async throws -> URL {
+            let range = ExportSnapshot.snapped(TimeRange(start: .zero, end: state.duration), fps: 30)
+            let url = folder.appendingPathComponent("\(name).mov")
+            _ = try await ExportRunner.run(ExportSnapshot(state: state, urls: urls, range: range, settings: settings), to: url,
+                                           cancellation: ExportCancellation(), phase: { _ in }) { _, _ in }
+            return url
+        }
+        let movie = try await export(settings, name: "captions")
+        let exported = try await ExportProbe.frame(movie, at: 1.0)
+        let preview = try await ExportProbe.previewFrame(state, urls: urls, at: 1.0)
+        #expect(try ExportProbe.difference(exported, preview) < 4, "the export draws what the preview does")
+        #expect(try count(exported).bright > 40)
+        let srt = try String(contentsOf: folder.appendingPathComponent("captions.srt"), encoding: .utf8)
+        #expect(srt.contains("00:00:00,500 --> ") && srt.contains("HELLO THERE."), "\(srt)")
+
+        settings.burnsInCaptions = false
+        settings.savesSubtitles = false
+        let clean = try await export(settings, name: "clean")
+        #expect(try count(try await ExportProbe.frame(clean, at: 1.0)).bright == 0, "not burned in")
+        #expect(!FileManager.default.fileExists(atPath: folder.appendingPathComponent("clean.srt").path))
+    }
+
+    @Test func thePlaygroundGetsTranscriptsAndCaptions() async throws {
+        var (state, _) = try await project(CaptionPreset.lowerThird.style)
+        state.id = UUID()
+        let editor = EditorController(store: ProjectStore(state: state))
+        editor.playgroundFolder = FileManager.default.temporaryDirectory.appendingPathComponent("pg-\(UUID().uuidString)")
+        let clip = AudioTestKit.firstClip(state)
+        editor.sendToPlayground([clip.id])
+        let sandbox = try #require(editor.playground?.editor)
+        #expect(sandbox.state.transcripts[clip.mediaID] == state.transcripts[clip.mediaID])
+        let index = try #require(sandbox.state.trackIndices(of: .caption).first)
+        #expect(sandbox.state.tracks[index].captions?.style == CaptionPreset.lowerThird.style)
+        #expect(sandbox.state.captions(onTrack: index).map(\.text) == ["hello there.", "general kenobi"])
+    }
+}
