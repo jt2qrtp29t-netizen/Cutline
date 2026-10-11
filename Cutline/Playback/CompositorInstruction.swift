@@ -25,13 +25,62 @@ nonisolated struct RetimedVideo: Sendable, Equatable {
     var nextFrameTrackID: CMPersistentTrackID
     /// Seconds per source frame.
     var sourceFrameDuration: Double
+    /// The straight pieces the clip's timing was built from (see `RetimeSegment`).
+    var segments: [RetimeSegment]
 
-    /// The source frame shown on the main track at a timeline time, and how far toward
-    /// the next frame the moment is (0…1). The composition is built from the same numbers.
-    static func position(of clip: Clip, at time: Time, frameDuration: Double) -> (frame: Int, fraction: Double) {
-        let p = clip.sourceTime(at: time).seconds / frameDuration
-        let frame = Int((p + 1e-6).rounded(.down))
-        return (frame, min(max(p - Double(frame), 0), 1))
+    /// How far from the frame on the main track toward the next one (0…1) a timeline
+    /// moment is, from the same pieces the composition plays, so picture and mix agree.
+    func fraction(at time: Time) -> Double {
+        guard let segment = segments.last(where: { $0.timelineStart <= time }) ?? segments.first else { return 0 }
+        let p = segment.source(at: time) / sourceFrameDuration
+        return min(max(p - p.rounded(.down), 0), 1)
+    }
+}
+
+/// One straight piece of a clip's timing in the composition: timeline `timelineStart…
+/// timelineEnd` plays source seconds `sourceStart…sourceEnd` at an even rate. A constant
+/// speed is one piece (exactly as before speed ramps); a ramp is a few pieces that join
+/// end to end in the source and stay within a fraction of a frame of the exact curve.
+/// Long pieces let the player decode straight through (no restart per frame).
+nonisolated struct RetimeSegment: Sendable, Equatable {
+    var timelineStart: Time
+    var timelineEnd: Time
+    var sourceStart: Double
+    var sourceEnd: Double
+
+    func source(at time: Time) -> Double {
+        let length = (timelineEnd - timelineStart).seconds
+        guard length > 0 else { return sourceStart }
+        return sourceStart + (time - timelineStart).seconds / length * (sourceEnd - sourceStart)
+    }
+
+    /// Straight pieces for `clip` over timeline `from…to`, each a whole number of output
+    /// frames, split until every point is within `tolerance` source seconds of the curve.
+    static func pieces(for clip: Clip, from: Time, to: Time, frame: Time, tolerance: Double) -> [RetimeSegment] {
+        func make(_ a: Time, _ b: Time) -> RetimeSegment {
+            RetimeSegment(timelineStart: a, timelineEnd: b, sourceStart: clip.sourceTime(at: a).seconds,
+                          sourceEnd: clip.sourceTime(at: b).seconds)
+        }
+        guard clip.hasSpeedRamp, to > from else { return [make(from, to)] }
+        var result: [RetimeSegment] = []
+        func refine(_ a: Time, _ b: Time) {
+            let piece = make(a, b)
+            let frames = (b - a).ticks / max(frame.ticks, 1)
+            var worst = 0.0
+            for k in 1...7 {
+                let t = a + Time(ticks: (b - a).ticks * Int64(k) / 8)
+                worst = max(worst, abs(piece.source(at: t) - clip.sourceTime(at: t).seconds))
+            }
+            if worst <= tolerance || frames < 2 {
+                result.append(piece)
+                return
+            }
+            let middle = a + Time(ticks: frame.ticks * (frames / 2))
+            refine(a, middle)
+            refine(middle, b)
+        }
+        refine(from, to)
+        return result
     }
 }
 

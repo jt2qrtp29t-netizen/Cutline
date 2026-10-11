@@ -47,7 +47,8 @@ struct ClipView: View {
                     if isAudio {
                         Waveform(clip: clip, envelope: audioEnvelope, media: media, layout: layout, visibleRange: visibleRange)
                     } else {
-                        Filmstrip(clip: clip, media: media, layout: layout, visibleRange: visibleRange, fps: editor.fps)
+                        Filmstrip(clip: clip, media: media, layout: layout, visibleRange: visibleRange, fps: editor.fps,
+                                  isDragging: editor.store.isLiveEditing)
                     }
                 }
                 .padding(.horizontal, 2)
@@ -514,6 +515,9 @@ private struct Filmstrip: View {
     let layout: TimelineLayout
     let visibleRange: ClosedRange<CGFloat>
     let fps: Int
+    /// Mid-drag (e.g. a speed change), tiles show the nearest frame already made and new
+    /// ones are made when the drag ends, instead of queuing a decode on every step.
+    let isDragging: Bool
 
     private var cache: ThumbnailCache { .shared }
 
@@ -526,7 +530,7 @@ private struct Filmstrip: View {
             let _ = cache.revision
             ZStack(alignment: .topLeading) {
                 ForEach(tiles, id: \.self) { tile in
-                    if let image = cache.image(for: tile.request) {
+                    if let image = cache.image(for: tile.request, generate: !isDragging) {
                         Image(decorative: image, scale: 2)
                             .resizable()
                             .aspectRatio(contentMode: .fill)
@@ -564,7 +568,7 @@ private struct Filmstrip: View {
             let timelineTime = clip.start + layout.duration(forWidth: x + tileWidth / 2)
             let source = ThumbnailCache.quantize(clip.sourceTime(at: timelineTime), step: step)
                 .clamped(.zero, max(lastFrame, .zero))
-            return Tile(x: x, request: .init(mediaID: media.id, url: url, time: source))
+            return Tile(x: x, request: .init(mediaID: media.id, url: url, time: source, tolerance: Time(ticks: step.ticks / 2)))
         }
     }
 }

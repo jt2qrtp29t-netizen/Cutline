@@ -19,6 +19,11 @@ enum Changelog {
     }
 
     static let entries: [Entry] = [
+        Entry(version: "4.4", title: "Smooth speed changes", tags: [.bugFix], changes: [
+            "Fixed: speed changes could make the preview lag, stutter or freeze. Changing a speed ramp made every filmstrip thumbnail on the clip ask for a new frame on every step of the drag, and with recordings that only store a full frame every few seconds (games, phones) each one meant decoding seconds of video, keeping the video decoder busy long after the drag.",
+            "Thumbnails now wait for the end of a drag (showing the nearest frame meanwhile), are made at most three at a time, newest first, and skip requests for tiles that have scrolled away or moved on.",
+            "Fixed: ramped and Frame Blend clips were cut into a piece per frame for the player, forcing the decoder to start over again and again. Constant speeds are one piece again (as before 4.0), and ramps a few long pieces within an eighth of a frame of the curve: 2–3× faster to decode.",
+        ]),
         Entry(version: "4.3", title: "Clean live scrubbing", tags: [.feature, .bugFix], changes: [
             "Fixed: dragging the playhead could play a rough, low sound over the audio. Each time the scrub audio caught up with the playhead, the jump was timed from a guess of where the sound card was; when the guess was off it cut straight to the new spot with no crossfade, many times a second.",
             "Scrubbing works as it did in v1.8 again: the scrub head lives on the audio thread and moves at the exact sample being played, so every catch-up is a smooth 10 ms crossfade (still landing where the waveform matches).",

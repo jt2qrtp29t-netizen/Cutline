@@ -262,12 +262,18 @@ import Testing
 
         let built = try await CompositionBuilder.build(state, urls: urls)
         #expect(abs(built.composition.duration.seconds - 4) < 0.05)
+        // A handful of long pieces the player can decode straight through, not one per frame.
+        let pieces = built.composition.tracks(withMediaType: .video).map(\.segments.count).max() ?? 0
+        #expect(pieces <= 24, "\(pieces) pieces for a 4 s ramp")
         // Playback and export draw whole frames: check frames spread across the ramp.
         for k in stride(from: 6, to: 118, by: 7) {
             let t = Double(k) / 30
             let rendered = try frameIndex(try await ExportProbe.previewFrame(state, urls: urls, at: t))
-            let expected = Int((clip.sourceTime(at: Time(seconds: t)).seconds * 30).rounded())
-            #expect(rendered == expected, "at \(t) s: frame \(rendered), expected \(expected)")
+            // The source frame in effect at that moment (as at a constant speed), from
+            // straight pieces within 1/8 of a frame of the exact curve.
+            let exact = clip.sourceTime(at: Time(seconds: t)).seconds * 30
+            let allowed = Set([Int((exact - 0.125).rounded(.down)), Int((exact + 0.125).rounded(.down))])
+            #expect(allowed.contains(rendered), "at \(t) s: frame \(rendered), expected \(allowed.sorted())")
         }
 
         // Frame Blend at 50%: on the half-way moments the picture is the two frames' mix.

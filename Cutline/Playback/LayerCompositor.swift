@@ -107,7 +107,7 @@ nonisolated final class LayerCompositor: NSObject, AVVideoCompositing, @unchecke
         var image = buffer.withUnsafeBuffer { CIImage(cvPixelBuffer: $0) }
         // Frame Blend: mix in the next source frame by how far toward it this moment is.
         if let retime = layer.retime, let next = request.sourceReadOnlyPixelBuffer(byTrackID: retime.nextFrameTrackID) {
-            let fraction = RetimedVideo.position(of: layer.clip, at: time, frameDuration: retime.sourceFrameDuration).fraction
+            let fraction = retime.fraction(at: time)
             if fraction > 0.001 {
                 sources.append(next)
                 let nextImage = next.withUnsafeBuffer { CIImage(cvPixelBuffer: $0) }

@@ -121,20 +121,31 @@ nonisolated enum CompositionBuilder {
                 let handles = track.transitionHandles(for: clip.id)
                 var cursor = lanes[lane].cursor
                 let inserted: Bool
-                if clip.hasSpeedRamp || needsFrameBlend(clip) {
-                    let blend = needsFrameBlend(clip) && blendLanes.indices.contains(lane)
-                    var blendCursor = blend ? blendLanes[lane].cursor : .zero
+                let blend = needsFrameBlend(clip) && blendLanes.indices.contains(lane)
+                if clip.hasSpeedRamp || blend {
+                    // A few straight pieces for a ramp (one for a constant speed); Frame
+                    // Blend adds the same pieces one source frame later on its own track.
                     let frameDuration = try await sourceFrameDuration(sourceTrack)
-                    inserted = try await insertRetimed(clip, lead: handles.lead, tail: handles.tail, from: sourceTrack,
-                                                       into: lanes[lane].track, cursor: &cursor,
-                                                       blendInto: blend ? blendLanes[lane].track : nil, blendCursor: &blendCursor,
-                                                       frame: frame, sourceFrame: frameDuration)
-                    if blend {
-                        blendLanes[lane].cursor = blendCursor
-                        if inserted {
-                            blendLanes[lane].used = true
-                            retimed[clip.id] = RetimedVideo(nextFrameTrackID: blendLanes[lane].track.trackID, sourceFrameDuration: frameDuration)
+                    let segments = RetimeSegment.pieces(for: clip, from: clip.start - handles.lead, to: clip.end + handles.tail,
+                                                        frame: frame, tolerance: frameDuration / 8)
+                    if clip.hasSpeedRamp {
+                        inserted = try await insert(segments, of: clip, from: sourceTrack, into: lanes[lane].track, cursor: &cursor, frame: frame)
+                    } else {
+                        inserted = try await insert(clip, lead: handles.lead, tail: handles.tail, from: sourceTrack,
+                                                    into: lanes[lane].track, cursor: &cursor, frame: frame)
+                    }
+                    if blend, inserted {
+                        var blendCursor = blendLanes[lane].cursor
+                        let ahead = segments.map {
+                            RetimeSegment(timelineStart: $0.timelineStart, timelineEnd: $0.timelineEnd,
+                                          sourceStart: $0.sourceStart + frameDuration, sourceEnd: $0.sourceEnd + frameDuration)
                         }
+                        if try await insert(ahead, of: clip, from: sourceTrack, into: blendLanes[lane].track, cursor: &blendCursor, frame: frame) {
+                            blendLanes[lane].used = true
+                            retimed[clip.id] = RetimedVideo(nextFrameTrackID: blendLanes[lane].track.trackID,
+                                                            sourceFrameDuration: frameDuration, segments: segments)
+                        }
+                        blendLanes[lane].cursor = blendCursor
                     }
                 } else {
                     inserted = try await insert(clip, lead: handles.lead, tail: handles.tail, from: sourceTrack,
@@ -232,83 +243,52 @@ nonisolated enum CompositionBuilder {
         return rate > 0 ? 1 / Double(rate) : 1.0 / 30
     }
 
-    /// Inserts a retimed clip (a speed ramp, or Frame Blend at a constant speed) frame by
-    /// frame: each output frame shows the source frame the time-remap function reaches
-    /// there (rounded to the nearest frame, or, for Frame Blend, the frame before it, with
-    /// the frame after it on `blendInto`). Runs of frames that follow on from each other
-    /// (or hold) are merged into one segment.
-    private static func insertRetimed(_ clip: Clip, lead: Time, tail: Time, from sourceTrack: AVAssetTrack,
-                                      into track: AVMutableCompositionTrack, cursor: inout Time,
-                                      blendInto blendTrack: AVMutableCompositionTrack?, blendCursor: inout Time,
-                                      frame: Time, sourceFrame: Double) async throws -> Bool {
+    /// Inserts straight pieces of a retimed clip: each piece is one scaled source range,
+    /// so the player decodes straight through it. Where a piece reaches before or past
+    /// the media, the first or last frame holds.
+    private static func insert(_ segments: [RetimeSegment], of clip: Clip, from sourceTrack: AVAssetTrack,
+                               into track: AVMutableCompositionTrack, cursor: inout Time, frame: Time) async throws -> Bool {
         let trackRange = try await sourceTrack.load(.timeRange)
         let available = TimeRange(start: Time(trackRange.start), end: Time(trackRange.end))
-        guard available.duration > .zero else { return false }
-        let firstFrame = Int((available.start.seconds / sourceFrame + 1e-6).rounded(.up))
-        // The last frame that starts before the end of the media.
-        let lastFrame = max(firstFrame, Int((available.end.seconds / sourceFrame - 1e-6).rounded(.up)) - 1)
-        let blend = blendTrack != nil
-        let timelineStart = clip.start - lead
-        let timelineEnd = clip.end + tail
-
-        // The source frame for each output frame. Each output frame's segment is centered
-        // on its frame time (half a frame either side), so the player's rounding of segment
-        // edges can never make a frame time land in the neighboring segment.
-        var outputs: [(at: Time, length: Time, frame: Int)] = []
-        let half = Time(ticks: frame.ticks / 2)
-        var t = timelineStart
-        var edge = timelineStart
-        while t < timelineEnd {
-            let index: Int
-            if blend {
-                index = RetimedVideo.position(of: clip, at: t, frameDuration: sourceFrame).frame
-            } else {
-                index = Int((clip.sourceTime(at: t).seconds / sourceFrame).rounded())
-            }
-            let next = min(t + frame, timelineEnd)
-            let segmentEnd = next >= timelineEnd ? timelineEnd : min(next - half, timelineEnd)
-            if segmentEnd > edge {
-                outputs.append((edge, segmentEnd - edge, min(max(index, firstFrame), lastFrame)))
-                edge = segmentEnd
-            }
-            t = next
+        guard available.duration > .zero, let first = segments.first, let last = segments.last else { return false }
+        if first.timelineStart > cursor {
+            track.insertEmptyTimeRange(TimeRange(start: cursor, end: first.timelineStart).cmTimeRange)
         }
-        guard !outputs.isEmpty else { return false }
-
-        func fill(_ target: AVMutableCompositionTrack, cursor: inout Time, offset: Int) throws {
-            if timelineStart > cursor {
-                target.insertEmptyTimeRange(TimeRange(start: cursor, end: timelineStart).cmTimeRange)
+        let holdFrame = min(frame, available.duration)
+        func place(_ range: TimeRange, at: Time, lasting length: Time) throws {
+            guard length > .zero, range.duration > .zero else { return }
+            do {
+                try track.insertTimeRange(range.cmTimeRange, of: sourceTrack, at: at.cmTime)
+            } catch {
+                throw BuildError.insertFailed(clip: clip.name, kind: "video", range: range, at: at, underlying: error)
             }
-            var i = 0
-            while i < outputs.count {
-                // Merge a run that holds one frame, or steps one frame per output frame.
-                var j = i + 1
-                let step = j < outputs.count ? outputs[j].frame - outputs[i].frame : 0
-                if step == 0 || step == 1 {
-                    while j < outputs.count && outputs[j].frame - outputs[j - 1].frame == step { j += 1 }
-                }
-                let first = min(outputs[i].frame + offset, lastFrame)
-                let count = step == 1 ? (j - i) : 1
-                let sourceStart = CMTime(seconds: Double(first) * sourceFrame, preferredTimescale: 600_000)
-                let sourceLength = CMTime(seconds: Double(min(count, lastFrame - first + 1)) * sourceFrame, preferredTimescale: 600_000)
-                let at = outputs[i].at
-                let length = outputs[j - 1].at + outputs[j - 1].length - at
-                let range = CMTimeRange(start: sourceStart, duration: sourceLength)
-                do {
-                    try target.insertTimeRange(range, of: sourceTrack, at: at.cmTime)
-                } catch {
-                    throw BuildError.insertFailed(clip: clip.name, kind: "video", range: TimeRange(start: Time(sourceStart), end: Time(sourceStart + sourceLength)),
-                                                  at: at, underlying: error)
-                }
-                if sourceLength != length.cmTime {
-                    target.scaleTimeRange(CMTimeRange(start: at.cmTime, duration: sourceLength), toDuration: length.cmTime)
-                }
-                i = j
+            if range.duration != length {
+                track.scaleTimeRange(CMTimeRange(start: at.cmTime, duration: range.duration.cmTime), toDuration: length.cmTime)
             }
-            cursor = timelineEnd
         }
-        try fill(track, cursor: &cursor, offset: 0)
-        if let blendTrack { try fill(blendTrack, cursor: &blendCursor, offset: 1) }
+        for segment in segments {
+            let length = segment.timelineEnd - segment.timelineStart
+            guard length > .zero else { continue }
+            let wanted = (segment.sourceStart, segment.sourceEnd)
+            let low = max(wanted.0, available.start.seconds), high = min(wanted.1, available.end.seconds)
+            let span = wanted.1 - wanted.0
+            if high <= low || span <= 0 {
+                // Entirely before or after the media: hold its first or last frame.
+                let hold = wanted.0 < available.start.seconds
+                    ? TimeRange(start: available.start, end: available.start + holdFrame)
+                    : TimeRange(start: available.end - holdFrame, end: available.end)
+                try place(hold, at: segment.timelineStart, lasting: length)
+                continue
+            }
+            // Timeline split points where the piece enters and leaves the media.
+            let enter = segment.timelineStart + Time(ticks: Int64((Double(length.ticks) * (low - wanted.0) / span).rounded()))
+            let leave = segment.timelineStart + Time(ticks: Int64((Double(length.ticks) * (high - wanted.0) / span).rounded()))
+            try place(TimeRange(start: available.start, end: available.start + holdFrame), at: segment.timelineStart,
+                      lasting: enter - segment.timelineStart)
+            try place(TimeRange(start: Time(seconds: low), end: Time(seconds: high)), at: enter, lasting: leave - enter)
+            try place(TimeRange(start: available.end - holdFrame, end: available.end), at: leave, lasting: segment.timelineEnd - leave)
+        }
+        cursor = last.timelineEnd
         return true
     }
 

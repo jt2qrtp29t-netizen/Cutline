@@ -30,6 +30,9 @@ final class ThumbnailCache {
         /// Source time, already quantized by the caller so nearby requests share a key.
         let time: Time
         var size: Size = .strip
+        /// How far from `time` the frame may be (half a tile): the decoder can use a nearby
+        /// full frame instead of decoding seconds of long-GOP video for each thumbnail.
+        var tolerance: Time = Time(seconds: 0.25)
     }
 
     /// Bumped (at most a few times per second) whenever new images land.
@@ -43,14 +46,33 @@ final class ThumbnailCache {
         return cache
     }()
     @ObservationIgnored private var generators: [String: AVAssetImageGenerator] = [:]
-    @ObservationIgnored private var inFlight: Set<String> = []
+    /// Waiting requests by key, with when they were last asked for.
+    @ObservationIgnored private var pending: [String: (request: Request, asked: ContinuousClock.Instant)] = [:]
+    @ObservationIgnored private var running: Set<String> = []
+    /// Frames that couldn't be made (not retried on every redraw).
+    @ObservationIgnored private var failed: Set<String> = []
+    /// Cached times per media and size, to offer the nearest frame while a new one is made.
+    @ObservationIgnored private var cachedTimes: [String: [Int64]] = [:]
     @ObservationIgnored private var revisionScheduled = false
 
-    func image(for request: Request) -> CGImage? {
+    /// Decodes at once at most; the hardware decoder is shared with playback.
+    static let maximumRunning = 3
+    /// Requests nobody has asked for again within this long are dropped (scrolled away,
+    /// or a speed drag moved every tile on).
+    static let staleAfter = Duration.milliseconds(1_500)
+
+    /// The thumbnail if it's ready. Otherwise starts making it (unless `generate` is off,
+    /// e.g. mid-drag) and returns the nearest frame already made for that media, if any.
+    func image(for request: Request, generate: Bool = true) -> CGImage? {
         let key = Self.key(for: request)
         if let image = cache.object(forKey: key as NSString) { return image }
-        generate(request, key: key)
-        return nil
+        if generate { enqueue(request, key: key) }
+        return nearest(to: request)
+    }
+
+    /// Whether this exact frame has been made (not just a nearby stand-in).
+    func isCached(_ request: Request) -> Bool {
+        cache.object(forKey: Self.key(for: request) as NSString) != nil
     }
 
     /// Picks a quantization step so a strip of tiles reuses cached frames while zooming.
@@ -69,45 +91,79 @@ final class ThumbnailCache {
     func forget(_ ids: Set<UUID>) {
         let prefixes = ids.map(\.uuidString)
         func matches(_ key: String) -> Bool { prefixes.contains { key.hasPrefix($0) } }
-        inFlight = inFlight.filter { !matches($0) }
+        pending = pending.filter { !matches($0.key) }
+        failed = failed.filter { !matches($0) }
+        cachedTimes = cachedTimes.filter { !matches($0.key) }
         generators = generators.filter { !matches($0.key) }
         revision &+= 1
     }
 
     private static func key(for request: Request) -> String {
         // The file path is part of the key so a relinked item never shows the old file's frames.
-        "\(request.mediaID.uuidString)@\(request.time.ticks)/\(request.size.rawValue)#\(request.url.path.hashValue)"
+        "\(group(for: request))@\(request.time.ticks)"
+    }
+
+    private static func group(for request: Request) -> String {
+        "\(request.mediaID.uuidString)/\(request.size.rawValue)#\(request.url.path.hashValue)"
+    }
+
+    private func nearest(to request: Request) -> CGImage? {
+        let group = Self.group(for: request)
+        guard let times = cachedTimes[group], !times.isEmpty else { return nil }
+        let best = times.min { abs($0 - request.time.ticks) < abs($1 - request.time.ticks) }!
+        return cache.object(forKey: "\(group)@\(best)" as NSString)
     }
 
     private func generator(for request: Request) -> AVAssetImageGenerator {
-        let key = "\(request.mediaID.uuidString)/\(request.size.rawValue)#\(request.url.path.hashValue)"
+        let tolerance = min(max(request.tolerance, Time(seconds: 0.25)), Time(seconds: 2))
+        let key = "\(Self.group(for: request))~\(tolerance.ticks)"
         if let existing = generators[key] { return existing }
         let generator = AVAssetImageGenerator(asset: AVURLAsset(url: request.url))
         generator.appliesPreferredTrackTransform = true
         generator.maximumSize = request.size.maximumPixels
-        generator.requestedTimeToleranceBefore = CMTime(value: 1, timescale: 4)
-        generator.requestedTimeToleranceAfter = CMTime(value: 1, timescale: 4)
+        generator.requestedTimeToleranceBefore = tolerance.cmTime
+        generator.requestedTimeToleranceAfter = tolerance.cmTime
         generators[key] = generator
         return generator
     }
 
-    private func generate(_ request: Request, key: String) {
-        guard !inFlight.contains(key) else { return }
-        inFlight.insert(key)
-        let generator = generator(for: request)
-        generator.generateCGImageAsynchronously(for: request.time.cmTime) { [weak self] image, _, _ in
-            Task { @MainActor in
-                self?.finish(key: key, image: image)
+    private func enqueue(_ request: Request, key: String) {
+        guard !failed.contains(key), !running.contains(key) else { return }
+        pending[key] = (request, ContinuousClock.now)
+        pump()
+    }
+
+    /// Starts the most recently wanted requests, a few at a time.
+    private func pump() {
+        let now = ContinuousClock.now
+        pending = pending.filter { now - $0.value.asked < Self.staleAfter }
+        while running.count < Self.maximumRunning,
+              let next = pending.max(by: { $0.value.asked < $1.value.asked }) {
+            pending[next.key] = nil
+            running.insert(next.key)
+            let key = next.key, request = next.value.request
+            generator(for: request).generateCGImageAsynchronously(for: request.time.cmTime) { [weak self] image, _, _ in
+                Task { @MainActor in
+                    self?.finish(key: key, request: request, image: image)
+                }
             }
         }
     }
 
-    private func finish(key: String, image: CGImage?) {
-        // Failed keys stay in `inFlight` so a missing frame is not retried on every redraw.
-        guard let image else { return }
-        inFlight.remove(key)
-        cache.setObject(image, forKey: key as NSString, cost: image.bytesPerRow * image.height)
-        scheduleRevision()
+    private func finish(key: String, request: Request, image: CGImage?) {
+        running.remove(key)
+        if let image {
+            cache.setObject(image, forKey: key as NSString, cost: image.bytesPerRow * image.height)
+            let group = Self.group(for: request)
+            var times = cachedTimes[group] ?? []
+            if !times.contains(request.time.ticks) { times.append(request.time.ticks) }
+            if times.count > 2_000 { times.removeFirst(times.count - 2_000) }
+            cachedTimes[group] = times
+            scheduleRevision()
+        } else {
+            failed.insert(key)
+        }
+        pump()
     }
 
     /// Coalesces many thumbnail arrivals into one redraw.
