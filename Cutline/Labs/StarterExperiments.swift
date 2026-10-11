@@ -218,17 +218,12 @@ nonisolated enum LabGlitch {
 /// Core Image kernels compiled from Metal source at runtime, by source text.
 nonisolated final class KernelCache: @unchecked Sendable {
     static let shared = KernelCache()
-    private let lock = NSLock()
-    private var compiled: [String: Result<[CIKernel], Error>] = [:]
+    /// Least recently used first, so shaders in use are never recompiled mid-playback.
+    private let compiled = LRUCache<String, Result<[CIKernel], Error>>(countLimit: 64)
 
     /// The kernels in `source`, compiling it the first time. Throws the compiler's message.
     func kernels(for source: String) throws -> [CIKernel] {
-        lock.lock()
-        if let cached = compiled[source] {
-            lock.unlock()
-            return try cached.get()
-        }
-        lock.unlock()
+        if let cached = compiled[source] { return try cached.get() }
         let result: Result<[CIKernel], Error> = Result {
             do {
                 let kernels = try CIKernel.kernels(withMetalString: source)
@@ -240,10 +235,7 @@ nonisolated final class KernelCache: @unchecked Sendable {
                 throw ExperimentError.message(Self.describe(error))
             }
         }
-        lock.lock()
-        if compiled.count > 64 { compiled.removeAll() }
-        compiled[source] = result
-        lock.unlock()
+        compiled.set(result, for: source)
         return try result.get()
     }
 

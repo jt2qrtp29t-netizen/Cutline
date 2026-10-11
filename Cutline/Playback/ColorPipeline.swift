@@ -254,23 +254,14 @@ nonisolated enum ColorPipeline {
 
     static let cubes = CubeCache()
 
-    /// Generated cube data, reused while a grade doesn't change. Thread-safe: the
-    /// compositor renders on its own queue.
+    /// Generated cube data, reused while a grade doesn't change. Thread-safe: frames
+    /// render on several queues. The least recently used cubes go first, so an animated
+    /// grade (a new cube every frame) can't push out the steady grades of other clips.
     final class CubeCache: @unchecked Sendable {
-        private let lock = NSLock()
-        private var cubes: [CubeKey: Data] = [:]
-        private static let limit = 64
+        private let cache = LRUCache<CubeKey, Data>(countLimit: 128)
 
         func data(for key: CubeKey, _ transform: (SIMD3<Double>) -> SIMD3<Double>) -> Data {
-            lock.lock()
-            if let data = cubes[key] { lock.unlock(); return data }
-            lock.unlock()
-            let data = ColorPipeline.makeCube(transform)
-            lock.lock()
-            if cubes.count >= Self.limit { cubes.removeAll() }
-            cubes[key] = data
-            lock.unlock()
-            return data
+            cache.value(for: key) { ColorPipeline.makeCube(transform) }
         }
     }
 

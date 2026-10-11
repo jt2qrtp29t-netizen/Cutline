@@ -6,6 +6,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.appearance = NSAppearance(named: .darkAqua)
         // Projects are created from the launch window, never as untitled documents.
         UserDefaults.standard.register(defaults: ["NSShowAppCentricOpenPanelInsteadOfUntitledFile": false])
+        // Clears out cache files for old versions of media and ones unused for months.
+        DiskCache.pruneAll()
     }
 
     func applicationShouldOpenUntitledFile(_ sender: NSApplication) -> Bool {

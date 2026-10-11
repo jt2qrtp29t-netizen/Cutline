@@ -52,9 +52,9 @@ final class AudioSourceCache {
         return task
     }
 
-    nonisolated private static var proxyFolder: URL {
-        FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent("Cutline/AudioProxies", isDirectory: true)
+    /// Forgets every prepared file (after the cache folder was cleared).
+    func forgetAll() {
+        forget(Set(ready.keys).union(preparing.keys))
     }
 
     @concurrent
@@ -62,11 +62,13 @@ final class AudioSourceCache {
         if (try? AVAudioFile(forReading: url)) != nil { return url }
 
         // Name the proxy after the source file's identity so edits to the file invalidate it.
-        let values = try? url.resourceValues(forKeys: [.contentModificationDateKey, .fileSizeKey])
-        let stamp = "\(Int(values?.contentModificationDate?.timeIntervalSince1970 ?? 0))-\(values?.fileSize ?? 0)"
-        let folder = proxyFolder
+        let stamp = DiskCache.stamp(for: url) ?? "0-0"
+        let folder = DiskCache.audio.folder
         let proxy = folder.appendingPathComponent("\(id.uuidString)-\(stamp).caf")
-        if FileManager.default.fileExists(atPath: proxy.path) { return proxy }
+        if FileManager.default.fileExists(atPath: proxy.path) {
+            DiskCache.touch(proxy)
+            return proxy
+        }
         try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         let temp = folder.appendingPathComponent("\(UUID().uuidString).tmp.caf")
         // Reading waits for each sample, so it runs on a thread of its own.

@@ -85,8 +85,7 @@ final class GeneratedMediaLibrary {
 
     let folder: URL
 
-    init(folder: URL = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent("Cutline/Media", isDirectory: true)) {
+    init(folder: URL = DiskCache.media.folder) {
         self.folder = folder
     }
 
@@ -94,10 +93,7 @@ final class GeneratedMediaLibrary {
 
     /// Where the `kind` copy of `media` lives (whether or not it exists yet).
     func fileURL(for media: MediaItem, kind: GeneratedMediaKind) -> URL? {
-        let source = MediaURLCache.shared.url(for: media)
-        guard let values = try? source.resourceValues(forKeys: [.contentModificationDateKey, .fileSizeKey]),
-              let size = values.fileSize else { return nil }
-        let stamp = "\(Int(values.contentModificationDate?.timeIntervalSince1970 ?? 0))-\(size)"
+        guard let stamp = DiskCache.stamp(for: MediaURLCache.shared.url(for: media)) else { return nil }
         return folder.appendingPathComponent("\(media.id.uuidString)-\(stamp)-\(kind.rawValue).mov")
     }
 

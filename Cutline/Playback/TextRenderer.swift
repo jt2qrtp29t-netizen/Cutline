@@ -9,17 +9,15 @@ import os
 /// - outside: a double-width stroke under the fill, so only its outer half shows
 /// - inside: a double-width stroke clipped to the glyphs, so only its inner half shows
 nonisolated enum TextRenderer {
-    private static let cache = OSAllocatedUnfairLock<[TextStyle: CIImage]>(initialState: [:])
+    /// Rasterized text by style, up to 256 MB, least recently used first.
+    private static let cache = LRUCache<TextStyle, CIImage>(countLimit: 256, costLimit: 256 << 20)
 
     /// Cached image of the text, with its origin at (0, 0); nil for empty text.
     static func image(for style: TextStyle) -> CIImage? {
-        if let cached = cache.withLock({ $0[style] }) { return cached }
+        if let cached = cache[style] { return cached }
         guard let cgImage = rasterize(style) else { return nil }
         let image = CIImage(cgImage: cgImage)
-        cache.withLock { cache in
-            if cache.count > 64 { cache.removeAll() }
-            cache[style] = image
-        }
+        cache.set(image, for: style, cost: cgImage.bytesPerRow * cgImage.height)
         return image
     }
 

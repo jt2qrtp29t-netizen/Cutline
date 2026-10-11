@@ -38,6 +38,8 @@ final class ThumbnailCache {
     @ObservationIgnored private let cache: NSCache<NSString, CGImage> = {
         let cache = NSCache<NSString, CGImage>()
         cache.countLimit = 4000
+        // Bounded by memory too (images are added with their size as the cost).
+        cache.totalCostLimit = 256 << 20
         return cache
     }()
     @ObservationIgnored private var generators: [String: AVAssetImageGenerator] = [:]
@@ -104,7 +106,7 @@ final class ThumbnailCache {
         // Failed keys stay in `inFlight` so a missing frame is not retried on every redraw.
         guard let image else { return }
         inFlight.remove(key)
-        cache.setObject(image, forKey: key as NSString)
+        cache.setObject(image, forKey: key as NSString, cost: image.bytesPerRow * image.height)
         scheduleRevision()
     }
 

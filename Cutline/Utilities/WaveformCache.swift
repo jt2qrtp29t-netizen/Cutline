@@ -30,12 +30,39 @@ final class WaveformCache {
         guard media.hasAudio, !loading.contains(media.id) else { return nil }
         loading.insert(media.id)
         Task {
-            let result = await Self.readPeaks(from: url) ?? []
+            let result = await Self.loadOrRead(url, id: media.id)
             peaks[media.id] = result
             loading.remove(media.id)
             revision &+= 1
         }
         return nil
+    }
+
+    /// Forgets every computed waveform (after the cache folder was cleared).
+    func forgetAll() {
+        forget(Set(peaks.keys))
+    }
+
+    /// Peaks saved on disk from an earlier session, or read from the file and saved.
+    @concurrent
+    nonisolated private static func loadOrRead(_ url: URL, id: UUID) async -> [Float] {
+        let file = DiskCache.stamp(for: url).map {
+            DiskCache.waveforms.folder.appendingPathComponent("\(id.uuidString)-\($0).peaks")
+        }
+        if let file, let data = try? Data(contentsOf: file), data.count % MemoryLayout<Float>.size == 0 {
+            DiskCache.touch(file)
+            return data.withUnsafeBytes { Array($0.bindMemory(to: Float.self)) }
+        }
+        // Reading waits for each sample, so it runs on a thread of its own.
+        let peaks = await withTaskExecutorPreference(MediaWorkThread(label: "app.cutline.waveform")) {
+            await readPeaks(from: url)
+        }
+        guard let peaks else { return [] }
+        if let file {
+            try? FileManager.default.createDirectory(at: DiskCache.waveforms.folder, withIntermediateDirectories: true)
+            try? peaks.withUnsafeBytes { Data($0) }.write(to: file, options: .atomic)
+        }
+        return peaks
     }
 
     /// Decodes the first audio track to mono floats and keeps the peak of each bucket,

@@ -18,6 +18,9 @@ enum Changelog {
             "Twice as fast drawing of video frames in 4K: the GPU now reads frames in the decoder’s own format instead of converting each one first. 10-bit footage keeps its full precision, and clips with transparency still work.",
             "Optimized media (full size ProRes 422) and proxy media (half size ProRes 422 Proxy): right-click a clip in the media bin to create them, with progress and status tags on each item. They keep every frame time of the original, so they stand in anywhere on the timeline.",
             "Choose what playback reads with the new film button next to the mute button: Original, Optimized or Proxy (falling back to the original when there’s no copy). The viewer says when it shows copies, and exports always use the original files.",
+            "A Performance tab in Parameters: what this Mac’s media engine decodes and encodes in hardware, the playback media choice, creating optimized or proxy media on import, cache sizes with Clear buttons, and resetting learned export speeds.",
+            "Smarter rendering caches: color grades, compiled shaders and text images now drop the least recently used entries instead of starting over when full, so an animated grade no longer forces every other clip’s grade to be rebuilt each frame. Thumbnails are capped by memory.",
+            "Waveforms are saved to disk, so reopened projects draw them at once. Cache files made from older versions of a file are removed automatically, as are audio previews and waveforms unused for two months.",
             "Fixed: exports could freeze when several frames were drawn or several exports ran at once, and an export could fail with “the audio mix stopped early” on a busy Mac.",
         ]),
         Entry(version: "3.4", title: "Faster exports", changes: [

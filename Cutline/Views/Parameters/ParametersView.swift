@@ -10,6 +10,7 @@ struct ParametersView: View {
             Tab("Timeline", systemImage: "timeline.selection", value: "timeline") { TimelineParameters() }
             Tab("Playback", systemImage: "play.circle", value: "playback") { PlaybackParameters() }
             Tab("Mouse", systemImage: "computermouse", value: "mouse") { MouseParameters() }
+            Tab("Performance", systemImage: "gauge.with.dots.needle.67percent", value: "performance") { PerformanceParameters() }
         }
         .frame(width: 520)
         .preferredColorScheme(.dark)
@@ -140,7 +141,7 @@ private struct ParameterSlider: View {
     }
 }
 
-private struct ParameterNote: View {
+struct ParameterNote: View {
     let text: String
     init(_ text: String) { self.text = text }
 
