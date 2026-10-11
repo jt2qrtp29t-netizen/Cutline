@@ -183,6 +183,17 @@ nonisolated final class FakeOllama: URLProtocol, @unchecked Sendable {
         let message = try #require((body["messages"] as? [[String: Any]])?.first)
         #expect((message["images"] as? [String])?.count == 8 && body["format"] is [String: Any] && body["stream"] as? Bool == false)
         #expect((message["content"] as? String)?.contains("final boss") == true)
+        // Enough context for the images (Ollama's default 4K isn't), and the model stays loaded.
+        let options = try #require(body["options"] as? [String: Any])
+        #expect((options["num_ctx"] as? Int ?? 0) >= 8 * 800 && body["keep_alive"] as? String == "10m")
+        #expect(OllamaClient.contextSize(images: 12, promptCharacters: 2_000) >= 12 * 800 + 600)
+        // An error from Ollama is told plainly.
+        FakeOllama.set(tags: [("qwen2.5vl:7b", ["vision"])])
+        FakeOllama.lock.withLock {
+            FakeOllama.routes["/api/chat"] = (400, Data(#"{"error":{"code":400,"message":"model is busy"}}"#.utf8))
+        }
+        let refused = await ThumbnailPicker.pick(from: list, client: FakeOllama.client())
+        #expect(refused.note?.contains("model is busy") == true, "\(refused.note ?? "")")
 
         // Out-of-range and repeated frames are dropped; the rest comes from Vision's ranking. No title unless asked.
         FakeOllama.set(tags: [("qwen2.5vl:7b", ["vision"])], chat: #"{"picks":[{"frame":3,"reason":"ok"},{"frame":3,"reason":"again"},{"frame":42,"reason":"no"}],"title":"X"}"#)
@@ -194,12 +205,46 @@ nonisolated final class FakeOllama: URLProtocol, @unchecked Sendable {
         #expect(garbled.picks.map(\.candidate.time) == [0, 1, 2] && garbled.note?.contains("couldn't be used") == true)
     }
 
+    @Test func blankFramesAreNeverOffered() async throws {
+        var list = candidates()
+        // Two of the eight are black (Vision rates them very low): only six frames go to the model.
+        list[1] = ThumbnailCandidate(time: 1, image: list[1].image, aesthetics: -0.9, isUtility: false, face: 0, loudness: 1,
+                                     isExcited: true, score: 0.9, featurePrint: nil)
+        list[3] = ThumbnailCandidate(time: 3, image: list[3].image, aesthetics: 0.4, isUtility: true, face: 0, loudness: 0,
+                                     isExcited: false, score: 0.8, featurePrint: nil)
+        FakeOllama.set(tags: [("qwen2.5vl:7b", ["vision"])], chat: #"{"picks":[{"frame":1,"reason":"a"},{"frame":2,"reason":"b"},{"frame":3,"reason":"c"}]}"#)
+        let picks = await ThumbnailPicker.pick(from: list, client: FakeOllama.client())
+        let sent = try #require(FakeOllama.lock.withLock { (FakeOllama.lastChatBody?["messages"] as? [[String: Any]])?.first?["images"] as? [String] })
+        #expect(sent.count == 6)
+        #expect(!picks.picks.contains { $0.candidate.time == 1 || $0.candidate.time == 3 }, "\(picks.picks.map(\.candidate.time))")
+        #expect((FakeOllama.lock.withLock { FakeOllama.lastChatBody?["messages"] as? [[String: Any]] }?.first?["content"] as? String)?
+            .contains("Never choose a black") == true)
+        // Too few usable frames: Vision's ranking, usable ones first, no model needed.
+        let few = Array(list.prefix(4))
+        let fallback = await ThumbnailPicker.pick(from: few, client: FakeOllama.client())
+        #expect(fallback.model == nil && fallback.picks.first?.candidate.time == 0 && fallback.picks.map(\.candidate.time).contains(2))
+    }
+
+    @Test func theBarIsSetByTheVideosOwnBestFrames() {
+        func c(_ a: Double) -> ThumbnailCandidate {
+            ThumbnailCandidate(time: 0, image: candidates()[0].image, aesthetics: a, isUtility: false, face: 0, loudness: 0,
+                               isExcited: false, score: 0, featurePrint: nil)
+        }
+        // Bright, well-shot video: a blurred frame (−0.26) falls below the bar.
+        #expect(ThumbnailPicker.aestheticsFloor(for: [0.76, 0.75, 0.61, -0.26].map(c)) > -0.26)
+        // Dark game footage: frames around −0.3 are its normal, and stay in.
+        #expect(ThumbnailPicker.aestheticsFloor(for: [0.0, -0.1, -0.2, -0.3, -0.35].map(c)) < -0.35)
+        // Never lower than the fixed minimum.
+        #expect(ThumbnailPicker.aestheticsFloor(for: [-0.6, -0.7, -0.8].map(c)) == ThumbnailPicker.minimumAesthetics)
+    }
+
     @Test func framesGoOutSmall() throws {
         let big = try #require(CGContext(data: nil, width: 1280, height: 720, bitsPerComponent: 8, bytesPerRow: 0,
                                          space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue)?.makeImage())
         let jpeg = try #require(OllamaClient.jpeg(big, maxSide: 512))
         let decoded = try #require(CGImageSourceCreateWithData(jpeg as CFData, nil).flatMap { CGImageSourceCreateImageAtIndex($0, 0, nil) })
         #expect(decoded.width == 512 && decoded.height == 288)
+        #expect(try #require(OllamaClient.jpeg(big, maxSide: 448)).count < 40_000, "small enough to send a dozen")
     }
 
     /// With the real local Ollama and a vision model installed: it picks 3 of the real photos' frames.
@@ -209,13 +254,22 @@ nonisolated final class FakeOllama: URLProtocol, @unchecked Sendable {
             return
         }
         let a = try ThumbnailFinderTests.photo(ThumbnailFinderTests.photoA), b = try ThumbnailFinderTests.photo(ThumbnailFinderTests.photoB)
-        let url = try await ThumbnailFinderTests.movie([a, ThumbnailFinderTests.flat(0.5), b, a.applyingGaussianBlur(sigma: 30).cropped(to: a.extent),
-                                                        ThumbnailFinderTests.flat(0.2), b.applyingFilter("CIColorInvert")])
-        let candidates = try await ThumbnailFinder.candidates(in: url, samples: 24, keep: 6)
+        // Five different-looking shots (photos and crops of one) among blank and blurred ones.
+        let plain = try ThumbnailFinderTests.photo(URL(fileURLWithPath: "/System/Library/PrivateFrameworks/SystemDesktopAppearance.framework/Versions/A/Resources/DefaultBackground.jpg"))
+        let e = a.extent
+        let left = a.cropped(to: CGRect(x: e.minX, y: e.minY, width: e.width * 0.4, height: e.height * 0.6))
+        let right = a.cropped(to: CGRect(x: e.minX + e.width * 0.6, y: e.minY + e.height * 0.4, width: e.width * 0.4, height: e.height * 0.6))
+        let url = try await ThumbnailFinderTests.movie([
+            a, ThumbnailFinderTests.flat(0.5), b, left, ThumbnailFinderTests.flat(0.05),
+            plain, a.applyingGaussianBlur(sigma: 30).cropped(to: a.extent), right, ThumbnailFinderTests.flat(0.8),
+        ], seconds: 1.5)
+        let candidates = try await ThumbnailFinder.candidates(in: url, samples: 36, keep: 12)
         let clock = ContinuousClock(), start = clock.now
         let picks = await ThumbnailPicker.pick(from: candidates, context: "A calm look over the coast", wantsTitle: true)
         print("LIVE", picks.model ?? "-", picks.note ?? "", picks.title ?? "-", picks.picks.map { "\($0.candidate.time): \($0.reason)" }, clock.now - start)
         #expect(picks.model != nil, "\(picks.note ?? "")")
         #expect(picks.picks.count == 3 && Set(picks.picks.map(\.candidate.id)).count == 3)
+        let floor = ThumbnailPicker.aestheticsFloor(for: candidates)
+        #expect(picks.picks.allSatisfy { $0.candidate.aesthetics > floor }, "no blank or blurred frames")
     }
 }

@@ -77,13 +77,22 @@ nonisolated struct OllamaClient: Sendable {
     }
 
     /// One chat turn with images; the answer is JSON matching `schema`.
-    func ask(model: String, prompt: String, images: [CGImage], schema: [String: Any], timeout: TimeInterval = 180) async throws -> Data {
-        let encoded = images.compactMap { Self.jpeg($0, maxSide: 512)?.base64EncodedString() }
+    /// Room the request needs: about 800 tokens per image (at 448 px) plus the prompt and answer.
+    static func contextSize(images: Int, promptCharacters: Int) -> Int {
+        let needed = images * 800 + promptCharacters / 3 + 1_024
+        return min(max(8_192, ((needed + 4_095) / 4_096) * 4_096), 32_768)
+    }
+
+    func ask(model: String, prompt: String, images: [CGImage], schema: [String: Any], timeout: TimeInterval = 300) async throws -> Data {
+        let encoded = images.compactMap { Self.jpeg($0, maxSide: 448)?.base64EncodedString() }
         let body: [String: Any] = [
             "model": model,
             "stream": false,
             "format": schema,
-            "options": ["temperature": 0.2],
+            // The default context (4K tokens) is too small for a dozen images.
+            "options": ["temperature": 0.2, "num_ctx": Self.contextSize(images: encoded.count, promptCharacters: prompt.count)],
+            // Stay loaded a while: a second try doesn't reload the model from disk.
+            "keep_alive": "10m",
             "messages": [["role": "user", "content": prompt, "images": encoded]],
         ]
         var request = URLRequest(url: baseURL.appending(path: "api/chat"))
@@ -95,9 +104,13 @@ nonisolated struct OllamaClient: Sendable {
         do { (data, _) = try await session.data(for: request) } catch let error as URLError where error.code == .timedOut {
             throw Failure.badAnswer("it took too long")
         } catch { throw Failure.notRunning }
-        struct Reply: Decodable { struct Message: Decodable { let content: String }; let message: Message?; let error: String? }
+        // Errors come as {"error": "…"} or {"error": {"message": "…"}}.
+        if let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any], let error = object["error"] {
+            let message = (error as? String) ?? ((error as? [String: Any])?["message"] as? String) ?? "\(error)"
+            throw Failure.badAnswer(message)
+        }
+        struct Reply: Decodable { struct Message: Decodable { let content: String }; let message: Message? }
         guard let reply = try? JSONDecoder().decode(Reply.self, from: data) else { throw Failure.badAnswer("not a chat reply") }
-        if let error = reply.error { throw Failure.badAnswer(error) }
         guard let content = reply.message?.content.data(using: .utf8) else { throw Failure.badAnswer("empty") }
         return content
     }
@@ -139,6 +152,17 @@ nonisolated struct ThumbnailPicks: Sendable {
 
 /// Picks the best 3 of the shortlisted candidates with a local vision model.
 nonisolated enum ThumbnailPicker {
+    /// Frames rated below this by Vision (black, blank, badly blurred) are never offered to the model.
+    static let minimumAesthetics = -0.5
+
+    /// The rating a frame needs to be offered: well below the video's own best frames means
+    /// blurred, blank or a transition. Relative, so darker footage (games) keeps its frames.
+    static func aestheticsFloor(for candidates: [ThumbnailCandidate]) -> Double {
+        let ranked = candidates.filter { !$0.isUtility }.map(\.aesthetics).sorted(by: >)
+        guard ranked.count >= 3 else { return minimumAesthetics }
+        return max(minimumAesthetics, ranked[2] - 0.6)
+    }
+
     /// The answer's JSON schema (Ollama structured output). Built on demand: `[String: Any]` isn't Sendable.
     static var schema: [String: Any] { [
         "type": "object",
@@ -156,7 +180,8 @@ nonisolated enum ThumbnailPicker {
         These \(count) images are frames from a video, numbered 1 to \(count) in the order given. \
         Choose the 3 that would make the best YouTube thumbnail: eye-catching, sharp, an expressive face or a clear \
         dramatic moment, readable at a small size, not a blurry transition or a menu screen. Prefer 3 that are different \
-        from each other. For each, give its frame number and a short reason (under 12 words).
+        from each other. Never choose a black, blank or nearly empty frame. For each, give its frame number and a \
+        short reason (under 12 words).
         """
         if !context.isEmpty { text += "\nWhat is said in the video (for context): \(context)" }
         if wantsTitle { text += "\nAlso suggest a punchy thumbnail title of 2 to 5 words, in the video's language." }
@@ -171,7 +196,14 @@ nonisolated enum ThumbnailPicker {
         let fallback = { (note: String?) in
             ThumbnailPicks(picks: candidates.prefix(3).map { .init(candidate: $0, reason: $0.reason) }, title: nil, model: nil, note: note)
         }
-        guard candidates.count > 3 else { return fallback(nil) }
+        // Only frames worth considering go to the model (no black, blank, blurry or
+        // screenshot-like frames); with too few left there's nothing to choose between.
+        let usable = candidates.filter { !$0.isUtility && $0.aesthetics > aestheticsFloor(for: candidates) }
+        guard usable.count > 3 else {
+            let ranked = usable + candidates.filter { c in !usable.contains { $0.id == c.id } }
+            return ThumbnailPicks(picks: ranked.prefix(3).map { .init(candidate: $0, reason: $0.reason) }, title: nil, model: nil, note: nil)
+        }
+        let candidates = usable
         do {
             let model = try await client.visionModel()
             let data = try await client.ask(model: model, prompt: prompt(count: candidates.count, context: String(context.prefix(1_500)),
