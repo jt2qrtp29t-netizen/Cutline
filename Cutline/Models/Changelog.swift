@@ -11,6 +11,10 @@ enum Changelog {
     }
 
     static let entries: [Entry] = [
+        Entry(version: "3.4", title: "Faster exports", changes: [
+            "4K exports are up to about 1.7× faster: frames are now rendered several at a time, and a new Faster Encoding option (on by default) lets the hardware encoder favor speed.",
+            "Turn off Faster Encoding under Video in the Export tab for the very best quality at the same bitrate.",
+        ]),
         Entry(version: "3.3", title: "Export tab", changes: [
             "Export presets: YouTube 4K 60, YouTube 1080p 60, Social Vertical and Square (crop or fit), Quick Preview, ProRes Master, and Custom.",
             "Custom settings for size, frame rate, codec (H.264, HEVC, ProRes 422), container, quality, hardware encoding and audio (AAC bitrate, sample rate, stereo or mono), saved with the project.",

@@ -258,6 +258,9 @@ nonisolated enum ExportRenderer {
                 AVVideoMaxKeyFrameIntervalKey: fps * 2,
             ]
             if settings.codec == .h264 { compression[AVVideoProfileLevelKey] = AVVideoProfileLevelH264HighAutoLevel }
+            if settings.hardwareEncoding && settings.fastEncoding {
+                compression[kVTCompressionPropertyKey_PrioritizeEncodingSpeedOverQuality as String] = true
+            }
             result[AVVideoCompressionPropertiesKey] = compression
         }
         return result

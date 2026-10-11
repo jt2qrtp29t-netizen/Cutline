@@ -104,6 +104,8 @@ nonisolated struct ExportSettings: Codable, Hashable, Sendable {
     /// 0...1: from small files to high quality (sets the bitrate for H.264 and HEVC).
     var quality = 0.6
     var hardwareEncoding = true
+    /// Lets the hardware encoder trade a little quality for much faster H.264/HEVC exports.
+    var fastEncoding = true
     /// Audio: AAC.
     var audioBitrate = 192
     var audioSampleRate = 48_000
@@ -131,6 +133,7 @@ nonisolated struct ExportSettings: Codable, Hashable, Sendable {
         container = try c.decodeIfPresent(ExportContainer.self, forKey: .container) ?? d.container
         quality = try c.decodeIfPresent(Double.self, forKey: .quality) ?? d.quality
         hardwareEncoding = try c.decodeIfPresent(Bool.self, forKey: .hardwareEncoding) ?? d.hardwareEncoding
+        fastEncoding = try c.decodeIfPresent(Bool.self, forKey: .fastEncoding) ?? d.fastEncoding
         audioBitrate = try c.decodeIfPresent(Int.self, forKey: .audioBitrate) ?? d.audioBitrate
         audioSampleRate = try c.decodeIfPresent(Int.self, forKey: .audioSampleRate) ?? d.audioSampleRate
         audioChannels = try c.decodeIfPresent(Int.self, forKey: .audioChannels) ?? d.audioChannels

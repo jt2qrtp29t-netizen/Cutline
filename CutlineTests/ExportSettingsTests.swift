@@ -1,4 +1,5 @@
-import Foundation
+import AVFoundation
+import VideoToolbox
 import Testing
 @testable import Cutline
 
@@ -89,5 +90,26 @@ struct ExportSettingsTests {
         json.removeValue(forKey: "exportSettings")
         let old = try ProjectState.decode(JSONSerialization.data(withJSONObject: json))
         #expect(old.exportSettings == ExportSettings())
+    }
+
+    @Test func fasterEncodingAsksTheHardwareEncoderForSpeed() {
+        let key = kVTCompressionPropertyKey_PrioritizeEncodingSpeedOverQuality as String
+        let project = ProjectSettings(name: "P", width: 1920, height: 1080, frameRate: 30)
+        func asksForSpeed(_ s: ExportSettings) -> Bool {
+            let video = ExportRenderer.videoSettings(s, width: 1920, height: 1080, project: project)
+            return (video[AVVideoCompressionPropertiesKey] as? [String: Any])?[key] as? Bool == true
+        }
+        var settings = ExportPreset.youTube4K.applied(to: ExportSettings())
+        #expect(settings.fastEncoding && asksForSpeed(settings), "on by default")
+        settings.fastEncoding = false
+        #expect(!asksForSpeed(settings))
+        settings.fastEncoding = true
+        settings.hardwareEncoding = false
+        #expect(!asksForSpeed(settings), "only for the hardware encoder")
+        // Saved settings from before the option load with it on.
+        var json = try! JSONSerialization.jsonObject(with: JSONEncoder().encode(ExportSettings())) as! [String: Any]
+        json.removeValue(forKey: "fastEncoding")
+        let old = try! JSONDecoder().decode(ExportSettings.self, from: JSONSerialization.data(withJSONObject: json))
+        #expect(old.fastEncoding)
     }
 }

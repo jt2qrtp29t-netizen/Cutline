@@ -5,7 +5,7 @@ import CoreVideo
 /// Custom compositor that stacks every visible clip with Core Image, applying
 /// each clip's transform, opacity and color adjustments.
 nonisolated final class LayerCompositor: NSObject, AVVideoCompositing, @unchecked Sendable {
-    private let renderQueue = DispatchQueue(label: "app.cutline.compositor", qos: .userInteractive)
+    private let renderQueue = DispatchQueue(label: "app.cutline.compositor", qos: .userInteractive, attributes: .concurrent)
     private let context = CIContext(options: [.cacheIntermediates: false])
     private let outputColorSpace = CGColorSpace(name: CGColorSpace.itur_709) ?? CGColorSpaceCreateDeviceRGB()
 

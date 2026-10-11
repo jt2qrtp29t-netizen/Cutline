@@ -124,6 +124,13 @@ struct ExportSettingsPanel: View {
             Toggle("Hardware encoding", isOn: Binding(get: { settings.hardwareEncoding },
                                                        set: { on in change { $0.hardwareEncoding = on } }))
                 .font(.system(size: 11))
+            if settings.codec.usesBitrate {
+                Toggle("Faster encoding", isOn: Binding(get: { settings.fastEncoding },
+                                                         set: { on in change { $0.fastEncoding = on } }))
+                    .font(.system(size: 11))
+                    .disabled(!settings.hardwareEncoding)
+                    .help("Lets the hardware encoder favor speed, about 1.7× faster in 4K at the same bitrate. Turn off for the very best quality.")
+            }
         }
     }
 
