@@ -13,21 +13,7 @@ struct KeyframeLane: View {
 
     /// The rows for this tab: animated parameters (and, in Effects, the one shown in
     /// the curve editor).
-    func rows(for clip: Clip) -> [AnimatableProperty] {
-        if editor.isSandbox {
-            // The Playground shows every keyframe of the clip.
-            return AnimatableProperty.allCases.filter { clip.isAnimated($0) }
-        }
-        if editor.workspace == .color {
-            return AnimatableProperty.grade.filter { clip.isAnimated($0) }
-        }
-        let speed: [AnimatableProperty] = clip.isAnimated(.speed) ? [.speed] : []
-        if editor.workspace == .edit && !editor.isSandbox { return AnimatableProperty.editAdjustments.filter { clip.isAnimated($0) } }
-        if editor.workspace == .audio {
-            return AnimatableProperty.audio.filter { clip.isAnimated($0) } + speed
-        }
-        return AnimatableProperty.motion.filter { clip.isAnimated($0) || $0 == editor.effectsProperty } + speed
-    }
+    func rows(for clip: Clip) -> [AnimatableProperty] { editor.laneProperties(for: clip) }
 
     /// The clip whose keyframes show: an audio clip in the Audio tab, otherwise a video or text clip.
     private var clip: Clip? {
@@ -63,7 +49,8 @@ struct KeyframeLane: View {
                 Rectangle().fill(Theme.border).frame(width: 1)
                 VStack(spacing: 0) {
                     ForEach(rows) { property in
-                        KeyframeRow(editor: editor, clip: clip, property: property, layout: layout, originX: visibleRect.minX)
+                        KeyframeRow(editor: editor, clip: clip, property: property, layout: layout, originX: visibleRect.minX,
+                                    visibleWidth: visibleRect.width)
                             .frame(height: Self.rowHeight)
                     }
                 }
@@ -101,17 +88,22 @@ private struct KeyframeRow: View {
     let property: AnimatableProperty
     let layout: TimelineLayout
     let originX: CGFloat
+    let visibleWidth: CGFloat
 
     var body: some View {
-        let start = layout.x(for: clip.start) - originX
-        let end = layout.x(for: clip.end) - originX
+        // The clip's span on this row, limited to what's on screen: a span wider than the
+        // row would widen the row itself, which then gets centered and shifts every
+        // diamond off to the side (long clips showed no keyframes at all).
+        let start = max(layout.x(for: clip.start) - originX, -2)
+        let end = min(layout.x(for: clip.end) - originX, visibleWidth + 2)
         ZStack(alignment: .leading) {
             Theme.recessed
-            // The clip's span on this row.
-            Rectangle()
-                .fill(property == editor.effectsProperty ? Theme.accentMuted : Theme.raised)
-                .frame(width: max(end - start, 1), height: KeyframeLane.rowHeight - 6)
-                .offset(x: start)
+            if end > start {
+                Rectangle()
+                    .fill(property == editor.effectsProperty ? Theme.accentMuted : Theme.raised)
+                    .frame(width: max(end - start, 1), height: KeyframeLane.rowHeight - 6)
+                    .offset(x: start)
+            }
             ForEach(clip.animation.keyframes(for: property)) { frame in
                 let ref = KeyframeRef(clipID: clip.id, property: property, keyframeID: frame.id)
                 KeyframeDiamond(isFilled: true, isSelected: editor.selectedKeyframes.contains(ref), size: 10)
@@ -141,6 +133,7 @@ private struct KeyframeRow: View {
                     .help("\(property.title): \(property.formatted(frame.value))")
             }
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private func select(_ ref: KeyframeRef) {
@@ -249,5 +242,6 @@ struct TrackKeyframeLane: View {
                     .help(editor.trackParameterTitle(key, in: track))
             }
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }

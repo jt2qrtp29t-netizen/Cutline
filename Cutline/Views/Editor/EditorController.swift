@@ -366,13 +366,14 @@ final class EditorController {
     }
 
     func deleteSelection() {
-        // A selected transition goes first, then (in the Effects tab) selected keyframes.
+        // A selected transition goes first, then selected keyframes in the lane (any tab).
         if let transition = selectedTransition {
             deleteTransition(transition)
             return
         }
-        if workspace == .effects || workspace == .color || isSandbox, !selectedKeyframes.isEmpty {
-            deleteKeyframes(selectedKeyframes)
+        let keyframes = visibleSelectedKeyframes
+        if !keyframes.isEmpty {
+            deleteKeyframes(keyframes)
             return
         }
         let ids = selection

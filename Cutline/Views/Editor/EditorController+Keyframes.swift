@@ -195,6 +195,27 @@ extension EditorController {
         selectedKeyframes = selectedKeyframes.filter { !($0.clipID == clip.id && $0.property == property) }
     }
 
+    /// The keyframe rows the lane under the timeline shows for a clip in this tab.
+    func laneProperties(for clip: Clip) -> [AnimatableProperty] {
+        // The Playground shows every keyframe of the clip.
+        if isSandbox { return AnimatableProperty.allCases.filter { clip.isAnimated($0) } }
+        let speed: [AnimatableProperty] = clip.isAnimated(.speed) ? [.speed] : []
+        switch workspace {
+        case .color: return AnimatableProperty.grade.filter { clip.isAnimated($0) }
+        case .edit: return AnimatableProperty.editAdjustments.filter { clip.isAnimated($0) }
+        case .audio: return AnimatableProperty.audio.filter { clip.isAnimated($0) } + speed
+        default: return AnimatableProperty.motion.filter { clip.isAnimated($0) || $0 == effectsProperty } + speed
+        }
+    }
+
+    /// Selected keyframes the lane is showing right now (what Delete removes).
+    var visibleSelectedKeyframes: Set<KeyframeRef> {
+        selectedKeyframes.filter { ref in
+            guard let clip = state.clip(ref.clipID) else { return false }
+            return laneProperties(for: clip).contains(ref.property)
+        }
+    }
+
     /// Drops selected keyframes that no longer exist (after undo, delete, blade…).
     func pruneKeyframeSelection() {
         let valid = selectedKeyframes.filter { keyframe($0) != nil && selection.contains($0.clipID) }

@@ -1,5 +1,6 @@
 import AVFoundation
 import Foundation
+import SwiftUI
 import Testing
 @testable import Cutline
 
@@ -341,5 +342,90 @@ import Testing
         #expect(lane.rows(for: clip) == [.speed])
         editor.workspace = .effects
         #expect(lane.rows(for: clip).contains(.speed))
+    }
+}
+
+@MainActor struct KeyframeLaneLayoutTests {
+    /// Columns (in the lane's coordinates) where two renders of the lane differ.
+    private func render(_ editor: EditorController, layout: TimelineLayout, visible: CGRect, width: CGFloat) throws -> CGImage {
+        let lane = KeyframeLane(editor: editor, layout: layout, visibleRect: visible)
+            .frame(width: width, height: 30)
+            .environment(\.colorScheme, .dark)
+        let renderer = ImageRenderer(content: lane)
+        renderer.scale = 1
+        return try #require(renderer.cgImage)
+    }
+
+    /// A long clip far into the project, scrolled so it fills the view: its diamonds sit
+    /// exactly under their times (they used to vanish when a clip was wider than the view).
+    @Test(arguments: [Workspace.edit, .effects])
+    func keyframesOfLongClipsLineUpWithTheTimeline(workspace: Workspace) throws {
+        var state = ProjectState()
+        let media = MediaItem(id: UUID(), name: "m", path: "/m.mov", duration: Time(seconds: 600), width: 1920, height: 1080,
+                              frameRate: 30, hasAudio: false)
+        state.media = [media]
+        let short = Clip(id: UUID(), mediaID: media.id, name: "short", start: .zero, duration: Time(seconds: 3), sourceStart: .zero)
+        var long = Clip(id: UUID(), mediaID: media.id, name: "long", start: Time(seconds: 60), duration: Time(seconds: 120), sourceStart: .zero)
+        let property: AnimatableProperty = workspace == .edit ? .cropSoftness : .opacity
+        long.animation.keyframes[property] = [Keyframe(time: Time(seconds: 10), value: 0.2), Keyframe(time: Time(seconds: 30), value: 0.5)]
+        state.tracks[0].clips = [short, long]
+
+        func lane(second: Double) throws -> (CGImage, Int) {
+            var s = state
+            s.updateClip(long.id) { $0.animation.keyframes[property]![1].time = Time(seconds: second) }
+            let editor = EditorController(store: ProjectStore(state: s))
+            editor.workspace = workspace
+            editor.selection = [long.id]
+            let layout = TimelineLayout(pixelsPerSecond: 50, tracks: s.tracks)
+            // The view starts 5 s into the long clip and is 800 points wide.
+            let visible = CGRect(x: layout.x(for: Time(seconds: 65)), y: 0, width: 800, height: 100)
+            let offset = Int(Theme.Metrics.trackHeaderWidth) + 1
+            let image = try render(editor, layout: layout, visible: visible, width: CGFloat(offset) + 800)
+            return (image, Int((layout.x(for: Time(seconds: 60 + second)) - visible.minX).rounded()) + offset)
+        }
+        // The second keyframe at 75 s, then at 79 s: only the pixels around those spots change.
+        let (first, x1) = try lane(second: 15)
+        let (second, x2) = try lane(second: 19)
+        var changed: [Int] = []
+        for x in 0..<first.width {
+            for y in stride(from: 4, to: 26, by: 2) {
+                let p = try TextRenderTests.pixel(first, x: x, y: y), q = try TextRenderTests.pixel(second, x: x, y: y)
+                if abs(p.r - q.r) + abs(p.g - q.g) + abs(p.b - q.b) > 30 { changed.append(x); break }
+            }
+        }
+        #expect(!changed.isEmpty, "the diamonds are drawn")
+        #expect(changed.allSatisfy { abs($0 - x1) <= 8 || abs($0 - x2) <= 8 }, "at \(x1) and \(x2): \(Set(changed).sorted())")
+        #expect(changed.contains { abs($0 - x1) <= 2 } && changed.contains { abs($0 - x2) <= 2 })
+    }
+}
+
+@MainActor struct LaneDeleteTests {
+    @Test func deleteRemovesTheSelectedLaneKeyframeInAnyTab() {
+        var state = ProjectState()
+        var clip = Clip(id: UUID(), mediaID: UUID(), name: "c", start: .zero, duration: Time(seconds: 4), sourceStart: .zero)
+        let soft = Keyframe(time: Time(seconds: 1), value: 0.3), soft2 = Keyframe(time: Time(seconds: 3), value: 0.6)
+        let fade = Keyframe(time: Time(seconds: 1), value: 0.5)
+        clip.animation.keyframes[.cropSoftness] = [soft, soft2]
+        clip.animation.keyframes[.opacity] = [fade]
+        state.tracks[0].clips = [clip]
+        let editor = EditorController(store: ProjectStore(state: state))
+        editor.selection = [clip.id]
+
+        // Edit tab: a softness diamond is selected, Delete removes it (not the clip).
+        editor.workspace = .edit
+        editor.selectedKeyframes = [KeyframeRef(clipID: clip.id, property: .cropSoftness, keyframeID: soft.id)]
+        editor.deleteSelection()
+        #expect(editor.state.clip(clip.id)?.animation.keyframes(for: .cropSoftness).map(\.id) == [soft2.id])
+        #expect(editor.selectedKeyframes.isEmpty)
+
+        // A keyframe selected in another tab's lane (opacity, Effects) isn't on screen in
+        // Edit, so Delete there deletes the clip as usual.
+        editor.selectedKeyframes = [KeyframeRef(clipID: clip.id, property: .opacity, keyframeID: fade.id)]
+        #expect(editor.visibleSelectedKeyframes.isEmpty)
+        editor.workspace = .effects
+        #expect(!editor.visibleSelectedKeyframes.isEmpty)
+        editor.workspace = .edit
+        editor.deleteSelection()
+        #expect(editor.state.clip(clip.id) == nil)
     }
 }

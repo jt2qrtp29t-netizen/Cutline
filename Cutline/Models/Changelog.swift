@@ -11,6 +11,10 @@ enum Changelog {
     }
 
     static let entries: [Entry] = [
+        Entry(version: "4.2", title: "Keyframe lane fixes", changes: [
+            "Fixed: the keyframe lane under the timeline (in every tab) showed no keyframes for clips wider than the visible timeline, so long clips or zoomed-in views looked empty even at their start. Diamonds now always sit exactly under their times.",
+            "Fixed: pressing Delete with a keyframe selected in the Edit or Audio tab's lane (such as a Softness or Speed keyframe) deleted the whole clip. It now deletes the keyframe, as in Effects and Color.",
+        ]),
         Entry(version: "4.1", title: "Clean scrubbing", changes: [
             "Fixed: dragging the playhead could add a muffled, fluttering sound over the audio. When the scrub head had to catch up with the playhead, it crossfaded between two unrelated points of the waveform, which partly cancelled each other many times a second.",
             "The scrub head now lands each catch-up within 10 ms of the playhead at the spot whose waveform matches what was just playing, so the sound stays full and steady at any drag speed.",
