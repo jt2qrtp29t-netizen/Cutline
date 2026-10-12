@@ -14,6 +14,8 @@ nonisolated enum DiskCache: String, CaseIterable, Identifiable, Sendable {
     case retimed = "RetimedAudio"
     /// Transcripts of media files (for captions).
     case transcripts = "Transcripts"
+    /// Rendered Manim animations (Animate tab).
+    case animations = "Animations"
 
     var id: String { rawValue }
 
@@ -24,6 +26,7 @@ nonisolated enum DiskCache: String, CaseIterable, Identifiable, Sendable {
         case .media: "Optimized and proxy media"
         case .retimed: "Speed-changed audio"
         case .transcripts: "Transcripts"
+        case .animations: "Animations"
         }
     }
 
@@ -35,7 +38,9 @@ nonisolated enum DiskCache: String, CaseIterable, Identifiable, Sendable {
 
     /// Remade automatically when needed, so files unused for a while are removed.
     /// (Optimized and proxy media are only made when asked for, so they're kept.)
-    var isRemadeAutomatically: Bool { self != .media }
+    /// Rendered animations sit on timelines, so they're kept too (clearing them by hand
+    /// is fine: they're rendered again from their script).
+    var isRemadeAutomatically: Bool { self != .media && self != .animations }
 
     /// Identity of a source file: its modification time and size.
     static func stamp(for url: URL) -> String? {

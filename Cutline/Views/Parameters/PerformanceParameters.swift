@@ -92,7 +92,7 @@ struct PerformanceParameters: View {
         case .audio:
             cache.clear()
             AudioSourceCache.shared.forgetAll()
-        case .waveforms, .retimed, .transcripts:
+        case .waveforms, .retimed, .transcripts, .animations:
             cache.clear()
         }
         Task { await refreshSizes() }
