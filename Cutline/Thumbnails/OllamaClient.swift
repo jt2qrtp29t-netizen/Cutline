@@ -2,6 +2,7 @@ import CoreGraphics
 import Foundation
 import ImageIO
 import UniformTypeIdentifiers
+import Vision
 
 /// Talks to Ollama running on this Mac (http://127.0.0.1:11434): which models it has,
 /// and asking a vision model about images. Nothing goes anywhere but the local server.
@@ -77,13 +78,17 @@ nonisolated struct OllamaClient: Sendable {
     }
 
     /// One chat turn with images; the answer is JSON matching `schema`.
-    /// Room the request needs: about 800 tokens per image (at 448 px) plus the prompt and answer.
+    /// Room the request needs: about 1,000 tokens per 16:9 image at 448 px (measured with
+    /// qwen2.5vl; 1,200 allowed), plus the prompt and answer.
     static func contextSize(images: Int, promptCharacters: Int) -> Int {
-        let needed = images * 800 + promptCharacters / 3 + 1_024
-        return min(max(8_192, ((needed + 4_095) / 4_096) * 4_096), 32_768)
+        let needed = images * 1_200 + promptCharacters / 3 + 1_536
+        // One size whenever it's enough (16K fits a dozen frames): a different size makes
+        // Ollama reload the model, which takes minutes from an external disk.
+        return min(max(16_384, ((needed + 4_095) / 4_096) * 4_096), 32_768)
     }
 
-    func ask(model: String, prompt: String, images: [CGImage], schema: [String: Any], timeout: TimeInterval = 300) async throws -> Data {
+    /// The first request after the model was idle loads it (minutes from an external disk): allow 10.
+    func ask(model: String, prompt: String, images: [CGImage], schema: [String: Any], timeout: TimeInterval = 600) async throws -> Data {
         let encoded = images.compactMap { Self.jpeg($0, maxSide: 448)?.base64EncodedString() }
         let body: [String: Any] = [
             "model": model,
@@ -154,11 +159,37 @@ nonisolated struct ThumbnailPicks: Sendable {
 nonisolated enum ThumbnailPicker {
     /// Frames rated below this by Vision (black, blank, badly blurred) are never offered to the model.
     static let minimumAesthetics = -0.5
+    /// Frames more than this share one flat color (black screens, fades) are never offered.
+    static let maximumEmptiness = 0.85
+
+    /// The best `count` (in order) that look clearly different from each other and from
+    /// `chosen`: further apart than a typical pair of this video's frames (so not two of the
+    /// same screen in different colors). If there aren't enough, the rest in order.
+    static func varied(_ ranked: [ThumbnailCandidate], count: Int, apartFrom chosen: [ThumbnailCandidate] = []) -> [ThumbnailCandidate] {
+        guard count > 0 else { return [] }
+        let prints = (ranked + chosen).compactMap(\.featurePrint)
+        var distances: [Double] = []
+        for i in prints.indices { for j in prints.indices where j > i {
+            if let d = try? prints[i].distance(to: prints[j]) { distances.append(d) }
+        } }
+        let apart = distances.isEmpty ? 0 : distances.sorted()[distances.count / 2]
+        func farEnough(_ c: ThumbnailCandidate, from others: [ThumbnailCandidate]) -> Bool {
+            guard let a = c.featurePrint else { return true }
+            return others.allSatisfy { o in
+                guard let b = o.featurePrint, let d = try? a.distance(to: b) else { return true }
+                return d >= apart
+            }
+        }
+        var picked: [ThumbnailCandidate] = []
+        for c in ranked where picked.count < count && farEnough(c, from: chosen + picked) { picked.append(c) }
+        for c in ranked where picked.count < count && !picked.contains(where: { $0.id == c.id }) { picked.append(c) }
+        return picked
+    }
 
     /// The rating a frame needs to be offered: well below the video's own best frames means
     /// blurred, blank or a transition. Relative, so darker footage (games) keeps its frames.
     static func aestheticsFloor(for candidates: [ThumbnailCandidate]) -> Double {
-        let ranked = candidates.filter { !$0.isUtility }.map(\.aesthetics).sorted(by: >)
+        let ranked = candidates.filter { $0.emptiness < maximumEmptiness }.map(\.aesthetics).sorted(by: >)
         guard ranked.count >= 3 else { return minimumAesthetics }
         return max(minimumAesthetics, ranked[2] - 0.6)
     }
@@ -185,7 +216,7 @@ nonisolated enum ThumbnailPicker {
         """
         if !context.isEmpty { text += "\nWhat is said in the video (for context): \(context)" }
         if wantsTitle { text += "\nAlso suggest a punchy thumbnail title of 2 to 5 words, in the video's language." }
-        text += "\nAnswer as JSON: {\"picks\": [{\"frame\": n, \"reason\": \"…\"}], \"title\": \"…\"}."
+        text += "\nAnswer as JSON, for example: {\"picks\": [{\"frame\": 4, \"reason\": \"Shocked face at the boss reveal\"}], \"title\": \"BOSS DOWN\"}. Write your own reasons and title; don't copy the example."
         return text
     }
 
@@ -194,14 +225,14 @@ nonisolated enum ThumbnailPicker {
     static func pick(from candidates: [ThumbnailCandidate], context: String = "", wantsTitle: Bool = false,
                      client: OllamaClient = OllamaClient()) async -> ThumbnailPicks {
         let fallback = { (note: String?) in
-            ThumbnailPicks(picks: candidates.prefix(3).map { .init(candidate: $0, reason: $0.reason) }, title: nil, model: nil, note: note)
+            ThumbnailPicks(picks: varied(candidates, count: 3).map { .init(candidate: $0, reason: $0.reason) }, title: nil, model: nil, note: note)
         }
         // Only frames worth considering go to the model (no black, blank, blurry or
         // screenshot-like frames); with too few left there's nothing to choose between.
-        let usable = candidates.filter { !$0.isUtility && $0.aesthetics > aestheticsFloor(for: candidates) }
+        let usable = candidates.filter { $0.emptiness < maximumEmptiness && $0.aesthetics > aestheticsFloor(for: candidates) }
         guard usable.count > 3 else {
             let ranked = usable + candidates.filter { c in !usable.contains { $0.id == c.id } }
-            return ThumbnailPicks(picks: ranked.prefix(3).map { .init(candidate: $0, reason: $0.reason) }, title: nil, model: nil, note: nil)
+            return ThumbnailPicks(picks: varied(ranked, count: 3).map { .init(candidate: $0, reason: $0.reason) }, title: nil, model: nil, note: nil)
         }
         let candidates = usable
         do {
@@ -217,13 +248,19 @@ nonisolated enum ThumbnailPicker {
             var used = Set<Int>()
             var picks: [ThumbnailPicks.Pick] = []
             for p in answer.picks where (1...candidates.count).contains(p.frame) && used.insert(p.frame).inserted && picks.count < 3 {
-                picks.append(.init(candidate: candidates[p.frame - 1], reason: p.reason.trimmingCharacters(in: .whitespacesAndNewlines)))
+                let reason = p.reason.trimmingCharacters(in: .whitespacesAndNewlines.union(.punctuationCharacters))
+                // An empty or placeholder reason ("…") gets the frame's own description.
+                picks.append(.init(candidate: candidates[p.frame - 1],
+                                   reason: reason.count < 3 ? candidates[p.frame - 1].reason : p.reason.trimmingCharacters(in: .whitespacesAndNewlines)))
             }
             guard !picks.isEmpty else { throw OllamaClient.Failure.badAnswer("no usable frame numbers") }
-            for (k, c) in candidates.enumerated() where picks.count < 3 && !used.contains(k + 1) {
+            let others = candidates.enumerated().filter { !used.contains($0.offset + 1) }.map(\.element)
+            for c in varied(others, count: 3 - picks.count, apartFrom: picks.map(\.candidate)) {
                 picks.append(.init(candidate: c, reason: c.reason))
             }
-            let title = answer.title?.trimmingCharacters(in: .whitespacesAndNewlines.union(.init(charactersIn: "\"")))
+            var title = answer.title?.trimmingCharacters(in: .whitespacesAndNewlines.union(.init(charactersIn: "\"")))
+            // Placeholders or the prompt's own example aren't a title.
+            if let t = title, t.trimmingCharacters(in: .punctuationCharacters).count < 2 || t == "BOSS DOWN" { title = nil }
             return ThumbnailPicks(picks: picks, title: wantsTitle && title?.isEmpty == false ? title : nil, model: model, note: nil)
         } catch {
             return fallback((error as? LocalizedError)?.errorDescription ?? error.localizedDescription)

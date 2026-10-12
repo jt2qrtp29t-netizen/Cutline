@@ -12,8 +12,11 @@ nonisolated struct ThumbnailCandidate: Sendable, Identifiable {
     let image: CGImage
     /// Apple's aesthetics rating, −1…1 (well composed, sharp, not a screenshot or blur).
     let aesthetics: Double
-    /// Vision thinks it's a "utility" image (a screenshot, a document, a blurry transition).
+    /// Vision thinks it's a "utility" image (a screenshot, a document). Shown for information
+    /// only: screen-recorded games are nearly all "utility", so it says nothing about quality.
     let isUtility: Bool
+    /// Share of the frame that is one flat color, 0…1 (a black transition is about 1).
+    var emptiness: Double = 0
     /// The clearest face: capture quality (0…1) weighted by its size, 0 without faces.
     let face: Double
     /// How loud the moment is, 0…1 within this movie.
@@ -82,14 +85,18 @@ nonisolated enum ThumbnailFinder {
             let excited = excitedTimes.contains { abs($0 - time) < 1.5 }
             let rating = Double(aesthetics?.overallScore ?? 0)
             let utility = aesthetics?.isUtility ?? false
+            let empty = emptiness(of: image)
             let look: Double = 0.5 * (rating + 1) / 2
             let bonus: Double = 0.25 * face + 0.15 * loud + (excited ? 0.1 : 0)
-            let score = look + bonus - (utility ? 0.25 : 0)
-            found.append(ThumbnailCandidate(time: time, image: image, aesthetics: rating, isUtility: utility, face: face,
-                                            loudness: loud, isExcited: excited, score: score, featurePrint: print))
+            // Mostly one flat color (black screens, fades): the more, the worse.
+            let blank: Double = max(0, empty - 0.5) * 0.8
+            let score = look + bonus - blank
+            found.append(ThumbnailCandidate(time: time, image: image, aesthetics: rating, isUtility: utility, emptiness: empty,
+                                            face: face, loudness: loud, isExcited: excited, score: score, featurePrint: print))
             progress(Double(k + 1) / Double(samples))
         }
-        return distinct(found.sorted { $0.score > $1.score }, keep: keep, minimumGap: duration / Double(max(keep * 3, 1)))
+        return distinct(found.sorted { $0.score > $1.score }, keep: keep, minimumGap: duration / Double(max(keep * 3, 1)),
+                        similarity: similarity(among: found))
     }
 
     static func isExcited(_ text: String) -> Bool {
@@ -98,7 +105,8 @@ nonisolated enum ThumbnailFinder {
     }
 
     /// Best first, skipping frames that look like one already kept or sit right next to one.
-    static func distinct(_ ranked: [ThumbnailCandidate], keep: Int, minimumGap: Double) -> [ThumbnailCandidate] {
+    static func distinct(_ ranked: [ThumbnailCandidate], keep: Int, minimumGap: Double,
+                         similarity: Double = ThumbnailFinder.similarity) -> [ThumbnailCandidate] {
         var kept: [ThumbnailCandidate] = []
         for candidate in ranked where kept.count < keep {
             let tooClose = kept.contains { other in
@@ -111,8 +119,38 @@ nonisolated enum ThumbnailFinder {
         return kept
     }
 
-    /// Feature-print distance under which two frames count as the same shot.
+    /// Feature-print distance under which two frames count as the same shot, at most.
     static let similarity = 0.35
+
+    /// The "same shot" distance for this video: its closest 15% of frame pairs (capped at
+    /// `similarity`). In a game, every frame shares the same interface and art, so a fixed
+    /// distance would call different scenes the same; repeats of one screen stay closer still.
+    static func similarity(among frames: [ThumbnailCandidate]) -> Double {
+        let prints = frames.compactMap(\.featurePrint)
+        var distances: [Double] = []
+        for i in prints.indices { for j in prints.indices where j > i {
+            if let d = try? prints[i].distance(to: prints[j]) { distances.append(d) }
+        } }
+        guard distances.count >= 10 else { return similarity }
+        let sorted = distances.sorted()
+        // At least 0.12: compression makes frames of one shot differ a little.
+        return min(similarity, max(0.12, sorted[Int(Double(sorted.count - 1) * 0.15)]))
+    }
+
+    /// Share of the frame within a small step of its median brightness (on a 64×36 grid).
+    static func emptiness(of image: CGImage) -> Double {
+        let w = 64, h = 36
+        guard let space = CGColorSpace(name: CGColorSpace.sRGB),
+              let context = CGContext(data: nil, width: w, height: h, bitsPerComponent: 8, bytesPerRow: w * 4, space: space,
+                                      bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue),
+              let data = { context.draw(image, in: CGRect(x: 0, y: 0, width: w, height: h)); return context.data }()
+        else { return 0 }
+        let pixels = data.assumingMemoryBound(to: UInt8.self)
+        var levels = [Int](repeating: 0, count: w * h)
+        for i in 0..<(w * h) { levels[i] = (Int(pixels[i * 4]) * 3 + Int(pixels[i * 4 + 1]) * 6 + Int(pixels[i * 4 + 2])) / 10 }
+        let median = levels.sorted()[levels.count / 2]
+        return Double(levels.filter { abs($0 - median) <= 12 }.count) / Double(levels.count)
+    }
     static let loudnessStep = 0.5
 
     /// RMS of the movie's sound every half second, as 0…1 within the movie (nothing if it has no sound).

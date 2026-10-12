@@ -185,8 +185,9 @@ nonisolated final class FakeOllama: URLProtocol, @unchecked Sendable {
         #expect((message["content"] as? String)?.contains("final boss") == true)
         // Enough context for the images (Ollama's default 4K isn't), and the model stays loaded.
         let options = try #require(body["options"] as? [String: Any])
-        #expect((options["num_ctx"] as? Int ?? 0) >= 8 * 800 && body["keep_alive"] as? String == "10m")
-        #expect(OllamaClient.contextSize(images: 12, promptCharacters: 2_000) >= 12 * 800 + 600)
+        #expect((options["num_ctx"] as? Int ?? 0) >= 8 * 1_000 && body["keep_alive"] as? String == "10m")
+        // Measured: 12 frames and the prompt took 12,577 tokens.
+        #expect(OllamaClient.contextSize(images: 12, promptCharacters: 2_000) >= 12_577 + 1_000)
         // An error from Ollama is told plainly.
         FakeOllama.set(tags: [("qwen2.5vl:7b", ["vision"])])
         FakeOllama.lock.withLock {
@@ -199,6 +200,10 @@ nonisolated final class FakeOllama: URLProtocol, @unchecked Sendable {
         FakeOllama.set(tags: [("qwen2.5vl:7b", ["vision"])], chat: #"{"picks":[{"frame":3,"reason":"ok"},{"frame":3,"reason":"again"},{"frame":42,"reason":"no"}],"title":"X"}"#)
         let topped = await ThumbnailPicker.pick(from: list, client: FakeOllama.client())
         #expect(topped.picks.map(\.candidate.time) == [2, 0, 1] && topped.title == nil)
+        // Placeholder reasons ("…") and title get Cutline's own words instead.
+        FakeOllama.set(tags: [("qwen2.5vl:7b", ["vision"])], chat: #"{"picks":[{"frame":2,"reason":"…"},{"frame":4,"reason":""},{"frame":6,"reason":"Big jump"}],"title":"…"}"#)
+        let placeholders = await ThumbnailPicker.pick(from: list, wantsTitle: true, client: FakeOllama.client())
+        #expect(placeholders.picks.map(\.reason) == [list[1].reason, list[3].reason, "Big jump"] && placeholders.title == nil)
         // Not JSON at all: Vision's top 3, and why.
         FakeOllama.set(tags: [("qwen2.5vl:7b", ["vision"])], chat: "I think frame three looks nice!")
         let garbled = await ThumbnailPicker.pick(from: list, client: FakeOllama.client())
@@ -210,12 +215,15 @@ nonisolated final class FakeOllama: URLProtocol, @unchecked Sendable {
         // Two of the eight are black (Vision rates them very low): only six frames go to the model.
         list[1] = ThumbnailCandidate(time: 1, image: list[1].image, aesthetics: -0.9, isUtility: false, face: 0, loudness: 1,
                                      isExcited: true, score: 0.9, featurePrint: nil)
-        list[3] = ThumbnailCandidate(time: 3, image: list[3].image, aesthetics: 0.4, isUtility: true, face: 0, loudness: 0,
-                                     isExcited: false, score: 0.8, featurePrint: nil)
+        list[3] = ThumbnailCandidate(time: 3, image: list[3].image, aesthetics: 0.4, isUtility: true, emptiness: 0.95, face: 0,
+                                     loudness: 0, isExcited: false, score: 0.8, featurePrint: nil)
+        // A game screen Vision calls "utility" is still offered (games are screen recordings).
+        list[5] = ThumbnailCandidate(time: 5, image: list[5].image, aesthetics: 0.3, isUtility: true, emptiness: 0.2, face: 0,
+                                     loudness: 0, isExcited: false, score: 0.5, featurePrint: nil)
         FakeOllama.set(tags: [("qwen2.5vl:7b", ["vision"])], chat: #"{"picks":[{"frame":1,"reason":"a"},{"frame":2,"reason":"b"},{"frame":3,"reason":"c"}]}"#)
         let picks = await ThumbnailPicker.pick(from: list, client: FakeOllama.client())
         let sent = try #require(FakeOllama.lock.withLock { (FakeOllama.lastChatBody?["messages"] as? [[String: Any]])?.first?["images"] as? [String] })
-        #expect(sent.count == 6)
+        #expect(sent.count == 6, "the black frame and the near-empty one are left out; the utility-flagged game screen isn't")
         #expect(!picks.picks.contains { $0.candidate.time == 1 || $0.candidate.time == 3 }, "\(picks.picks.map(\.candidate.time))")
         #expect((FakeOllama.lock.withLock { FakeOllama.lastChatBody?["messages"] as? [[String: Any]] }?.first?["content"] as? String)?
             .contains("Never choose a black") == true)

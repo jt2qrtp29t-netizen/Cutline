@@ -19,6 +19,12 @@ enum Changelog {
     }
 
     static let entries: [Entry] = [
+        Entry(version: "4.8", title: "Better thumbnail picks", tags: [.bugFix], changes: [
+            "Fixed: Make Thumbnail chose poor frames for gameplay (like black transition screens) and often never asked the AI model. Game footage is a screen recording, which Vision rates as a \u{201C}screenshot\u{201D}; that's no longer held against a frame.",
+            "Nearly empty frames (black screens, fades) are left out, and frames from one game no longer count as duplicates just because they share its interface, so the shortlist covers the video's different moments.",
+            "The three picks are always clearly different from each other (not the same screen twice), and the AI model gets enough room for all twelve candidates, keeps the same setup between runs (no reload), and gets up to 10 minutes for its first load.",
+            "Fixed: the model's reasons could come back as \u{201C}…\u{201D}; Cutline now describes those frames itself.",
+        ]),
         Entry(version: "4.7", title: "Export fix", tags: [.bugFix], changes: [
             "Fixed: exports could fail right away with “The export couldn’t start (AVFoundationErrorDomain error -11841)” when the timeline ended between two frames, as it does when the last clip is a whole recording whose length isn’t a whole number of frames. The export now covers the last partial frame.",
         ]),
