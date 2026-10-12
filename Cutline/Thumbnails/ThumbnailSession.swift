@@ -11,6 +11,9 @@ final class ThumbnailSession: Identifiable {
         case asking(model: String?)
         case ready
         case failed(String)
+
+        /// The model being asked, while it is.
+        var asking: String? { if case let .asking(model) = self { model } else { nil } }
     }
 
     let id = UUID()
@@ -54,6 +57,7 @@ final class ThumbnailSession: Identifiable {
             return
         }
         let movie = movie, speech = speech, client = client
+        let preferred = AppSettings.shared.thumbnailModel
         let report: @Sendable (Double) -> Void = { [weak self] value in
             Task { @MainActor in self?.progress = value }
         }
@@ -61,10 +65,10 @@ final class ThumbnailSession: Identifiable {
             do {
                 let candidates = try await ThumbnailFinder.candidates(in: movie, speech: speech, progress: report)
                 try Task.checkCancellation()
-                let model = try? await client.visionModel()
+                let model = try? await client.visionModel(preferred: preferred)
                 self?.phase = .asking(model: model)
                 let context = speech.map(\.text).joined(separator: " ")
-                let result = await ThumbnailPicker.pick(from: candidates, context: context, wantsTitle: true, client: client)
+                let result = await ThumbnailPicker.pick(from: candidates, context: context, wantsTitle: true, model: preferred, client: client)
                 try Task.checkCancellation()
                 self?.finish(with: result)
             } catch is CancellationError {
@@ -86,7 +90,14 @@ final class ThumbnailSession: Identifiable {
         phase = result.picks.isEmpty ? .failed("No usable frames were found in this export.") : .ready
     }
 
-    func cancel() { task?.cancel() }
+    /// Stops, and frees the model's memory right away (closing the studio or cancelling).
+    func cancel() {
+        task?.cancel()
+        let client = client
+        if let model = model ?? (phase.asking) {
+            Task.detached { await client.unload(model: model) }
+        }
+    }
 
     /// What's said in an export (all audio tracks' transcripts), in movie seconds.
     nonisolated static func speech(in snapshot: ExportSnapshot) -> [(time: Double, text: String)] {

@@ -19,6 +19,12 @@ enum Changelog {
     }
 
     static let entries: [Entry] = [
+        Entry(version: "4.9", title: "Lighter AI, tidier panels", tags: [.feature, .bugFix], changes: [
+            "Parameters → AI: choose which Ollama vision model Make Thumbnail uses, or Automatic. Each installed model is listed with its size; smaller ones (like qwen2.5vl:3b, about 3 GB) use less memory and load faster.",
+            "Fixed: the thumbnail model stayed in memory (7–8 GB) for 10 minutes after use. It's now freed a minute after choosing, or as soon as you close the thumbnail maker.",
+            "The media panel in the Edit tab lists media one under the other, each as wide as the panel.",
+            "Fixed: the Playground showed a second Sandbox badge over the timeline, overlapping its controls. The one over the preview stays.",
+        ]),
         Entry(version: "4.8", title: "Better thumbnail picks", tags: [.bugFix], changes: [
             "Fixed: Make Thumbnail chose poor frames for gameplay (like black transition screens) and often never asked the AI model. Game footage is a screen recording, which Vision rates as a \u{201C}screenshot\u{201D}; that's no longer held against a frame.",
             "Nearly empty frames (black screens, fades) are left out, and frames from one game no longer count as duplicates just because they share its interface, so the shortlist covers the video's different moments.",

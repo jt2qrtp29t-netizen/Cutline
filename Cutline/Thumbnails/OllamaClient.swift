@@ -11,10 +11,13 @@ nonisolated struct OllamaClient: Sendable {
     /// For tests: answers requests in place of the network.
     var session: URLSession = .shared
 
-    struct Model: Sendable, Equatable {
+    struct Model: Sendable, Equatable, Identifiable {
         let name: String
         let capabilities: [String]
+        /// Download size in bytes (0 if unknown).
+        var size: Int64 = 0
         var canSeeImages: Bool { capabilities.contains("vision") }
+        var id: String { name }
     }
 
     enum Failure: LocalizedError, Equatable {
@@ -36,7 +39,7 @@ nonisolated struct OllamaClient: Sendable {
 
     /// Installed models with what they can do.
     func models() async throws -> [Model] {
-        struct Tags: Decodable { struct M: Decodable { let name: String; let capabilities: [String]? }; let models: [M] }
+        struct Tags: Decodable { struct M: Decodable { let name: String; let capabilities: [String]?; let size: Int64? }; let models: [M] }
         let data: Data
         do {
             var request = URLRequest(url: baseURL.appending(path: "api/tags"))
@@ -49,7 +52,7 @@ nonisolated struct OllamaClient: Sendable {
             // Older servers don't list capabilities in tags: ask for them.
             var capabilities = m.capabilities ?? []
             if m.capabilities == nil, let asked = try? await self.capabilities(of: m.name) { capabilities = asked }
-            result.append(Model(name: m.name, capabilities: capabilities))
+            result.append(Model(name: m.name, capabilities: capabilities, size: m.size ?? 0))
         }
         return result
     }
@@ -64,11 +67,13 @@ nonisolated struct OllamaClient: Sendable {
         return (try JSONDecoder().decode(Show.self, from: data)).capabilities ?? []
     }
 
-    /// The vision model to use: preferred families first (Qwen-VL, Gemma 3, Llama Vision…).
-    func visionModel() async throws -> String {
+    /// The vision model to use: `preferred` if it's installed and can see images, otherwise
+    /// the best installed (preferred families first: Qwen-VL, Gemma 3, Llama Vision…).
+    func visionModel(preferred: String? = nil) async throws -> String {
         let installed = try await models()
         let seeing = installed.filter(\.canSeeImages).map(\.name)
         guard !seeing.isEmpty else { throw Failure.noVisionModel(installed: installed.map(\.name)) }
+        if let preferred, !preferred.isEmpty, seeing.contains(preferred) { return preferred }
         let preference = ["qwen2.5vl", "qwen3-vl", "qwen2.5-vl", "gemma3", "llama3.2-vision", "llava"]
         return seeing.min { a, b in
             let ra = preference.firstIndex { a.hasPrefix($0) } ?? preference.count
@@ -96,8 +101,9 @@ nonisolated struct OllamaClient: Sendable {
             "format": schema,
             // The default context (4K tokens) is too small for a dozen images.
             "options": ["temperature": 0.2, "num_ctx": Self.contextSize(images: encoded.count, promptCharacters: prompt.count)],
-            // Stay loaded a while: a second try doesn't reload the model from disk.
-            "keep_alive": "10m",
+            // Stay loaded a minute (an immediate "Choose Again" doesn't reload it), then
+            // give the memory back: a vision model takes 6–8 GB while loaded.
+            "keep_alive": "1m",
             "messages": [["role": "user", "content": prompt, "images": encoded]],
         ]
         var request = URLRequest(url: baseURL.appending(path: "api/chat"))
@@ -118,6 +124,24 @@ nonisolated struct OllamaClient: Sendable {
         guard let reply = try? JSONDecoder().decode(Reply.self, from: data) else { throw Failure.badAnswer("not a chat reply") }
         guard let content = reply.message?.content.data(using: .utf8) else { throw Failure.badAnswer("empty") }
         return content
+    }
+
+    /// Models loaded in memory right now.
+    func loadedModels() async -> [String] {
+        struct PS: Decodable { struct M: Decodable { let name: String }; let models: [M] }
+        var request = URLRequest(url: baseURL.appending(path: "api/ps"))
+        request.timeoutInterval = 3
+        guard let (data, _) = try? await session.data(for: request), let ps = try? JSONDecoder().decode(PS.self, from: data) else { return [] }
+        return ps.models.map(\.name)
+    }
+
+    /// Frees the model's memory now (it loads again when next needed).
+    func unload(model: String) async {
+        var request = URLRequest(url: baseURL.appending(path: "api/generate"))
+        request.httpMethod = "POST"
+        request.timeoutInterval = 5
+        request.httpBody = try? JSONSerialization.data(withJSONObject: ["model": model, "keep_alive": 0])
+        _ = try? await session.data(for: request)
     }
 
     /// A JPEG no larger than `maxSide` (what the model looks at; small keeps it quick).
@@ -223,7 +247,7 @@ nonisolated enum ThumbnailPicker {
     /// The best 3 (fewer if there are fewer candidates). Any failure falls back to the
     /// candidates' own ranking, with a note saying why.
     static func pick(from candidates: [ThumbnailCandidate], context: String = "", wantsTitle: Bool = false,
-                     client: OllamaClient = OllamaClient()) async -> ThumbnailPicks {
+                     model preferred: String? = nil, client: OllamaClient = OllamaClient()) async -> ThumbnailPicks {
         let fallback = { (note: String?) in
             ThumbnailPicks(picks: varied(candidates, count: 3).map { .init(candidate: $0, reason: $0.reason) }, title: nil, model: nil, note: note)
         }
@@ -236,7 +260,7 @@ nonisolated enum ThumbnailPicker {
         }
         let candidates = usable
         do {
-            let model = try await client.visionModel()
+            let model = try await client.visionModel(preferred: preferred)
             let data = try await client.ask(model: model, prompt: prompt(count: candidates.count, context: String(context.prefix(1_500)),
                                                                          wantsTitle: wantsTitle),
                                             images: candidates.map(\.image), schema: schema)

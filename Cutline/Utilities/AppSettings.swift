@@ -86,6 +86,13 @@ final class AppSettings {
         didSet { Self.defaults.set(showFramesWhileExporting, forKey: "export.showFrames") }
     }
 
+    // MARK: AI
+
+    /// The Ollama vision model Make Thumbnail uses; empty = Automatic (the best installed).
+    var thumbnailModel: String = value("ai.thumbnailModel", default: "") {
+        didSet { Self.defaults.set(thumbnailModel, forKey: "ai.thumbnailModel") }
+    }
+
     // MARK: Effects
 
     /// Length of newly added transitions, in seconds.
@@ -108,7 +115,7 @@ final class AppSettings {
 
     /// Puts every setting back to its default.
     func resetToDefaults() {
-        for key in ["general.showWelcome", "media.watchOffline", "timeline.snapByDefault", "timeline.snapDistance",
+        for key in ["ai.thumbnailModel", "general.showWelcome", "media.watchOffline", "timeline.snapByDefault", "timeline.snapDistance",
                     "timeline.followPlayhead", "timeline.fineScrubPointsPerFrame", "playback.scrubAudio",
                     "transitions.duration", "mouse.scrollSwitchesTabs", "mouse.reverseTabScrolling",
                     "playback.media", "media.optimizeOnImport", "media.proxyOnImport", "export.showFrames"] {

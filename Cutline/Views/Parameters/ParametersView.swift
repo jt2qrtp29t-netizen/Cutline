@@ -11,6 +11,7 @@ struct ParametersView: View {
             Tab("Playback", systemImage: "play.circle", value: "playback") { PlaybackParameters() }
             Tab("Mouse", systemImage: "computermouse", value: "mouse") { MouseParameters() }
             Tab("Performance", systemImage: "gauge.with.dots.needle.67percent", value: "performance") { PerformanceParameters() }
+            Tab("AI", systemImage: "sparkles", value: "ai") { AIParameters() }
         }
         .frame(width: 520)
         .preferredColorScheme(.dark)

@@ -95,6 +95,8 @@ import Testing
 nonisolated final class FakeOllama: URLProtocol, @unchecked Sendable {
     nonisolated(unsafe) static var routes: [String: (Int, Data)] = [:]
     nonisolated(unsafe) static var lastChatBody: [String: Any]?
+    nonisolated(unsafe) static var bodies: [String: [String: Any]] = [:]
+    static func lastBody(path: String) -> [String: Any]? { bodies[path] }
     static let lock = NSLock()
 
     static func client() -> OllamaClient {
@@ -109,13 +111,17 @@ nonisolated final class FakeOllama: URLProtocol, @unchecked Sendable {
     override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
     override func startLoading() {
         let path = request.url?.path ?? ""
-        if path == "/api/chat", let stream = request.httpBodyStream {
+        if let stream = request.httpBodyStream {
             stream.open()
             var data = Data()
             var chunk = [UInt8](repeating: 0, count: 65_536)
             while stream.hasBytesAvailable { let n = stream.read(&chunk, maxLength: chunk.count); if n <= 0 { break }; data.append(chunk, count: n) }
             stream.close()
-            Self.lock.withLock { Self.lastChatBody = try? JSONSerialization.jsonObject(with: data) as? [String: Any] }
+            let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+            Self.lock.withLock {
+                Self.bodies[path] = json
+                if path == "/api/chat" { Self.lastChatBody = json }
+            }
         }
         guard let (status, body) = Self.lock.withLock({ Self.routes[path] }) else {
             client?.urlProtocol(self, didFailWithError: URLError(.cannotConnectToHost))
@@ -185,7 +191,7 @@ nonisolated final class FakeOllama: URLProtocol, @unchecked Sendable {
         #expect((message["content"] as? String)?.contains("final boss") == true)
         // Enough context for the images (Ollama's default 4K isn't), and the model stays loaded.
         let options = try #require(body["options"] as? [String: Any])
-        #expect((options["num_ctx"] as? Int ?? 0) >= 8 * 1_000 && body["keep_alive"] as? String == "10m")
+        #expect((options["num_ctx"] as? Int ?? 0) >= 8 * 1_000 && body["keep_alive"] as? String == "1m", "memory back a minute after use")
         // Measured: 12 frames and the prompt took 12,577 tokens.
         #expect(OllamaClient.contextSize(images: 12, promptCharacters: 2_000) >= 12_577 + 1_000)
         // An error from Ollama is told plainly.
@@ -246,6 +252,32 @@ nonisolated final class FakeOllama: URLProtocol, @unchecked Sendable {
         #expect(ThumbnailPicker.aestheticsFloor(for: [-0.6, -0.7, -0.8].map(c)) == ThumbnailPicker.minimumAesthetics)
     }
 
+    @Test func theChosenModelIsUsedWhenInstalled() async throws {
+        let list = candidates()
+        FakeOllama.set(tags: [("qwen2.5vl:7b", ["vision"]), ("qwen2.5vl:3b", ["vision"]), ("llama3.2:latest", ["completion"])],
+                       chat: #"{"picks":[{"frame":1,"reason":"a"},{"frame":2,"reason":"b"},{"frame":3,"reason":"c"}]}"#)
+        let chosen = await ThumbnailPicker.pick(from: list, model: "qwen2.5vl:3b", client: FakeOllama.client())
+        #expect(chosen.model == "qwen2.5vl:3b")
+        #expect(FakeOllama.lock.withLock { FakeOllama.lastChatBody?["model"] as? String } == "qwen2.5vl:3b")
+        // Removed since (or not a vision model): Automatic instead.
+        #expect(await ThumbnailPicker.pick(from: list, model: "gone:1b", client: FakeOllama.client()).model == "qwen2.5vl:7b")
+        #expect(await ThumbnailPicker.pick(from: list, model: "llama3.2:latest", client: FakeOllama.client()).model == "qwen2.5vl:7b")
+        // Sizes come from Ollama's list (for Parameters → AI).
+        FakeOllama.lock.withLock {
+            FakeOllama.routes["/api/tags"] = (200, Data(#"{"models":[{"name":"qwen2.5vl:3b","capabilities":["vision"],"size":3200000000}]}"#.utf8))
+        }
+        #expect(try await FakeOllama.client().models() == [OllamaClient.Model(name: "qwen2.5vl:3b", capabilities: ["vision"], size: 3_200_000_000)])
+    }
+
+    @Test func closingTheStudioFreesTheModelsMemory() async throws {
+        FakeOllama.set(tags: [("qwen2.5vl:7b", ["vision"])])
+        FakeOllama.lock.withLock { FakeOllama.routes["/api/generate"] = (200, Data("{}".utf8)) }
+        let client = FakeOllama.client()
+        await client.unload(model: "qwen2.5vl:7b")
+        let body = try #require(FakeOllama.lock.withLock { FakeOllama.lastBody(path: "/api/generate") })
+        #expect(body["model"] as? String == "qwen2.5vl:7b" && body["keep_alive"] as? Int == 0)
+    }
+
     @Test func framesGoOutSmall() throws {
         let big = try #require(CGContext(data: nil, width: 1280, height: 720, bitsPerComponent: 8, bytesPerRow: 0,
                                          space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue)?.makeImage())
@@ -255,10 +287,13 @@ nonisolated final class FakeOllama: URLProtocol, @unchecked Sendable {
         #expect(try #require(OllamaClient.jpeg(big, maxSide: 448)).count < 40_000, "small enough to send a dozen")
     }
 
-    /// With the real local Ollama and a vision model installed: it picks 3 of the real photos' frames.
+    /// With the real local Ollama, when a vision model is already loaded (e.g. just after
+    /// making a thumbnail): it picks 3 of the real photos' frames. Otherwise skipped, so a
+    /// test run never loads gigabytes into memory or waits minutes for a cold model.
     @Test func liveOllamaPicksThree() async throws {
-        guard (try? await OllamaClient().visionModel()) != nil else {
-            print("LIVE skipped: no local Ollama vision model available")
+        let client = OllamaClient()
+        guard let model = try? await client.visionModel(), await client.loadedModels().contains(model) else {
+            print("LIVE skipped: no local Ollama vision model loaded")
             return
         }
         let a = try ThumbnailFinderTests.photo(ThumbnailFinderTests.photoA), b = try ThumbnailFinderTests.photo(ThumbnailFinderTests.photoB)

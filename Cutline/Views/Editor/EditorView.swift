@@ -42,7 +42,6 @@ struct EditorView: View {
                 TimelinePanel(editor: playground.editor)
                     .id(ObjectIdentifier(playground.editor))
                     .frame(height: timelineHeight)
-                    .overlay(alignment: .topTrailing) { SandboxBadge().padding(.top, 7).padding(.trailing, 200) }
             } else {
                 TimelinePanel(editor: editor)
                     .frame(height: timelineHeight)

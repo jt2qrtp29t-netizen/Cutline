@@ -7,7 +7,8 @@ struct MediaBinPanel: View {
     @State private var isDropTargeted = false
     @State private var selectedMedia: UUID?
 
-    private let columns = [GridItem(.adaptive(minimum: 72, maximum: 104), spacing: 8)]
+    /// One item per row, each as wide as the panel.
+    private let columns = [GridItem(.flexible(), spacing: 8)]
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
