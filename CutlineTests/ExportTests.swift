@@ -406,3 +406,27 @@ nonisolated private final class PhaseLog: @unchecked Sendable {
         lock.withLock { if stored.last != phase.title { stored.append(phase.title) } }
     }
 }
+
+@MainActor struct ExportFrameEdgeTests {
+    /// A timeline that ends between two frames (its last clip is as long as a recording that
+    /// isn't a whole number of frames) exports through the same path as the Export button.
+    @Test func aTimelineEndingBetweenFramesExports() async throws {
+        let media = try await PlaybackTests.media("Sunset")
+        var state = ProjectState(settings: ProjectSettings(name: "Edge", width: 640, height: 360, frameRate: 60),
+                                 videoTracks: 1, audioTracks: 1, textTracks: 0)
+        state.media = [media]
+        // 1.2 s minus one tick: 71.9 frames at 60 fps.
+        state.tracks[0].clips = [Clip(id: UUID(), mediaID: media.id, name: "Sunset", start: .zero,
+                                      duration: Time(ticks: 719), sourceStart: .zero)]
+        state.exportSettings = ExportPreset.quickPreview.applied(to: ExportSettings())
+        state.exportSettings.frameRate = 60
+        let editor = EditorController(store: ProjectStore(state: state))
+        let job = try #require(try editor.makeExportJobs(source: .edit, fileName: "edge", folder: ExportProbe.folder()).first)
+        #expect(job.snapshot.range.end > state.duration, "the range rounds out to a whole frame past the timeline's end")
+        let result = try await ExportRunner.run(job.snapshot, to: job.destination, cancellation: ExportCancellation(),
+                                                phase: { _ in }) { _, _ in }
+        #expect(result.frames == 72)
+        #expect(try await ExportProbe.frameCount(job.destination) == 72)
+        #expect(Time(ticks: 719).roundedUpToFrame(fps: 60) == Time(ticks: 720) && Time(ticks: 720).roundedUpToFrame(fps: 60) == Time(ticks: 720))
+    }
+}

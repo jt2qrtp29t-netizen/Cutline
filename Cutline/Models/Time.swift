@@ -26,6 +26,13 @@ nonisolated struct Time: Codable, Hashable, Comparable, Sendable {
 
     static func frame(fps: Int) -> Time { Time(ticks: ticksPerSecond / Int64(fps)) }
 
+    /// Rounds up to the next frame boundary of the given frame rate (unchanged if on one).
+    func roundedUpToFrame(fps: Int) -> Time {
+        let frame = Self.ticksPerSecond / Int64(max(fps, 1))
+        guard frame > 0 else { return self }
+        return Time(ticks: (ticks + frame - 1) / frame * frame)
+    }
+
     /// Rounds to the nearest frame boundary of the given frame rate.
     func snappedToFrame(fps: Int) -> Time {
         let frame = Self.ticksPerSecond / Int64(fps)

@@ -19,6 +19,9 @@ enum Changelog {
     }
 
     static let entries: [Entry] = [
+        Entry(version: "4.7", title: "Export fix", tags: [.bugFix], changes: [
+            "Fixed: exports could fail right away with “The export couldn’t start (AVFoundationErrorDomain error -11841)” when the timeline ended between two frames, as it does when the last clip is a whole recording whose length isn’t a whole number of frames. The export now covers the last partial frame.",
+        ]),
         Entry(version: "4.6", title: "Smart thumbnails", tags: [.feature], changes: [
             "Make Thumbnail on any finished export (Export tab): Cutline looks through the video and offers its 3 best frames as thumbnail candidates, each with why it was chosen. Pick one, add a title if you like, and save it next to the movie.",
             "Frames are rated on this Mac with Apple's Vision framework (composition and sharpness, clear faces), together with loud moments and excited speech from the transcript (\u{201C}no way\u{201D}, \u{201C}let's go\u{201D}). Blurry, blank and near-identical frames are left out.",

@@ -163,7 +163,9 @@ nonisolated enum CompositionBuilder {
         // The player's clock must run for the whole timeline, including audio that
         // extends past the last video clip, so stretch a black frame across it.
         // The compositor never draws this track; gaps still render black.
-        let duration = state.duration
+        // Whole frames: a timeline can end between two frames (a clip as long as its
+        // recording), and exports read whole frames, up to the next frame boundary.
+        let duration = state.duration.roundedUpToFrame(fps: state.settings.frameRate)
         var filler: (asset: AVURLAsset, track: AVAssetTrack)?
         if duration > .zero, Time(composition.duration) < duration,
            let black = try? await BlackFrameSource.videoTrack(),
