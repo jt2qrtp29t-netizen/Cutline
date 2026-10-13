@@ -10,6 +10,12 @@ nonisolated enum ManimMovieWriter {
         let input = AVAssetWriterInput(mediaType: .video, outputSettings: [
             AVVideoCodecKey: alpha ? AVVideoCodecType.proRes4444 : AVVideoCodecType.proRes422,
             AVVideoWidthKey: width, AVVideoHeightKey: height,
+            // Manim's colors are sRGB: say so, or players guess (an old TV standard).
+            AVVideoColorPropertiesKey: [
+                AVVideoColorPrimariesKey: AVVideoColorPrimaries_ITU_R_709_2,
+                AVVideoTransferFunctionKey: AVVideoTransferFunction_IEC_sRGB,
+                AVVideoYCbCrMatrixKey: AVVideoYCbCrMatrix_ITU_R_709_2,
+            ],
         ])
         input.expectsMediaDataInRealTime = false
         // Frames come in as our own BGRA buffers (no pool needed).
@@ -33,7 +39,12 @@ nonisolated enum ManimMovieWriter {
         }
     }
 
-    /// One PNG drawn into a premultiplied BGRA buffer (transparent where the PNG is).
+    /// One frame as a BGRA buffer with straight (unpremultiplied) alpha, tagged sRGB.
+    ///
+    /// Manim's transparent PNGs store premultiplied color (a 50% white is saved as gray 128
+    /// at alpha 128), though PNG means straight color. Their bytes are read as they are and
+    /// unpremultiplied (to white 255 at alpha 128); drawing them with Core Graphics would
+    /// premultiply them a second time and darken every soft edge.
     static func pixelBuffer(_ file: URL, width: Int, height: Int) throws -> CVReadOnlyPixelBuffer {
         guard let source = CGImageSourceCreateWithURL(file as CFURL, nil),
               let image = CGImageSourceCreateImageAtIndex(source, 0, nil) else {
@@ -43,20 +54,31 @@ nonisolated enum ManimMovieWriter {
         CVPixelBufferCreate(nil, width, height, kCVPixelFormatType_32BGRA,
                             [kCVPixelBufferIOSurfacePropertiesKey: [:]] as CFDictionary, &made)
         guard let buffer = made else { throw ManimEngine.Failure.failed("Out of memory for the animation's frames.") }
+        let rgba = image.bitsPerComponent == 8 && image.bitsPerPixel == 32 && image.width == width && image.height == height
+            && [.last, .premultipliedLast].contains(image.alphaInfo)
+            && image.bitmapInfo.intersection(.byteOrderMask) != .byteOrder32Little
         CVPixelBufferLockBaseAddress(buffer, [])
-        let drawn: Bool
-        if let context = CGContext(data: CVPixelBufferGetBaseAddress(buffer), width: width, height: height, bitsPerComponent: 8,
-                                   bytesPerRow: CVPixelBufferGetBytesPerRow(buffer), space: CGColorSpace(name: CGColorSpace.sRGB)!,
-                                   bitmapInfo: CGImageAlphaInfo.premultipliedFirst.rawValue | CGBitmapInfo.byteOrder32Little.rawValue) {
-            context.clear(CGRect(x: 0, y: 0, width: width, height: height))
-            context.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
-            drawn = true
-        } else {
-            drawn = false
+        var ok = false
+        if rgba, let data = image.dataProvider?.data, let pixels = CFDataGetBytePtr(data),
+           let base = CVPixelBufferGetBaseAddress(buffer)?.assumingMemoryBound(to: UInt8.self) {
+            let sourceRow = image.bytesPerRow, targetRow = CVPixelBufferGetBytesPerRow(buffer)
+            for y in 0..<height {
+                let from = pixels + y * sourceRow, to = base + y * targetRow
+                for x in 0..<width {
+                    let r = Int(from[x * 4]), g = Int(from[x * 4 + 1]), b = Int(from[x * 4 + 2]), a = Int(from[x * 4 + 3])
+                    // Premultiplied → straight.
+                    func straight(_ c: Int) -> UInt8 { a == 0 ? 0 : UInt8(min(255, (c * 255 + a / 2) / a)) }
+                    to[x * 4] = straight(b); to[x * 4 + 1] = straight(g); to[x * 4 + 2] = straight(r); to[x * 4 + 3] = UInt8(a)
+                }
+            }
+            ok = true
         }
-        // Unlocked before it's handed on.
         CVPixelBufferUnlockBaseAddress(buffer, [])
-        guard drawn else { throw ManimEngine.Failure.failed("A rendered frame couldn't be drawn.") }
+        guard ok else { throw ManimEngine.Failure.failed("A rendered frame wasn't in the expected format (8-bit RGBA).") }
+        CVBufferSetAttachment(buffer, kCVImageBufferAlphaChannelModeKey, kCVImageBufferAlphaChannelMode_StraightAlpha, .shouldPropagate)
+        CVBufferSetAttachment(buffer, kCVImageBufferColorPrimariesKey, kCVImageBufferColorPrimaries_ITU_R_709_2, .shouldPropagate)
+        CVBufferSetAttachment(buffer, kCVImageBufferTransferFunctionKey, kCVImageBufferTransferFunction_sRGB, .shouldPropagate)
+        CVBufferSetAttachment(buffer, kCVImageBufferYCbCrMatrixKey, kCVImageBufferYCbCrMatrix_ITU_R_709_2, .shouldPropagate)
         return CVReadOnlyPixelBuffer(unsafeBuffer: buffer)
     }
 }

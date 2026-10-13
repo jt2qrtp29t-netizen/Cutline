@@ -240,7 +240,7 @@ final class PlaybackController {
                 item.videoComposition = CompositionBuilder.makeVideoComposition(
                     for: prepared(state), duration: installed.duration,
                     clipTrackIDs: installed.clipTrackIDs, sourceTransforms: installed.sourceTransforms,
-                    retimed: installed.retimed
+                    retimed: installed.retimed, alpha: installed.hasAlpha
                 )
             }
             audio.update(state)

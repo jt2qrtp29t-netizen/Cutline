@@ -56,6 +56,9 @@ nonisolated enum CompositionBuilder {
         let sourceTransforms: [UUID: CGAffineTransform]
         /// Frame Blend sources of retimed clips.
         let retimed: [UUID: RetimedVideo]
+        /// Some clip's video has transparency (e.g. a rendered animation): frames are read
+        /// with their alpha kept.
+        var hasAlpha = false
     }
 
     enum BuildError: LocalizedError {
@@ -74,6 +77,17 @@ nonisolated enum CompositionBuilder {
         let asset: AVURLAsset
         let video: AVAssetTrack?
         let transform: CGAffineTransform
+        var hasAlpha = false
+    }
+
+    /// Whether a video track carries transparency (an alpha channel: 32-bit depth, as in
+    /// ProRes 4444 with alpha, PNG or Animation movies).
+    static func hasAlpha(_ track: AVAssetTrack) async -> Bool {
+        guard let descriptions = try? await track.load(.formatDescriptions) else { return false }
+        return descriptions.contains { description in
+            let depth = CMFormatDescriptionGetExtension(description, extensionKey: kCMFormatDescriptionExtension_Depth) as? Int
+            return depth == 32
+        }
     }
 
     /// - Parameter urls: resolved file URLs for each media item.
@@ -86,7 +100,8 @@ nonisolated enum CompositionBuilder {
             let video = try? await asset.loadTracks(withMediaType: .video).first
             var transform = CGAffineTransform.identity
             if let video, let loaded = try? await video.load(.preferredTransform) { transform = loaded }
-            sources[media.id] = Source(asset: asset, video: video, transform: transform)
+            let alpha = if let video { await hasAlpha(video) } else { false }
+            sources[media.id] = Source(asset: asset, video: video, transform: transform, hasAlpha: alpha)
         }
 
         let composition = AVMutableComposition()
@@ -178,12 +193,14 @@ nonisolated enum CompositionBuilder {
         withExtendedLifetime(filler) {}
 
         let transforms = sources.compactMapValues { $0.video == nil ? nil : $0.transform }
+        let visualMedia = Set(state.trackIndices(of: .video).flatMap { state.tracks[$0].clips.map(\.mediaID) })
+        let alpha = sources.contains { visualMedia.contains($0.key) && $0.value.hasAlpha }
         let videoComposition = duration > .zero
             ? makeVideoComposition(for: state, duration: duration, clipTrackIDs: clipTrackIDs, sourceTransforms: transforms,
-                                   retimed: retimed)
+                                   retimed: retimed, alpha: alpha)
             : nil
         return Output(composition: composition, videoComposition: videoComposition, duration: duration,
-                      clipTrackIDs: clipTrackIDs, sourceTransforms: transforms, retimed: retimed)
+                      clipTrackIDs: clipTrackIDs, sourceTransforms: transforms, retimed: retimed, hasAlpha: alpha)
     }
 
     /// Inserts a clip's media at its place on the timeline, extended by `lead` before
@@ -302,7 +319,8 @@ nonisolated enum CompositionBuilder {
         duration: Time,
         clipTrackIDs: [UUID: CMPersistentTrackID],
         sourceTransforms: [UUID: CGAffineTransform],
-        retimed: [UUID: RetimedVideo] = [:]
+        retimed: [UUID: RetimedVideo] = [:],
+        alpha: Bool = false
     ) -> AVVideoComposition {
         // Video tracks bottom to top, then text tracks above them (T1, then T2 on top).
         let visualTracks = state.trackIndices(of: .video) + state.trackIndices(of: .text)
@@ -384,7 +402,8 @@ nonisolated enum CompositionBuilder {
             colorPrimaries: AVVideoColorPrimaries_ITU_R_709_2,
             colorTransferFunction: AVVideoTransferFunction_ITU_R_709_2,
             colorYCbCrMatrix: AVVideoYCbCrMatrix_ITU_R_709_2,
-            customVideoCompositorClass: LayerCompositor.self,
+            // Transparent clips need frames with their alpha (RGBA); otherwise the faster YUV.
+            customVideoCompositorClass: alpha ? AlphaLayerCompositor.self : LayerCompositor.self,
             frameDuration: state.settings.frameDuration.cmTime,
             instructions: instructions,
             renderSize: state.settings.renderSize

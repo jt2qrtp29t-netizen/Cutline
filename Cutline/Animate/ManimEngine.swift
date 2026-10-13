@@ -95,11 +95,15 @@ nonisolated enum ManimEngine {
 
     static var cacheFolder: URL { DiskCache.animations.folder }
 
+    /// Bumped when the movies Cutline makes change (so older renders aren't reused).
+    /// 2: straight alpha and sRGB color tags.
+    static let formatVersion = 2
+
     /// A name for everything the result depends on.
     static func cacheKey(_ request: Request, version: String) -> String {
         let size = request.renderSize
         let parameters = request.parameters.sorted { $0.key < $1.key }.map { "\($0.key)=\($0.value)" }.joined(separator: "\u{1}")
-        let text = "v1|\(version)|\(request.scene)|\(size.width)x\(size.height)@\(size.fps)|\(request.transparent)|\(parameters)|\(request.script)"
+        let text = "v\(formatVersion)|\(version)|\(request.scene)|\(size.width)x\(size.height)@\(size.fps)|\(request.transparent)|\(parameters)|\(request.script)"
         return SHA256.hash(data: Data(text.utf8)).prefix(16).map { String(format: "%02x", $0) }.joined()
     }
 

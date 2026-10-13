@@ -4,7 +4,7 @@ import CoreVideo
 
 /// Custom compositor that stacks every visible clip with Core Image, applying
 /// each clip's transform, opacity and color adjustments.
-nonisolated final class LayerCompositor: NSObject, AVVideoCompositing, @unchecked Sendable {
+nonisolated class LayerCompositor: NSObject, AVVideoCompositing, @unchecked Sendable {
     /// Frames render on a few serial lanes in turn, so several are drawn at once (much
     /// faster exports). Lanes are dedicated serial queues rather than one concurrent
     /// queue: a render waits for the GPU, and blocking the shared worker pool with many
@@ -28,10 +28,15 @@ nonisolated final class LayerCompositor: NSObject, AVVideoCompositing, @unchecke
         kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange, kCVPixelFormatType_420YpCbCr8BiPlanarFullRange,
         kCVPixelFormatType_32BGRA,
     ]
-    let sourcePixelBufferAttributes: [String: any Sendable]? = [
-        kCVPixelBufferPixelFormatTypeKey as String: LayerCompositor.sourceFormats,
-        kCVPixelBufferMetalCompatibilityKey as String: true,
-    ]
+    /// The formats this compositor asks the decoders for (subclasses change them).
+    class var requestedSourceFormats: [OSType] { sourceFormats }
+
+    var sourcePixelBufferAttributes: [String: any Sendable]? {
+        [
+            kCVPixelBufferPixelFormatTypeKey as String: Self.requestedSourceFormats,
+            kCVPixelBufferMetalCompatibilityKey as String: true,
+        ]
+    }
     let requiredPixelBufferAttributesForRenderContext: [String: any Sendable] = LayerCompositor.pixelAttributes
 
     func renderContextChanged(_ newRenderContext: AVVideoCompositionRenderContext) {}
@@ -109,13 +114,13 @@ nonisolated final class LayerCompositor: NSObject, AVVideoCompositing, @unchecke
         guard let trackID = layer.trackID,
               let buffer = request.sourceReadOnlyPixelBuffer(byTrackID: trackID) else { return nil }
         sources.append(buffer)
-        var image = buffer.withUnsafeBuffer { CIImage(cvPixelBuffer: $0) }
+        var image = buffer.withUnsafeBuffer { Self.image(from: $0) }
         // Frame Blend: mix in the next source frame by how far toward it this moment is.
         if let retime = layer.retime, let next = request.sourceReadOnlyPixelBuffer(byTrackID: retime.nextFrameTrackID) {
             let fraction = retime.fraction(at: time)
             if fraction > 0.001 {
                 sources.append(next)
-                let nextImage = next.withUnsafeBuffer { CIImage(cvPixelBuffer: $0) }
+                let nextImage = next.withUnsafeBuffer { Self.image(from: $0) }
                 image = image.applyingFilter("CIDissolveTransition", parameters: [
                     kCIInputTargetImageKey: nextImage, kCIInputTimeKey: fraction,
                 ]).cropped(to: image.extent)
@@ -348,4 +353,19 @@ nonisolated final class LayerCompositor: NSObject, AVVideoCompositing, @unchecke
         default: .up
         }
     }
+}
+
+extension LayerCompositor {
+    /// A source frame as Core Image works with it. (Frames tagged straight alpha, like the
+    /// ProRes 4444 animations, are premultiplied by Core Image itself from that tag.)
+    static func image(from buffer: CVPixelBuffer) -> CIImage {
+        CIImage(cvPixelBuffer: buffer)
+    }
+}
+
+/// The compositor for timelines with transparent clips (rendered animations): frames come
+/// as RGBA so their alpha survives (YUV has none). A little slower, so it's only used
+/// when a clip needs it.
+nonisolated final class AlphaLayerCompositor: LayerCompositor, @unchecked Sendable {
+    override class var requestedSourceFormats: [OSType] { [kCVPixelFormatType_32BGRA] }
 }

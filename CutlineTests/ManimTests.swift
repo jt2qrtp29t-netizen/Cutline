@@ -1,4 +1,5 @@
 import AVFoundation
+import CoreImage
 import Foundation
 import Testing
 @testable import Cutline
@@ -129,4 +130,78 @@ nonisolated final class ProgressLog: @unchecked Sendable {
     private var values: [(Int, Double)] = []
     func add(_ a: Int, _ f: Double) { lock.withLock { values.append((a, f)) } }
     var count: Int { lock.withLock { values.count } }
+}
+
+@MainActor struct TransparentClipTests {
+    static let overlay = """
+    from manim import *
+
+    class Overlay(Scene):
+        def construct(self):
+            veil = Rectangle(width=config.frame_width / 2, height=config.frame_height, stroke_width=0)
+            veil.set_fill(WHITE, opacity=0.5).to_edge(LEFT, buff=0)
+            square = Square(side_length=2, stroke_width=0).set_fill(GREEN, opacity=1)
+            self.add(veil, square)
+            self.wait(1)
+    """
+
+    @Test func transparentClipsShowWhatsBelow() async throws {
+        guard let installation = await ManimEngine.find() else { print("MANIM not installed: skipped"); return }
+        let animation = try await ManimEngine.render(.init(script: Self.overlay, scene: "Overlay", width: 640, height: 360, frameRate: 30),
+                                                     installation: installation)
+        let red = CIImage(color: CIColor(red: 1, green: 0, blue: 0)).cropped(to: CGRect(x: 0, y: 0, width: 1280, height: 720))
+        let footage = try await ThumbnailFinderTests.movie([red], seconds: 2)
+        let below = try await MediaImporter.makeItem(for: footage), above = try await MediaImporter.makeItem(for: animation)
+        var state = ProjectState(settings: ProjectSettings(name: "A", width: 640, height: 360, frameRate: 30), videoTracks: 2, audioTracks: 0, textTracks: 0)
+        state.media = [below, above]
+        state.tracks[0].clips = [Clip(id: UUID(), mediaID: below.id, name: "red", start: .zero, duration: Time(seconds: 1), sourceStart: .zero)]
+        state.tracks[1].clips = [Clip(id: UUID(), mediaID: above.id, name: "anim", start: .zero, duration: Time(seconds: 1), sourceStart: .zero)]
+        let urls = [below.id: footage, above.id: animation]
+
+        let built = try await CompositionBuilder.build(state, urls: urls)
+        #expect(built.hasAlpha, "the animation's alpha is noticed")
+        let frame = try await ExportProbe.previewFrame(state, urls: urls, at: 0.5)
+        let clear = try TextRenderTests.pixel(frame, x: 600, y: 40)       // right edge: transparent → red
+        let solid = try TextRenderTests.pixel(frame, x: 320, y: 180)      // center: the green square
+        let veil = try TextRenderTests.pixel(frame, x: 40, y: 40)         // left: 50% white over red
+        #expect(clear.r > 240 && clear.g < 15 && clear.b < 15, "transparent shows the clip below: \(clear)")
+
+        // The yardstick: the same colors drawn by Cutline itself (a text block over the same
+        // red): Manim's #83C167 and a 50% white must come out exactly like Cutline's.
+        func block(_ color: RGBAColor) async throws -> (r: Int, g: Int, b: Int, a: Int) {
+            var reference = state
+            var text = Clip.text(at: .zero, duration: Time(seconds: 1))
+            text.text?.string = "█"
+            text.text?.size = 2_000
+            text.text?.color = color
+            reference.tracks[1].clips = []
+            reference.tracks.append(Track(id: UUID(), name: "T1", kind: .text, clips: [text]))
+            let image = try await ExportProbe.previewFrame(reference, urls: urls, at: 0.5)
+            return try TextRenderTests.pixel(image, x: 320, y: 180)
+        }
+        let green = try await block(RGBAColor(red: 0x83 / 255.0, green: 0xC1 / 255.0, blue: 0x67 / 255.0, alpha: 1))
+        let halfWhite = try await block(RGBAColor(red: 1, green: 1, blue: 1, alpha: 0.5))
+        print("ALPHA manim solid \(solid) veil \(veil) | cutline green \(green) half white \(halfWhite)")
+        func close(_ a: (r: Int, g: Int, b: Int, a: Int), _ b: (r: Int, g: Int, b: Int, a: Int)) -> Bool {
+            abs(a.r - b.r) <= 4 && abs(a.g - b.g) <= 4 && abs(a.b - b.b) <= 4
+        }
+        #expect(close(solid, green), "Manim's colors match Cutline's: \(solid) vs \(green)")
+        #expect(close(veil, halfWhite), "half-transparent blends like Cutline's own: \(veil) vs \(halfWhite)")
+
+        // Exports draw it the same (ProRes, so no compression shifts the colors much).
+        var settings = ExportPreset.proRes.applied(to: ExportSettings())
+        settings.frameRate = 30
+        let range = ExportSnapshot.snapped(TimeRange(start: .zero, end: Time(seconds: 1)), fps: 30)
+        let exportURL = ExportProbe.folder().appendingPathComponent("alpha.mov")
+        _ = try await ExportRunner.run(ExportSnapshot(state: state, urls: urls, range: range, settings: settings), to: exportURL,
+                                       cancellation: ExportCancellation(), phase: { _ in }) { _, _ in }
+        let exported = try await ExportProbe.frame(exportURL, at: 0.5)
+        #expect(close(try TextRenderTests.pixel(exported, x: 40, y: 40), veil), "export matches the preview")
+        #expect(close(try TextRenderTests.pixel(exported, x: 320, y: 180), solid))
+
+        // Without transparent clips the faster compositor is kept.
+        var plain = state
+        plain.tracks[1].clips = []
+        #expect(try await !CompositionBuilder.build(plain, urls: urls).hasAlpha)
+    }
 }

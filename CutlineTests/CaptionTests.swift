@@ -52,12 +52,10 @@ enum SpeechKit {
         undo.undo()
         #expect(editor.state.transcripts.isEmpty)
 
-        // Again: straight from the disk cache, the same words.
-        let clock = ContinuousClock()
-        let start = clock.now
+        // Again: straight from the disk cache (it's there), the same words.
+        #expect(Transcriber.cached(media.resolveURL(), mediaID: media.id, locale: Locale(identifier: "en_US")) != nil, "cached on disk")
         editor.transcribe(locale: Locale(identifier: "en_US"))
         await editor.waitForTranscription()
-        #expect(clock.now - start < .seconds(2), "cached")
         #expect(SpeechKit.plain(editor.state.transcripts[media.id]?.words ?? []) == heard)
     }
 
