@@ -120,6 +120,8 @@ struct EditorView: View {
             AudioWorkspace(editor: editor)
         case .captions:
             CaptionsWorkspace(editor: editor)
+        case .animate:
+            AnimateWorkspace(editor: editor, session: editor.animateSession)
         case .playground:
             if let playground = editor.playground {
                 PlaygroundWorkspace(main: editor, session: playground)

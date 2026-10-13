@@ -291,7 +291,7 @@ enum SpeechKit {
     }
 
     @Test func theCaptionsTabSitsBetweenAudioAndPlayground() {
-        #expect(Workspace.allCases == [.edit, .effects, .color, .audio, .captions, .playground, .export])
+        #expect(Workspace.allCases == [.edit, .effects, .color, .audio, .captions, .animate, .playground, .export])
         #expect(Workspace.allCases.firstIndex(of: .captions) == 4, "⌘5")
         let editor = EditorController(store: ProjectStore(state: ProjectState()))
         editor.transcribeForCaptions()

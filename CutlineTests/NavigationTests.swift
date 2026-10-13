@@ -15,8 +15,10 @@ import Testing
         #expect(editor.workspace == .color)
         editor.switchWorkspace(by: 1)
         #expect(editor.workspace == .audio, "Audio comes after Color")
-        editor.switchWorkspace(by: 1)
-        editor.switchWorkspace(by: 1)
+        for next in [Workspace.captions, .animate, .playground, .export] {
+            editor.switchWorkspace(by: 1)
+            #expect(editor.workspace == next)
+        }
         editor.switchWorkspace(by: 1)
         #expect(editor.workspace == .export, "stops at the last tab")
         editor.switchWorkspace(by: -1)

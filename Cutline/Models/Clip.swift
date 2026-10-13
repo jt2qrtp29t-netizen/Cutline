@@ -106,6 +106,8 @@ nonisolated struct Clip: Identifiable, Codable, Hashable, Sendable {
     var labs: [LabEffect] = []
     /// Set for generator clips, which draw a Labs generator instead of a media file.
     var generator: LabEffect?
+    /// Set for animations made in the Animate tab: what they were rendered from.
+    var animationSource: AnimationSource?
 
     init(id: UUID, mediaID: UUID, name: String, start: Time, duration: Time, sourceStart: Time) {
         self.id = id
@@ -148,6 +150,7 @@ nonisolated struct Clip: Identifiable, Codable, Hashable, Sendable {
         animation = try c.decodeIfPresent(ClipAnimation.self, forKey: .animation) ?? ClipAnimation()
         labs = try c.decodeIfPresent([LabEffect].self, forKey: .labs) ?? []
         generator = try c.decodeIfPresent(LabEffect.self, forKey: .generator)
+        animationSource = try c.decodeIfPresent(AnimationSource.self, forKey: .animationSource)
 
         // Older files stored one end position per axis: load it as a two-keyframe
         // animation from the clip's first frame to its last.

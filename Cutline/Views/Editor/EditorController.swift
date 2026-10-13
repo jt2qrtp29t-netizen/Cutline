@@ -107,6 +107,8 @@ final class EditorController {
     var selectedCaptionTrackID: UUID?
     /// The thumbnail being made in the Export tab, if any.
     var thumbnail: ThumbnailSession?
+    /// The Animate tab's work in progress (see `animateSession`).
+    var animate: AnimateSession?
     /// Transcribing again would replace edited transcripts: waiting for the user to confirm.
     var pendingTranscription: PendingTranscription?
     /// Captions worked out for a track at a store revision (redraws during playback reuse them).
