@@ -219,6 +219,10 @@ private struct ClipContextMenu: View {
             Button("Relink “\(media.name)”…") { editor.relinkMedia(media.id) }
             Divider()
         }
+        if clip.animationSource != nil {
+            Button("Edit in Animate") { editor.editAnimation(clip.id) }
+            Divider()
+        }
         Button(editor.isLinked(targets) ? "Unlink" : "Link") { editor.toggleLink(targets) }
             .keyboardShortcut("l", modifiers: [.command, .option])
             .disabled(!editor.canToggleLink(targets))

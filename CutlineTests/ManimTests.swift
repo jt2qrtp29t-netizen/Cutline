@@ -86,6 +86,14 @@ import Testing
         #expect(clock.now - again < .milliseconds(200), "first render \(first)")
     }
 
+    @Test func waitsLastAsLongAsWritten() async throws {
+        guard let installation = await ManimEngine.find() else { print("MANIM not installed: skipped"); return }
+        let script = "from manim import *\n\nclass Pause(Scene):\n    def construct(self):\n        self.play(FadeIn(Square()), run_time=0.5)\n        self.wait(2)\n        self.pause(1)\n"
+        let movie = try await ManimEngine.render(.init(script: script, scene: "Pause", width: 320, height: 180, frameRate: 15), installation: installation)
+        let duration = try await AVURLAsset(url: movie).load(.duration).seconds
+        #expect(abs(duration - 3.5) < 0.15, "0.5 s fade + 2 s wait + 1 s pause: \(duration)")
+    }
+
     @Test func templateValuesArriveAsData() async throws {
         guard let installation = await ManimEngine.find() else { print("MANIM not installed: skipped"); return }
         // Quotes and code-like text are just text.

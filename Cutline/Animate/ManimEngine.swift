@@ -96,8 +96,8 @@ nonisolated enum ManimEngine {
     static var cacheFolder: URL { DiskCache.animations.folder }
 
     /// Bumped when the movies Cutline makes change (so older renders aren't reused).
-    /// 2: straight alpha and sRGB color tags.
-    static let formatVersion = 2
+    /// 2: straight alpha and sRGB color tags. 3: waits keep their frames.
+    static let formatVersion = 3
 
     /// A name for everything the result depends on.
     static func cacheKey(_ request: Request, version: String) -> String {
@@ -127,6 +127,10 @@ nonisolated enum ManimEngine {
         defer { try? fm.removeItem(at: work) }
         let scriptURL = work.appendingPathComponent("animation.py")
         try request.script.write(to: scriptURL, atomically: true, encoding: .utf8)
+        // Waits keep every frame: Manim writes no PNG frames for a wait() while nothing
+        // moves (which would cut pauses out of the movie). Python loads this at startup,
+        // so the script itself is untouched (and its line numbers stay right).
+        try Self.waitPatch.write(to: work.appendingPathComponent("sitecustomize.py"), atomically: true, encoding: .utf8)
         // Template values as data: the script reads CUTLINE_PARAMETERS (a JSON file).
         let parametersURL = work.appendingPathComponent("parameters.json")
         try JSONSerialization.data(withJSONObject: request.parameters, options: [.sortedKeys]).write(to: parametersURL)
@@ -139,7 +143,7 @@ nonisolated enum ManimEngine {
                          "--disable_caching", "-o", "frame", "--progress_bar", "display"]
         if request.transparent { arguments.append("--transparent") }
         let output = try await run(installation.executable, arguments, timeout: 1_800,
-                                   environment: ["CUTLINE_PARAMETERS": parametersURL.path],
+                                   environment: ["CUTLINE_PARAMETERS": parametersURL.path, "PYTHONPATH": work.path],
                                    onStderr: { line in
                                        if let p = parseProgress(line) { progress(p.animation, p.fraction) }
                                    })
@@ -160,6 +164,18 @@ nonisolated enum ManimEngine {
         try fm.moveItem(at: partial, to: destination)
         return destination
     }
+
+    static let waitPatch = """
+    try:
+        import manim
+        _cutline_wait = manim.Scene.wait
+        def _wait(self, duration=1.0, stop_condition=None, frozen_frame=None):
+            return _cutline_wait(self, duration, stop_condition, frozen_frame=False)
+        manim.Scene.wait = _wait
+        manim.Scene.pause = lambda self, duration=1.0: _wait(self, duration)
+    except Exception:
+        pass
+    """
 
     /// "Animation 2: Write(Text('GOAL')):  45%|…" → (2, 0.45).
     static func parseProgress(_ line: String) -> (animation: Int, fraction: Double)? {

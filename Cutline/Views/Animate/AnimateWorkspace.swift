@@ -7,7 +7,6 @@ struct AnimateWorkspace: View {
     let editor: EditorController
     let session: AnimateSession
     @AppStorage("layout.animatePanelWidth") private var panelWidth = 400.0
-    @AppStorage("animate.mode") private var mode = "templates"
 
     var body: some View {
         HStack(spacing: 0) {
@@ -15,9 +14,9 @@ struct AnimateWorkspace: View {
                 HStack(spacing: 8) {
                     SectionLabel("Animate")
                     Spacer()
-                    Picker("Mode", selection: $mode) {
-                        Text("Templates").tag("templates")
-                        Text("Script").tag("script")
+                    Picker("Mode", selection: Binding(get: { session.mode }, set: { session.mode = $0 })) {
+                        Text("Templates").tag(AnimateSession.Mode.templates)
+                        Text("Script").tag(AnimateSession.Mode.script)
                     }
                     .pickerStyle(.segmented)
                     .labelsHidden()
@@ -27,20 +26,22 @@ struct AnimateWorkspace: View {
                 .padding(.horizontal, 14)
                 .frame(height: 36)
                 Rectangle().fill(Theme.border).frame(height: 1)
-                if mode == "templates" {
+                if let id = session.editingClipID, let clip = editor.state.clip(id) {
+                    HStack(spacing: 8) {
+                        Image(systemName: "pencil.circle.fill").foregroundStyle(Theme.accent)
+                        Text("Editing “\(clip.name)” on the timeline")
+                            .font(.system(size: 11)).foregroundStyle(Theme.textSecondary).lineLimit(1)
+                        Spacer()
+                        Button("Done") { session.stopEditing() }.controlSize(.small)
+                    }
+                    .padding(.horizontal, 12)
+                    .frame(height: 30)
+                    .background(Theme.accentMuted)
+                }
+                if session.mode == .templates {
                     ScrollView { TemplateForm(session: session).padding(12) }
                 } else {
-                    VStack(spacing: 8) {
-                        Image(systemName: "chevron.left.forwardslash.chevron.right")
-                            .font(.system(size: 24))
-                            .foregroundStyle(Theme.textTertiary)
-                        Text("Write your own Manim scenes here: coming in the next stage.")
-                            .font(.system(size: 11.5))
-                            .foregroundStyle(Theme.textSecondary)
-                            .multilineTextAlignment(.center)
-                    }
-                    .padding(24)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    ScriptPanel(session: session)
                 }
             }
             .frame(width: panelWidth)
@@ -91,6 +92,8 @@ struct TemplateForm: View {
                     .help("Start from the \(option.title) template (replaces the settings below)")
                 }
             }
+
+            SavedTemplatesRow(session: session)
 
             InspectorSection(title: "Text") {
                 TextField(labels.text, text: s.text, axis: .vertical).themedField().font(.system(size: 12))
@@ -184,14 +187,25 @@ struct AnimationPreview: View {
                         .font(.system(size: 10.5)).foregroundStyle(Theme.textTertiary)
                 }
                 Spacer()
+                if session.editingClipID != nil {
+                    Button("Add as New") { session.addToTimeline(editor, asNew: true) }
+                        .disabled(session.installation == nil || session.isAdding || session.needsTrust)
+                }
                 Button {
                     session.addToTimeline(editor)
                 } label: {
-                    if session.isAdding { ProgressView().controlSize(.small) } else { Label("Add to Timeline", systemImage: "plus.rectangle.on.rectangle") }
+                    if session.isAdding {
+                        ProgressView().controlSize(.small)
+                    } else if session.editingClipID != nil {
+                        Label("Update Clip", systemImage: "arrow.triangle.2.circlepath")
+                    } else {
+                        Label("Add to Timeline", systemImage: "plus.rectangle.on.rectangle")
+                    }
                 }
                 .keyboardShortcut(.defaultAction)
-                .disabled(session.installation == nil || session.isAdding)
-                .help("Renders it at the project's size and frame rate and places it at the playhead, above your footage")
+                .disabled(session.installation == nil || session.isAdding || session.needsTrust)
+                .help(session.editingClipID != nil ? "Renders it again and replaces the clip's animation (same place on the timeline)"
+                      : "Renders it at the project's size and frame rate and places it at the playhead, above your footage")
             }
             .padding(.horizontal, 14)
             .frame(height: 44)
@@ -227,7 +241,19 @@ struct AnimationPreview: View {
                     .padding(10)
             }
         case .idle:
-            EmptyView()
+            if session.needsTrust && session.mode == .script {
+                VStack(spacing: 10) {
+                    Image(systemName: "exclamationmark.shield").font(.system(size: 26)).foregroundStyle(Theme.sandbox)
+                    Text("This script came with the project and hasn't been run on this Mac.")
+                        .font(.system(size: 12, weight: .medium))
+                    Text("Scripts are programs: they can do anything on your Mac. Read it on the left, and run it only if you trust where the project came from.")
+                        .font(.system(size: 11)).foregroundStyle(Theme.textSecondary).multilineTextAlignment(.center)
+                    Button("Run This Script") { session.approveScript() }.controlSize(.small)
+                }
+                .frame(maxWidth: 420)
+                .padding(20)
+                .background(Theme.background.opacity(0.94), in: .rect(cornerRadius: 10))
+            }
         }
     }
 }
@@ -291,5 +317,83 @@ final class LoopingPlayerView: NSView {
     override func layout() {
         super.layout()
         playerLayer.frame = bounds
+    }
+}
+
+/// Script mode: the Manim code and the scene to render.
+struct ScriptPanel: View {
+    @Bindable var session: AnimateSession
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 8) {
+                Text("Scene").font(.system(size: 11.5)).foregroundStyle(Theme.textSecondary)
+                Picker("Scene", selection: $session.scene) {
+                    ForEach(session.scenes, id: \.self) { Text($0).tag($0) }
+                    if session.scenes.isEmpty { Text("No scenes yet").tag(session.scene) }
+                }
+                .labelsHidden()
+                .controlSize(.small)
+                Spacer()
+                Button("Start Over") { session.script = AnimateSession.starterScript }
+                    .controlSize(.small)
+                    .help("Replaces the script with the starter example")
+            }
+            CodeEditor(text: $session.script)
+                .clipShape(.rect(cornerRadius: 6))
+                .overlay { RoundedRectangle(cornerRadius: 6).strokeBorder(Theme.border) }
+            Text("Manim Community scenes (from manim import *). The preview runs a moment after you stop typing; errors show over it. Rendered at the project's size and frame rate, with a transparent background.")
+                .font(.system(size: 10)).foregroundStyle(Theme.textTertiary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(12)
+        .frame(maxHeight: .infinity)
+    }
+}
+
+/// The user's own saved templates, and saving the current one.
+struct SavedTemplatesRow: View {
+    let session: AnimateSession
+    @State private var naming = false
+    @State private var name = ""
+
+    var body: some View {
+        let _ = session.savedRevision
+        let saved = SavedAnimationTemplates.all
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Text("MY TEMPLATES").font(.system(size: 10, weight: .semibold)).foregroundStyle(Theme.textTertiary)
+                Spacer()
+                Button("Save Current…") { name = session.settings.text; naming = true }
+                    .controlSize(.mini)
+            }
+            if saved.isEmpty {
+                Text("Style one, then save it here to reuse it in any project.")
+                    .font(.system(size: 10.5)).foregroundStyle(Theme.textTertiary)
+            } else {
+                ScrollView(.horizontal) {
+                    HStack(spacing: 6) {
+                        ForEach(saved) { item in
+                            Button { session.settings = item.settings } label: {
+                                Label(item.name, systemImage: item.settings.template.symbolName)
+                                    .font(.system(size: 11))
+                                    .padding(.horizontal, 8).padding(.vertical, 5)
+                                    .background(Theme.raised, in: .capsule)
+                            }
+                            .buttonStyle(.plain)
+                            .contextMenu { Button("Delete “\(item.name)”", role: .destructive) { session.deleteSavedTemplate(item.id) } }
+                        }
+                    }
+                }
+                .scrollIndicators(.never)
+            }
+        }
+        .alert("Save Template", isPresented: $naming) {
+            TextField("Name", text: $name)
+            Button("Save") { if !name.trimmingCharacters(in: .whitespaces).isEmpty { session.saveTemplate(named: name) } }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Saves these settings (text, typeface, colors, animation) to use in any project.")
+        }
     }
 }

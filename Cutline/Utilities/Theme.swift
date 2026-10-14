@@ -104,6 +104,12 @@ enum Theme {
     static let textClipLabelStrip = Color(hex: 0x4F3B86)
     static let textClipGhost = Color(hex: 0x6E54B5).opacity(0.45)
 
+    // Code editor (Animate scripts).
+    static let codeKeyword = Color(hex: 0xC792EA)
+    static let codeString = Color(hex: 0xC3E88D)
+    static let codeNumber = Color(hex: 0xF78C6C)
+    static let codeComment = Color(hex: 0x676E7B)
+
     // Transparency backdrop (Animate preview).
     static let checkerLight = Color(hex: 0x3A3A38)
     static let checkerDark = Color(hex: 0x2C2C2B)
