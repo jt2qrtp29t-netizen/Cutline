@@ -19,6 +19,15 @@ enum Changelog {
     }
 
     static let entries: [Entry] = [
+        Entry(version: "5.0", title: "Animate", tags: [.feature], changes: [
+            "New Animate tab (⌘6, between Captions and Playground): make animated titles and graphics with Manim, installed on your Mac. They're rendered with a transparent background, so your footage shows around them.",
+            "Templates, no code needed: Title, Lower Third, Score Bug, Counter, Quote, Equation, Countdown and Call to Action. Write any text, choose a typeface, size, color or gradient, outline and a panel behind, place it, and choose how it comes in (Write, Typewriter, Fade, slides, Grow, Pop, Spin, Draw), moves while on screen (Pulse, Wiggle, Wave, Flash) and goes out.",
+            "Script mode: write your own Manim scenes in a code editor. The preview loops a moment after you stop typing, and errors show with their line number.",
+            "Add to Timeline renders at the project's size and frame rate and places the animation at the playhead, above your footage. Right-click an animation clip → Edit in Animate to change it, then Update Clip.",
+            "My Templates: save a styled template to reuse in any project.",
+            "Scripts that come with someone else's project are shown, but not run until you choose to. If an animation's file goes missing, Render Again makes it from its saved settings.",
+            "Shortcuts: Playground is now ⌘7 and Export ⌘8.",
+        ]),
         Entry(version: "4.9", title: "Lighter AI, tidier panels", tags: [.feature, .bugFix], changes: [
             "Parameters → AI: choose which Ollama vision model Make Thumbnail uses, or Automatic. Each installed model is listed with its size; smaller ones (like qwen2.5vl:3b, about 3 GB) use less memory and load faster.",
             "Fixed: the thumbnail model stayed in memory (7–8 GB) for 10 minutes after use. It's now freed a minute after choosing, or as soon as you close the thumbnail maker.",

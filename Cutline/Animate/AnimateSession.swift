@@ -127,6 +127,15 @@ final class AnimateSession {
         mode == .templates ? AnimationSource(settings: settings) : AnimationSource(script: script, scene: scene)
     }
 
+    /// A saved animation (a clip's) as a render request at the project's size.
+    func request(for source: AnimationSource, quality: ManimEngine.Quality) -> ManimEngine.Request? {
+        if let settings = source.settings { return request(settings, quality: quality) }
+        guard let script = source.script else { return nil }
+        let scene = source.scene ?? ManimEngine.scenes(in: script).first ?? ""
+        let size = frame()
+        return ManimEngine.Request(script: script, scene: scene, width: size.width, height: size.height, frameRate: size.fps, quality: quality)
+    }
+
     func request(_ settings: AnimationSettings, quality: ManimEngine.Quality) -> ManimEngine.Request {
         let font = Self.pango(settings.fontName)
         var effective = settings
@@ -322,6 +331,58 @@ extension EditorController {
             }
         }
         selection = [clipID]
+    }
+
+    /// Missing media that animation clips use: these can be rendered again.
+    var offlineAnimations: [MediaItem] {
+        let animated = Set(state.allClips.filter { $0.animationSource != nil }.map(\.mediaID))
+        return offlineMedia.filter { animated.contains($0.id) }
+    }
+
+    /// Renders missing animation movies again from their clips' settings or scripts and
+    /// relinks them. Scripts that came with someone else's project aren't run: those are
+    /// listed, to review in Animate first.
+    func rerenderAnimations() {
+        guard !isRerenderingAnimations else { return }
+        let missing = offlineAnimations
+        guard !missing.isEmpty else { return }
+        let session = animateSession
+        isRerenderingAnimations = true
+        Task {
+            defer { isRerenderingAnimations = false }
+            var installation = session.installation
+            if installation == nil { installation = await ManimEngine.find() }
+            guard let installation else {
+                alert = EditorAlert(title: "Manim isn’t installed",
+                                    message: "Animations are rendered with Manim. Install it (see the Animate tab), then try again.")
+                return
+            }
+            var replacements: [UUID: URL] = [:]
+            var problems: [String] = []
+            var unreviewed: [String] = []
+            for media in missing {
+                guard let source = state.allClips.first(where: { $0.mediaID == media.id })?.animationSource,
+                      let request = session.request(for: source, quality: .full) else { continue }
+                if let script = source.script, !ScriptTrust.isApproved(script) {
+                    unreviewed.append(media.name)
+                    continue
+                }
+                do {
+                    replacements[media.id] = try await ManimEngine.render(request, installation: installation)
+                } catch {
+                    problems.append("“\(media.name)”: \(error.localizedDescription)")
+                }
+            }
+            if !replacements.isEmpty { await relink(replacements) }
+            if !unreviewed.isEmpty {
+                problems.append("Not run, because their scripts came with the project and haven’t been run on this Mac: "
+                                + unreviewed.map { "“\($0)”" }.joined(separator: ", ")
+                                + ". Right-click the clip → Edit in Animate to read the script and run it.")
+            }
+            if !problems.isEmpty {
+                alert = EditorAlert(title: "Some animations weren’t rendered", message: problems.joined(separator: "\n\n"))
+            }
+        }
     }
 
     /// Opens an animation clip in the Animate tab.

@@ -17,7 +17,6 @@ nonisolated enum ManimMovieWriter {
                 AVVideoYCbCrMatrixKey: AVVideoYCbCrMatrix_ITU_R_709_2,
             ],
         ])
-        input.expectsMediaDataInRealTime = false
         // Frames come in as our own BGRA buffers (no pool needed).
         let receiver = writer.inputPixelBufferReceiver(for: input, pixelBufferAttributes: nil)
         try writer.start()

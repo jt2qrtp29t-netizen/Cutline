@@ -109,6 +109,8 @@ final class EditorController {
     var thumbnail: ThumbnailSession?
     /// The Animate tab's work in progress (see `animateSession`).
     var animate: AnimateSession?
+    /// Missing animation movies being rendered again from their clips' settings.
+    var isRerenderingAnimations = false
     /// Transcribing again would replace edited transcripts: waiting for the user to confirm.
     var pendingTranscription: PendingTranscription?
     /// Captions worked out for a track at a store revision (redraws during playback reuse them).

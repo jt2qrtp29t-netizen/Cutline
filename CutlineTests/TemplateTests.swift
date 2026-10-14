@@ -210,6 +210,39 @@ import Testing
         #expect(!session.needsTrust && ScriptTrust.isApproved(foreign) && session.currentRequest(quality: .preview) != nil)
     }
 
+    @Test func missingAnimationsRenderAgain() async throws {
+        guard await ManimEngine.find() != nil else { print("MANIM not installed: skipped"); return }
+        let editor = editor()
+        let session = editor.animateSession
+        try await waitFor { session.installation != nil }
+        session.settings = AnimationTemplate.callToAction.defaults
+        session.settings.text = "MISSING \(UUID().uuidString.prefix(4))"
+        session.addToTimeline(editor)
+        try await waitFor { !editor.state.allClips.isEmpty }
+        let clip = try #require(editor.state.allClips.first)
+        let media = try #require(editor.state.mediaItem(clip.mediaID))
+        // Someone else's script animation too: never run without review.
+        let foreign = "from manim import *\n\nclass Theirs(Scene):\n    def construct(self):\n        self.play(FadeIn(Square()))  # \(UUID())\n"
+        let theirMedia = MediaItem(id: UUID(), name: "Theirs", path: "/nowhere/theirs-\(UUID()).mov", duration: Time(seconds: 1),
+                                   width: 640, height: 360, frameRate: 30, hasAudio: false)
+        var theirs = Clip(id: UUID(), mediaID: theirMedia.id, name: "Theirs", start: Time(seconds: 20), duration: Time(seconds: 1), sourceStart: .zero)
+        theirs.animationSource = AnimationSource(script: foreign, scene: "Theirs")
+        editor.store.edit("Add") { state in
+            state.media.append(theirMedia)
+            state.tracks[state.trackIndex(ofClip: clip.id)!].clips.append(theirs)
+        }
+
+        try FileManager.default.removeItem(atPath: media.path)
+        MediaURLCache.shared.recheck()
+        #expect(Set(editor.offlineAnimations.map(\.id)) == [media.id, theirMedia.id])
+        editor.rerenderAnimations()
+        try await waitFor { !editor.isRerenderingAnimations }
+        #expect(FileManager.default.fileExists(atPath: try #require(editor.state.mediaItem(media.id)).path), "rendered again and relinked")
+        #expect(editor.offlineAnimations.map(\.id) == [theirMedia.id], "their script wasn't run")
+        #expect(editor.alert?.message.contains("Edit in Animate") == true)
+        #expect(!ScriptTrust.isApproved(foreign))
+    }
+
     @Test func templatesCanBeSavedForLater() {
         let name = "Test \(UUID())"
         var settings = AnimationTemplate.callToAction.defaults
@@ -219,5 +252,67 @@ import Testing
         #expect(saved?.settings == settings)
         if let saved { SavedAnimationTemplates.remove(saved.id) }
         #expect(!SavedAnimationTemplates.all.contains { $0.name == name })
+    }
+}
+
+@MainActor struct AnimateRunThroughTests {
+    @Test func templateOverFootageEditedAndExported() async throws {
+        guard await ManimEngine.find() != nil else { print("MANIM not installed: skipped"); return }
+        let blue = CIImage(color: CIColor(red: 0, green: 0, blue: 1)).cropped(to: CGRect(x: 0, y: 0, width: 1280, height: 720))
+        let footageURL = try await ThumbnailFinderTests.movie([blue], seconds: 6)
+        let footage = try await MediaImporter.makeItem(for: footageURL)
+        var project = ProjectState(settings: ProjectSettings(name: "Run", width: 640, height: 360, frameRate: 30), videoTracks: 1, audioTracks: 0, textTracks: 0)
+        project.id = UUID()
+        project.media = [footage]
+        project.tracks[0].clips = [Clip(id: UUID(), mediaID: footage.id, name: "blue", start: .zero, duration: Time(seconds: 6), sourceStart: .zero)]
+        let editor = EditorController(store: ProjectStore(state: project))
+        let session = editor.animateSession
+        let deadline = ContinuousClock.now + .seconds(90)
+        func wait(_ done: () -> Bool) async throws {
+            while !done(), ContinuousClock.now < deadline { try await Task.sleep(for: .milliseconds(100)) }
+        }
+        try await wait { session.installation != nil }
+
+        // A lower third with a green panel, at 1 s.
+        session.settings = AnimationTemplate.lowerThird.defaults
+        session.settings.panel = true
+        session.settings.panelColor = RGBAColor(red: 0, green: 1, blue: 0, alpha: 1)
+        session.settings.panelOpacity = 1
+        session.settings.hold = 2
+        editor.playback.seek(to: Time(seconds: 1))
+        session.addToTimeline(editor)
+        try await wait { editor.state.allClips.count == 2 }
+        let clip = try #require(editor.state.allClips.first { $0.animationSource != nil })
+
+        // Edited: new text, same place.
+        editor.editAnimation(clip.id)
+        session.settings.text = "EDITED"
+        session.addToTimeline(editor)
+        try await wait { editor.state.clip(clip.id)?.animationSource?.settings?.text == "EDITED" }
+        let edited = try #require(editor.state.clip(clip.id))
+        #expect(edited.start == Time(seconds: 1))
+
+        // Exported as H.264: the footage shows around the animation, the panel over it.
+        let urls = Dictionary(uniqueKeysWithValues: editor.state.media.map { ($0.id, URL(fileURLWithPath: $0.path)) })
+        let range = ExportSnapshot.snapped(TimeRange(start: .zero, end: Time(seconds: 6)), fps: 30)
+        let out = ExportProbe.folder().appendingPathComponent("animate-run.mp4")
+        _ = try await ExportRunner.run(ExportSnapshot(state: editor.state, urls: urls, range: range, settings: ExportSettings()), to: out,
+                                       cancellation: ExportCancellation(), phase: { _ in }) { _, _ in }
+        let middle = edited.start.seconds + session.settings.inTime + session.settings.hold / 2
+        let frame = try await ExportProbe.frame(out, at: middle)
+        var green = 0, blueCount = 0
+        for y in stride(from: 4, to: 356, by: 8) {
+            for x in stride(from: 4, to: 636, by: 8) {
+                let p = try TextRenderTests.pixel(frame, x: x, y: y)
+                if p.g > 200 && p.r < 60 && p.b < 60 { green += 1 }
+                if p.b > 200 && p.r < 60 && p.g < 60 { blueCount += 1 }
+            }
+        }
+        print("RUN green \(green) blue \(blueCount)")
+        #expect(green > 20, "the panel is drawn: \(green)")
+        #expect(blueCount > 2_000, "the footage shows around it: \(blueCount)")
+        let before = try await ExportProbe.frame(out, at: 0.5)
+        let corner = try TextRenderTests.pixel(before, x: 320, y: 180)
+        #expect(corner.b > 200 && corner.g < 60, "only footage before the animation: \(corner)")
     }
 }

@@ -208,8 +208,20 @@ private struct OfflineMediaBanner: View {
                     .foregroundStyle(Theme.textPrimary)
                     .lineLimit(1)
                     .truncationMode(.middle)
-                Button("Relink…") { editor.relinkMedia(first.id) }
-                    .controlSize(.small)
+                let animations = editor.offlineAnimations
+                if !animations.isEmpty {
+                    if editor.isRerenderingAnimations {
+                        ProgressView().controlSize(.small)
+                    } else {
+                        Button(animations.count == 1 ? "Render Again" : "Render \(animations.count) Again") { editor.rerenderAnimations() }
+                            .controlSize(.small)
+                            .help("Renders the missing animations again from their saved settings")
+                    }
+                }
+                if let other = offline.first(where: { item in !animations.contains { $0.id == item.id } }) {
+                    Button("Relink…") { editor.relinkMedia(other.id) }
+                        .controlSize(.small)
+                }
             }
             .padding(.horizontal, 10)
             .padding(.vertical, 6)
