@@ -38,13 +38,14 @@ final class ThumbnailCache {
     /// Bumped (at most a few times per second) whenever new images land.
     private(set) var revision = 0
 
-    @ObservationIgnored private let cache: NSCache<NSString, CGImage> = {
-        let cache = NSCache<NSString, CGImage>()
-        cache.countLimit = 4000
-        // Bounded by memory too (images are added with their size as the cost).
-        cache.totalCostLimit = 256 << 20
-        return cache
-    }()
+    /// The images, dropped least recently shown first when over budget. (Not NSCache: it
+    /// evicts in no particular order, including images on screen, which then flickered
+    /// as they were made again and pushed out others.)
+    @ObservationIgnored private var images: [String: (image: CGImage, cost: Int, used: UInt64)] = [:]
+    @ObservationIgnored private var totalCost = 0
+    @ObservationIgnored private var useCounter: UInt64 = 0
+    /// Memory budget in bytes.
+    let costLimit: Int
     @ObservationIgnored private var generators: [String: AVAssetImageGenerator] = [:]
     /// Waiting requests by key, with when they were last asked for.
     @ObservationIgnored private var pending: [String: (request: Request, asked: ContinuousClock.Instant)] = [:]
@@ -61,18 +62,67 @@ final class ThumbnailCache {
     /// or a speed drag moved every tile on).
     static let staleAfter = Duration.milliseconds(1_500)
 
+    @ObservationIgnored private var memoryPressure: DispatchSourceMemoryPressure?
+
+    init(costLimit: Int = 256 << 20) {
+        self.costLimit = costLimit
+        // When the Mac is short of memory, keep only what was shown most recently.
+        let source = DispatchSource.makeMemoryPressureSource(eventMask: [.warning, .critical], queue: .main)
+        source.setEventHandler { [weak self] in
+            MainActor.assumeIsolated { self?.trim(to: costLimit / 4) }
+        }
+        source.activate()
+        memoryPressure = source
+    }
+
     /// The thumbnail if it's ready. Otherwise starts making it (unless `generate` is off,
     /// e.g. mid-drag) and returns the nearest frame already made for that media, if any.
     func image(for request: Request, generate: Bool = true) -> CGImage? {
         let key = Self.key(for: request)
-        if let image = cache.object(forKey: key as NSString) { return image }
+        if let image = use(key) { return image }
         if generate { enqueue(request, key: key) }
         return nearest(to: request)
     }
 
     /// Whether this exact frame has been made (not just a nearby stand-in).
     func isCached(_ request: Request) -> Bool {
-        cache.object(forKey: Self.key(for: request) as NSString) != nil
+        images[Self.key(for: request)] != nil
+    }
+
+    /// An image, marked as just shown.
+    private func use(_ key: String) -> CGImage? {
+        guard let entry = images[key] else { return nil }
+        useCounter &+= 1
+        images[key]?.used = useCounter
+        return entry.image
+    }
+
+    /// Keeps a made frame, then drops the least recently shown ones while over budget.
+    func insert(_ image: CGImage, for request: Request) {
+        let key = Self.key(for: request)
+        let cost = image.bytesPerRow * image.height
+        useCounter &+= 1
+        if let old = images.updateValue((image, cost, useCounter), forKey: key) { totalCost -= old.cost }
+        totalCost += cost
+        let group = Self.group(for: request)
+        var times = cachedTimes[group] ?? []
+        if !times.contains(request.time.ticks) { times.append(request.time.ticks) }
+        cachedTimes[group] = times
+        if totalCost > costLimit { trim(to: costLimit * 3 / 4) }
+    }
+
+    /// Drops least recently shown images until under `budget` bytes.
+    func trim(to budget: Int) {
+        guard totalCost > budget else { return }
+        for (key, entry) in images.sorted(by: { $0.value.used < $1.value.used }) {
+            guard totalCost > budget else { break }
+            images[key] = nil
+            totalCost -= entry.cost
+            if let at = key.lastIndex(of: "@"), let ticks = Int64(key[key.index(after: at)...]) {
+                let group = String(key[..<at])
+                cachedTimes[group]?.removeAll { $0 == ticks }
+            }
+        }
     }
 
     /// Picks a quantization step so a strip of tiles reuses cached frames while zooming.
@@ -94,6 +144,10 @@ final class ThumbnailCache {
         pending = pending.filter { !matches($0.key) }
         failed = failed.filter { !matches($0) }
         cachedTimes = cachedTimes.filter { !matches($0.key) }
+        for (key, entry) in images where matches(key) {
+            images[key] = nil
+            totalCost -= entry.cost
+        }
         generators = generators.filter { !matches($0.key) }
         revision &+= 1
     }
@@ -111,7 +165,7 @@ final class ThumbnailCache {
         let group = Self.group(for: request)
         guard let times = cachedTimes[group], !times.isEmpty else { return nil }
         let best = times.min { abs($0 - request.time.ticks) < abs($1 - request.time.ticks) }!
-        return cache.object(forKey: "\(group)@\(best)" as NSString)
+        return use("\(group)@\(best)")
     }
 
     private func generator(for request: Request) -> AVAssetImageGenerator {
@@ -153,12 +207,7 @@ final class ThumbnailCache {
     private func finish(key: String, request: Request, image: CGImage?) {
         running.remove(key)
         if let image {
-            cache.setObject(image, forKey: key as NSString, cost: image.bytesPerRow * image.height)
-            let group = Self.group(for: request)
-            var times = cachedTimes[group] ?? []
-            if !times.contains(request.time.ticks) { times.append(request.time.ticks) }
-            if times.count > 2_000 { times.removeFirst(times.count - 2_000) }
-            cachedTimes[group] = times
+            insert(image, for: request)
             scheduleRevision()
         } else {
             failed.insert(key)

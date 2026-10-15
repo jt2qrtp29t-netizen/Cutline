@@ -250,23 +250,34 @@ struct PosterThumbnail: View {
         let _ = cache.revision
         let time = ThumbnailCache.quantize(media.duration.scaled(by: 0.1), step: Time(seconds: 1))
         let image = cache.image(for: .init(mediaID: media.id, url: MediaURLCache.shared.url(for: media), time: time, size: .poster))
-        return ZStack {
-            Theme.recessed
-            if let image {
-                // Scale by the pixel size so the image is never upsampled by SwiftUI.
-                Image(decorative: image, scale: 1)
-                    .resizable()
-                    .interpolation(.high)
-                    .antialiased(true)
-                    .aspectRatio(contentMode: .fill)
-                    .transition(.opacity)
-            } else {
-                Image(systemName: "film")
-                    .foregroundStyle(Theme.textTertiary)
+        return PosterFrame(image: image)
+    }
+}
+
+/// A frame filling whatever box it's given, cropped to it. The box comes from outside
+/// (the image goes in an overlay), so a frame of another shape (vertical, 4:3, ultrawide)
+/// never widens it past the panel.
+struct PosterFrame: View {
+    let image: CGImage?
+
+    var body: some View {
+        Theme.recessed
+            .overlay {
+                if let image {
+                    // Scale by the pixel size so the image is never upsampled by SwiftUI.
+                    Image(decorative: image, scale: 1)
+                        .resizable()
+                        .interpolation(.high)
+                        .antialiased(true)
+                        .aspectRatio(contentMode: .fill)
+                        .transition(.opacity)
+                } else {
+                    Image(systemName: "film")
+                        .foregroundStyle(Theme.textTertiary)
+                }
             }
-        }
-        .clipped()
-        .animation(.easeOut(duration: 0.2), value: image != nil)
+            .clipped()
+            .animation(.easeOut(duration: 0.2), value: image != nil)
     }
 }
 

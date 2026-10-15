@@ -243,14 +243,14 @@ import Testing
         #expect(!ScriptTrust.isApproved(foreign))
     }
 
-    @Test func templatesCanBeSavedForLater() {
+    @Test func templatesCanBeSavedForLater() throws {
         let name = "Test \(UUID())"
         var settings = AnimationTemplate.callToAction.defaults
         settings.text = "FOLLOW"
         SavedAnimationTemplates.add(name: name, settings: settings)
-        let saved = try? #require(SavedAnimationTemplates.all.first { $0.name == name })
-        #expect(saved?.settings == settings)
-        if let saved { SavedAnimationTemplates.remove(saved.id) }
+        let saved = try #require(SavedAnimationTemplates.all.first { $0.name == name })
+        #expect(saved.settings == settings)
+        SavedAnimationTemplates.remove(saved.id)
         #expect(!SavedAnimationTemplates.all.contains { $0.name == name })
     }
 }

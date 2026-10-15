@@ -19,6 +19,10 @@ enum Changelog {
     }
 
     static let entries: [Entry] = [
+        Entry(version: "5.1", title: "Steadier thumbnails", tags: [.bugFix], changes: [
+            "Fixed: video previews in the media panel could reach past the right edge of the window when the video wasn't 16:9 (vertical, 4:3 or ultrawide). They're now cropped to fit the panel.",
+            "Fixed: media previews and the frames in timeline clips could flicker, and flicker again when dragging the playhead. When memory got tight, frames on screen were thrown away and made again. Now the frames shown least recently are dropped first, so what's on screen stays.",
+        ]),
         Entry(version: "5.0", title: "Animate", tags: [.feature], changes: [
             "New Animate tab (⌘6, between Captions and Playground): make animated titles and graphics with Manim, installed on your Mac. They're rendered with a transparent background, so your footage shows around them.",
             "Templates, no code needed: Title, Lower Third, Score Bug, Counter, Quote, Equation, Countdown and Call to Action. Write any text, choose a typeface, size, color or gradient, outline and a panel behind, place it, and choose how it comes in (Write, Typewriter, Fade, slides, Grow, Pop, Spin, Draw), moves while on screen (Pulse, Wiggle, Wave, Flash) and goes out.",
