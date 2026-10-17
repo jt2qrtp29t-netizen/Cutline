@@ -43,7 +43,7 @@ import Testing
         }
         NSGraphicsContext.current = nil
         try NSBitmapImageRep(cgImage: try #require(ctx.makeImage())).representation(using: .png, properties: [:])!
-            .write(to: URL(fileURLWithPath: "/private/tmp/claude-501/-Volumes-MySSD-Cutline/3c710dc4-d9c2-4b62-a646-1cd7cb82cc25/scratchpad/templates.png"))
+            .write(to: FileManager.default.temporaryDirectory.appendingPathComponent("cutline-templates.png"))
     }
 }
 
