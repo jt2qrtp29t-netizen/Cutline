@@ -60,6 +60,10 @@ xcodebuild -project Cutline.xcodeproj -scheme Cutline test
 
 Tests that need Manim or Ollama skip themselves when those tools aren't installed.
 
+## Security
+
+Found a security problem? Please report it privately from the [Security tab](https://github.com/jt2qrtp29t-netizen/Cutline/security) rather than in a public issue. See [SECURITY.md](SECURITY.md) for what's covered.
+
 ## License
 
 Cutline is free software, released under the [GNU General Public License v3.0](LICENSE). You can use, study, change and share it. If you distribute a changed version, it must also be released under the GPL with its source code.
