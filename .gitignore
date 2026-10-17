@@ -10,4 +10,7 @@ xcuserdata/
 .DS_Store
 
 # Personal screenshots and reference images (never published)
-Images/
+/Images/
+
+# Original screenshots (resized copies live in docs/images)
+/screenshotsforgithub/

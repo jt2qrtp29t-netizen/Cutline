@@ -2,6 +2,14 @@
 
 A native video editor for macOS, written in Swift and SwiftUI with no third-party dependencies.
 
+![Cutline's Edit tab: clip adjustments on the left, the preview in the middle, media on the right and a multi-track timeline below](docs/images/edit.png)
+
+## Download
+
+Get the newest version from **[Releases](https://github.com/jt2qrtp29t-netizen/Cutline/releases/latest)**: open **Cutline-X.Y.dmg** and drag Cutline onto Applications. It needs macOS 27 on a Mac with Apple silicon.
+
+Cutline isn't notarized by Apple, so the first time you open it macOS blocks it: click **Done**, then go to **System Settings → Privacy & Security** and click **Open Anyway**. After that, Cutline updates itself (**Cutline → Check for Updates…**), with no more Open Anyway.
+
 ## What it does
 
 Cutline is organized into tabs (⌘1–⌘8):
@@ -14,6 +22,16 @@ Cutline is organized into tabs (⌘1–⌘8):
 - **Animate**: animated titles and graphics made with [Manim](https://www.manim.community), either from no-code templates (titles, lower thirds, score bugs, counters, countdowns and more) or from your own Python scripts. They're rendered with a transparent background over your footage.
 - **Playground**: a sandbox copy of your edit for trying ideas without touching the real project.
 - **Export**: H.264, HEVC and ProRes 422 exports, plus **Make Thumbnail**, which picks the best frames with Apple's Vision framework and, optionally, a local AI model through [Ollama](https://ollama.com). Nothing leaves your Mac.
+
+## Screenshots
+
+| | |
+|---|---|
+| ![Effects tab: transitions and keyframe animation of clip parameters, with the curve editor](docs/images/effects.png) **Effects**: transitions and keyframes | ![Color tab: lift, gamma, gain and offset wheels, basic controls and a waveform scope](docs/images/color.png) **Color**: wheels, curves and scopes |
+| ![Audio tab: mixer, loudness meter with a normalize target, and track effects](docs/images/audio.png) **Audio**: mixer and loudness | ![Captions tab: transcript, caption grouping and style settings, burn-in and .srt export](docs/images/captions.png) **Captions**: transcripts and styled captions |
+| ![Animate tab: the Title template with its text, look and animation settings and a transparent preview](docs/images/animate.png) **Animate**: Manim templates and scripts | ![Playground tab: a sandbox timeline with generators, effects like RGB Split and a custom shader, and snapshots](docs/images/playground.png) **Playground**: a sandbox for ideas |
+| ![Export tab: presets such as YouTube 1080p 60, video and audio settings, captions and an estimate](docs/images/export.png) **Export**: presets and settings | ![Keyboard Shortcuts window with a search field](docs/images/keyboard-shortcuts.png) **Keyboard Shortcuts** |
+| ![Changelog window listing each version's changes with Feature and Bug Fix tags](docs/images/changelog.png) **Changelog**: what changed in each version | |
 
 ## Requirements
 
