@@ -2,7 +2,7 @@
 
 A native video editor for macOS, written in Swift and SwiftUI with no third-party dependencies.
 
-![Cutline's Edit tab: clip adjustments on the left, the preview in the middle, media on the right and a multi-track timeline below](docs/images/edit.png)
+![Cutline's Edit tab: clip adjustments on the left, the preview in the middle, media on the right and a multi-track timeline below](screenshots/edit.png)
 
 ## Download
 
@@ -27,11 +27,11 @@ Cutline is organized into tabs (⌘1–⌘8):
 
 | | |
 |---|---|
-| ![Effects tab: transitions and keyframe animation of clip parameters, with the curve editor](docs/images/effects.png) **Effects**: transitions and keyframes | ![Color tab: lift, gamma, gain and offset wheels, basic controls and a waveform scope](docs/images/color.png) **Color**: wheels, curves and scopes |
-| ![Audio tab: mixer, loudness meter with a normalize target, and track effects](docs/images/audio.png) **Audio**: mixer and loudness | ![Captions tab: transcript, caption grouping and style settings, burn-in and .srt export](docs/images/captions.png) **Captions**: transcripts and styled captions |
-| ![Animate tab: the Title template with its text, look and animation settings and a transparent preview](docs/images/animate.png) **Animate**: Manim templates and scripts | ![Playground tab: a sandbox timeline with generators, effects like RGB Split and a custom shader, and snapshots](docs/images/playground.png) **Playground**: a sandbox for ideas |
-| ![Export tab: presets such as YouTube 1080p 60, video and audio settings, captions and an estimate](docs/images/export.png) **Export**: presets and settings | ![Keyboard Shortcuts window with a search field](docs/images/keyboard-shortcuts.png) **Keyboard Shortcuts** |
-| ![Changelog window listing each version's changes with Feature and Bug Fix tags](docs/images/changelog.png) **Changelog**: what changed in each version | |
+| ![Effects tab: transitions and keyframe animation of clip parameters, with the curve editor](screenshots/effects.png) **Effects**: transitions and keyframes | ![Color tab: lift, gamma, gain and offset wheels, basic controls and a waveform scope](screenshots/color.png) **Color**: wheels, curves and scopes |
+| ![Audio tab: mixer, loudness meter with a normalize target, and track effects](screenshots/audio.png) **Audio**: mixer and loudness | ![Captions tab: transcript, caption grouping and style settings, burn-in and .srt export](screenshots/captions.png) **Captions**: transcripts and styled captions |
+| ![Animate tab: the Title template with its text, look and animation settings and a transparent preview](screenshots/animate.png) **Animate**: Manim templates and scripts | ![Playground tab: a sandbox timeline with generators, effects like RGB Split and a custom shader, and snapshots](screenshots/playground.png) **Playground**: a sandbox for ideas |
+| ![Export tab: presets such as YouTube 1080p 60, video and audio settings, captions and an estimate](screenshots/export.png) **Export**: presets and settings | ![Keyboard Shortcuts window with a search field](screenshots/keyboard-shortcuts.png) **Keyboard Shortcuts** |
+| ![Changelog window listing each version's changes with Feature and Bug Fix tags](screenshots/changelog.png) **Changelog**: what changed in each version | |
 
 ## Requirements
 
