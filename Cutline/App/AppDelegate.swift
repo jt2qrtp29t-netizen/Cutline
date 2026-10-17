@@ -10,6 +10,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         DiskCache.pruneAll()
     }
 
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        if !isRunningTests { Updater.shared.checkAutomatically() }
+    }
+
     func applicationShouldOpenUntitledFile(_ sender: NSApplication) -> Bool {
         false
     }

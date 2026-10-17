@@ -22,6 +22,10 @@ struct CutlineCommands: Commands {
                 .keyboardShortcut("z", modifiers: [.command, .shift])
         }
 
+        CommandGroup(after: .appInfo) {
+            Button("Check for Updates…") { Updater.shared.check(userInitiated: true) }
+        }
+
         // The standard Settings item, named Parameters here.
         CommandGroup(replacing: .appSettings) {
             ParametersMenuItem()

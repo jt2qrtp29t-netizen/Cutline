@@ -26,6 +26,21 @@ final class AppSettings {
         didSet { Self.defaults.set(watchForOfflineMedia, forKey: "media.watchOffline") }
     }
 
+    /// Look for a new Cutline on GitHub when it opens (once a day at most).
+    var checkForUpdates: Bool = value("updates.check", default: true) {
+        didSet { Self.defaults.set(checkForUpdates, forKey: "updates.check") }
+    }
+
+    /// When GitHub was last asked.
+    var lastUpdateCheck: Date? = value("updates.lastCheck", default: nil as Date?) {
+        didSet { Self.defaults.set(lastUpdateCheck, forKey: "updates.lastCheck") }
+    }
+
+    /// A version the user chose to skip: not offered again automatically.
+    var skippedUpdateVersion: String = value("updates.skipped", default: "") {
+        didSet { Self.defaults.set(skippedUpdateVersion, forKey: "updates.skipped") }
+    }
+
     // MARK: Timeline
 
     /// Whether snapping starts on in newly opened projects (⇧⌘N toggles it per window).
@@ -115,13 +130,14 @@ final class AppSettings {
 
     /// Puts every setting back to its default.
     func resetToDefaults() {
-        for key in ["ai.thumbnailModel", "general.showWelcome", "media.watchOffline", "timeline.snapByDefault", "timeline.snapDistance",
+        for key in ["ai.thumbnailModel", "general.showWelcome", "updates.check", "media.watchOffline", "timeline.snapByDefault", "timeline.snapDistance",
                     "timeline.followPlayhead", "timeline.fineScrubPointsPerFrame", "playback.scrubAudio",
                     "transitions.duration", "mouse.scrollSwitchesTabs", "mouse.reverseTabScrolling",
                     "playback.media", "media.optimizeOnImport", "media.proxyOnImport", "export.showFrames"] {
             Self.defaults.removeObject(forKey: key)
         }
         showWelcomeAtLaunch = true
+        checkForUpdates = true
         watchForOfflineMedia = true
         snapByDefault = true
         snapDistance = 8

@@ -19,6 +19,11 @@ enum Changelog {
     }
 
     static let entries: [Entry] = [
+        Entry(version: "5.2", title: "Updates from inside Cutline", tags: [.feature], changes: [
+            "Cutline updates itself: when a new version is out, it offers to install it, then downloads it from GitHub, checks it, and reopens on the new version. Your projects are kept. No more downloading, dragging to Applications, or Open Anyway in System Settings for each update.",
+            "Cutline → Check for Updates… looks right away. Cutline also checks by itself when it opens, once a day at most; turn that off in Parameters → General. You can skip a version you don't want.",
+            "Every download is checked against GitHub's record of the file (size and SHA-256) and must be Cutline at the promised version with an intact signature, or it isn't installed. If anything goes wrong while swapping, the version you had is put back.",
+        ]),
         Entry(version: "5.1", title: "Steadier thumbnails", tags: [.bugFix], changes: [
             "Fixed: video previews in the media panel could reach past the right edge of the window when the video wasn't 16:9 (vertical, 4:3 or ultrawide). They're now cropped to fit the panel.",
             "Fixed: media previews and the frames in timeline clips could flicker, and flicker again when dragging the playhead. When memory got tight, frames on screen were thrown away and made again. Now the frames shown least recently are dropped first, so what's on screen stays.",

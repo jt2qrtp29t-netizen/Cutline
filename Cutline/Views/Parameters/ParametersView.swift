@@ -29,6 +29,15 @@ private struct GeneralParameters: View {
                 Toggle("Show the welcome window when Cutline opens", isOn: $settings.showWelcomeAtLaunch)
             }
             Section {
+                Toggle("Check for updates automatically", isOn: $settings.checkForUpdates)
+                HStack {
+                    Spacer()
+                    Button("Check Now") { Updater.shared.check(userInitiated: true) }
+                }
+            } footer: {
+                ParameterNote("When Cutline opens (once a day at most), it asks GitHub whether there's a newer version, and offers to install it. Nothing about you or your projects is sent; GitHub sees only that a request was made.")
+            }
+            Section {
                 Toggle("Watch for missing media", isOn: $settings.watchForOfflineMedia)
             } footer: {
                 ParameterNote("Checks every couple of seconds for files that were moved, renamed or deleted, or are on a disk that was ejected. When off, files are only checked when you switch back to Cutline.")
