@@ -17,8 +17,7 @@ struct CutlineApp: App {
     var body: some Scene {
         Window("Welcome to Cutline", id: WindowID.launch) {
             LaunchView()
-                .preferredColorScheme(.dark)
-                .tint(Theme.accent)
+                .cutlineAppearance()
         }
         .windowStyle(.hiddenTitleBar)
         .windowResizability(.contentSize)
@@ -27,8 +26,7 @@ struct CutlineApp: App {
 
         DocumentGroup(allowCreating: false) { (document: CutlineDocument) in
             EditorView(document: document)
-                .preferredColorScheme(.dark)
-                .tint(Theme.accent)
+                .cutlineAppearance()
         } makeDocument: { _, _ in
             CutlineDocument()
         }
@@ -38,8 +36,7 @@ struct CutlineApp: App {
 
         Window("Keyboard Shortcuts", id: WindowID.shortcuts) {
             KeyboardShortcutsView()
-                .preferredColorScheme(.dark)
-                .tint(Theme.accent)
+                .cutlineAppearance()
         }
         .defaultSize(width: 520, height: 640)
         .defaultLaunchBehavior(.suppressed)
@@ -47,8 +44,7 @@ struct CutlineApp: App {
 
         Window("Changelog", id: WindowID.changelog) {
             ChangelogView()
-                .preferredColorScheme(.dark)
-                .tint(Theme.accent)
+                .cutlineAppearance()
         }
         .defaultSize(width: 540, height: 680)
         .defaultLaunchBehavior(.suppressed)

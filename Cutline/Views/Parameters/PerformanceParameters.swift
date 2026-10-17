@@ -68,6 +68,7 @@ struct PerformanceParameters: View {
             }
         }
         .formStyle(.grouped)
+        .scrollContentBackground(.hidden)
         .task { await refreshSizes() }
         .confirmationDialog("Clear \(confirmClear?.title.lowercased() ?? "")?", isPresented: Binding(
             get: { confirmClear != nil }, set: { if !$0 { confirmClear = nil } }

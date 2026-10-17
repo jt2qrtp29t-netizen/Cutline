@@ -2,8 +2,8 @@ import AppKit
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationWillFinishLaunching(_ notification: Notification) {
-        // The UI is designed for a single dark look regardless of system settings.
-        NSApp.appearance = NSAppearance(named: .darkAqua)
+        // Dark unless Light mode is on in Parameters, regardless of system settings.
+        CutlineAppearance.apply()
         // Projects are created from the launch window, never as untitled documents.
         UserDefaults.standard.register(defaults: ["NSShowAppCentricOpenPanelInsteadOfUntitledFile": false])
         // Clears out cache files for old versions of media and ones unused for months.

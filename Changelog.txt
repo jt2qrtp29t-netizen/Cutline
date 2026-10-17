@@ -3,6 +3,12 @@ Cutline Changelog
 
 What each version of Cutline added, newest first. The same list is in the app (Help → Changelog).
 
+5.4: Light mode  [FEATURE]
+--------------------------
+- Cutline has a light look: turn on Light mode in Parameters → General (⌘,). It switches every window right away, including menus and dialogs.
+- Dark stays the default, even when your Mac is set to Light. Cutline never follows the system setting; only the toggle changes it.
+- Clips, the video, the scopes and the colors of markers keep the same look in both modes, so footage and color work are judged the same way.
+
 5.3: Smoother scopes  [FEATURE]
 -------------------------------
 - The Waveform and Vectorscope in the Color tab are smooth and detailed instead of grainy: Cutline reads twice as many pixels across and up to five times as many rows, and draws them finer (twice the Waveform's levels, four times the Vectorscope's cells).

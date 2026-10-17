@@ -14,8 +14,8 @@ struct ParametersView: View {
             Tab("AI", systemImage: "sparkles", value: "ai") { AIParameters() }
         }
         .frame(width: 520)
-        .preferredColorScheme(.dark)
-        .tint(Theme.accent)
+        .containerBackground(Theme.background, for: .window)
+        .cutlineAppearance()
     }
 }
 
@@ -27,6 +27,11 @@ private struct GeneralParameters: View {
         Form {
             Section {
                 Toggle("Show the welcome window when Cutline opens", isOn: $settings.showWelcomeAtLaunch)
+            }
+            Section {
+                Toggle("Light mode", isOn: $settings.lightMode)
+            } footer: {
+                ParameterNote("Cutline is dark unless this is on, whatever your Mac's appearance is. Clips, scopes and the video itself look the same either way.")
             }
             Section {
                 Toggle("Check for updates automatically", isOn: $settings.checkForUpdates)
@@ -56,6 +61,7 @@ private struct GeneralParameters: View {
             }
         }
         .formStyle(.grouped)
+        .scrollContentBackground(.hidden)
         .confirmationDialog("Restore all parameters to their defaults?", isPresented: $confirmReset) {
             Button("Restore Defaults", role: .destructive) { settings.resetToDefaults() }
         }
@@ -87,6 +93,7 @@ private struct TimelineParameters: View {
             }
         }
         .formStyle(.grouped)
+        .scrollContentBackground(.hidden)
     }
 }
 
@@ -107,6 +114,7 @@ private struct PlaybackParameters: View {
             }
         }
         .formStyle(.grouped)
+        .scrollContentBackground(.hidden)
     }
 }
 
@@ -126,6 +134,7 @@ private struct MouseParameters: View {
             }
         }
         .formStyle(.grouped)
+        .scrollContentBackground(.hidden)
     }
 }
 

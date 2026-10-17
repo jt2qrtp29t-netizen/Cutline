@@ -41,6 +41,7 @@ struct AIParameters: View {
             }
         }
         .formStyle(.grouped)
+        .scrollContentBackground(.hidden)
         .task { await load() }
     }
 

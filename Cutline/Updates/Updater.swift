@@ -138,7 +138,7 @@ final class Updater {
             NSApp.activate()
             return
         }
-        let host = NSHostingController(rootView: UpdateView(updater: self).preferredColorScheme(.dark).tint(Theme.accent))
+        let host = NSHostingController(rootView: UpdateView(updater: self).cutlineAppearance())
         host.sizingOptions = .preferredContentSize
         let window = NSWindow(contentViewController: host)
         window.title = "Software Update"

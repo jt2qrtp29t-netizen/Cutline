@@ -20,6 +20,12 @@ final class AppSettings {
         didSet { Self.defaults.set(showWelcomeAtLaunch, forKey: "general.showWelcome") }
     }
 
+    /// Use Cutline's light look instead of its dark one. Off by default, whatever the
+    /// system's appearance is.
+    var lightMode: Bool = value("general.lightMode", default: false) {
+        didSet { Self.defaults.set(lightMode, forKey: "general.lightMode") }
+    }
+
     /// Keep checking for media files that go missing (or come back) while Cutline is
     /// in use. When off, files are only checked when you switch back to Cutline.
     var watchForOfflineMedia: Bool = value("media.watchOffline", default: true) {
@@ -130,13 +136,14 @@ final class AppSettings {
 
     /// Puts every setting back to its default.
     func resetToDefaults() {
-        for key in ["ai.thumbnailModel", "general.showWelcome", "updates.check", "media.watchOffline", "timeline.snapByDefault", "timeline.snapDistance",
+        for key in ["ai.thumbnailModel", "general.showWelcome", "general.lightMode", "updates.check", "media.watchOffline", "timeline.snapByDefault", "timeline.snapDistance",
                     "timeline.followPlayhead", "timeline.fineScrubPointsPerFrame", "playback.scrubAudio",
                     "transitions.duration", "mouse.scrollSwitchesTabs", "mouse.reverseTabScrolling",
                     "playback.media", "media.optimizeOnImport", "media.proxyOnImport", "export.showFrames"] {
             Self.defaults.removeObject(forKey: key)
         }
         showWelcomeAtLaunch = true
+        lightMode = false
         checkForUpdates = true
         watchForOfflineMedia = true
         snapByDefault = true

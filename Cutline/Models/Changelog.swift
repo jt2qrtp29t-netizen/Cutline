@@ -19,6 +19,11 @@ enum Changelog {
     }
 
     static let entries: [Entry] = [
+        Entry(version: "5.4", title: "Light mode", tags: [.feature], changes: [
+            "Cutline has a light look: turn on Light mode in Parameters → General (⌘,). It switches every window right away, including menus and dialogs.",
+            "Dark stays the default, even when your Mac is set to Light. Cutline never follows the system setting; only the toggle changes it.",
+            "Clips, the video, the scopes and the colors of markers keep the same look in both modes, so footage and color work are judged the same way.",
+        ]),
         Entry(version: "5.3", title: "Smoother scopes", tags: [.feature], changes: [
             "The Waveform and Vectorscope in the Color tab are smooth and detailed instead of grainy: Cutline reads twice as many pixels across and up to five times as many rows, and draws them finer (twice the Waveform's levels, four times the Vectorscope's cells).",
             "Each pixel is shared between the nearest levels rather than snapped to one, and the trace is softened slightly, so it reads as a continuous glow, like on dedicated scopes, without blocks or specks.",
