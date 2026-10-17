@@ -19,6 +19,11 @@ enum Changelog {
     }
 
     static let entries: [Entry] = [
+        Entry(version: "5.3", title: "Smoother scopes", tags: [.feature], changes: [
+            "The Waveform and Vectorscope in the Color tab are smooth and detailed instead of grainy: Cutline reads twice as many pixels across and up to five times as many rows, and draws them finer (twice the Waveform's levels, four times the Vectorscope's cells).",
+            "Each pixel is shared between the nearest levels rather than snapped to one, and the trace is softened slightly, so it reads as a continuous glow, like on dedicated scopes, without blocks or specks.",
+            "Brightness follows how many pixels land in each spot: thin areas glow faintly, busy ones are bright, and one very busy spot (like black bars) no longer dims everything else.",
+        ]),
         Entry(version: "5.2", title: "Updates from inside Cutline", tags: [.feature], changes: [
             "Cutline updates itself: when a new version is out, it offers to install it, then downloads it from GitHub, checks it, and reopens on the new version. Your projects are kept. No more downloading, dragging to Applications, or Open Anyway in System Settings for each update.",
             "Cutline → Check for Updates… looks right away. Cutline also checks by itself when it opens, once a day at most; turn that off in Parameters → General. You can skip a version you don't want.",

@@ -147,11 +147,10 @@ struct WaveformView: View {
         GeometryReader { geometry in
             ZStack(alignment: .topLeading) {
                 Theme.scopeBackground
-                if let image = ScopeAnalyzer.image(of: data.waveform, width: data.waveformWidth, height: ScopeData.levels,
-                                                   flipRows: true) {
+                if let image = data.waveformImage {
                     Image(decorative: image, scale: 1)
                         .resizable()
-                        .interpolation(.medium)
+                        .interpolation(.high)
                         .colorMultiply(Theme.scopeTrace)
                         .blendMode(.plusLighter)
                 }
@@ -188,11 +187,10 @@ struct VectorscopeView: View {
             let side = min(geometry.size.width, geometry.size.height)
             ZStack {
                 Theme.scopeBackground
-                if let image = ScopeAnalyzer.image(of: data.vectorscope, width: ScopeData.vectorSize,
-                                                   height: ScopeData.vectorSize, flipRows: false) {
+                if let image = data.vectorscopeImage {
                     Image(decorative: image, scale: 1)
                         .resizable()
-                        .interpolation(.medium)
+                        .interpolation(.high)
                         .colorMultiply(Theme.scopeTrace)
                         .blendMode(.plusLighter)
                 }
