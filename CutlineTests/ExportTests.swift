@@ -31,8 +31,8 @@ enum ExportProbe {
         let asset = AVURLAsset(url: url)
         let track = try #require(try await asset.loadTracks(withMediaType: .video).first)
         let reader = try AVAssetReader(asset: asset)
-        let provider = reader.outputProvider(for: AVAssetReaderTrackOutput(track: track, outputSettings: nil))
-        try reader.start()
+        let provider = reader.sampleProvider(for: AVAssetReaderTrackOutput(track: track, outputSettings: nil))
+        try reader.startOrThrow()
         var count = 0
         while let sample = try await provider.next() {
             count += sample.withUnsafeSampleBuffer { CMSampleBufferGetNumSamples($0) }
@@ -45,11 +45,11 @@ enum ExportProbe {
         let asset = AVURLAsset(url: url)
         guard let track = try await asset.loadTracks(withMediaType: .audio).first else { return 0 }
         let reader = try AVAssetReader(asset: asset)
-        let provider = reader.outputProvider(for: AVAssetReaderTrackOutput(track: track, outputSettings: [
+        let provider = reader.sampleProvider(for: AVAssetReaderTrackOutput(track: track, outputSettings: [
             AVFormatIDKey: kAudioFormatLinearPCM, AVLinearPCMIsFloatKey: true, AVLinearPCMBitDepthKey: 32,
             AVLinearPCMIsNonInterleaved: false,
         ]))
-        try reader.start()
+        try reader.startOrThrow()
         var sum = 0.0, count = 0
         while let sample = try await provider.next() {
             let values: [Float] = sample.withUnsafeSampleBuffer { buffer in

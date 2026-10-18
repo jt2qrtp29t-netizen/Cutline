@@ -25,19 +25,20 @@ nonisolated enum BlackFrameSource {
         let input = AVAssetWriterInput(mediaType: .video, outputSettings: [
             AVVideoCodecKey: AVVideoCodecType.h264, AVVideoWidthKey: 16, AVVideoHeightKey: 16,
         ])
-        let receiver = writer.inputPixelBufferReceiver(for: input, pixelBufferAttributes: nil)
-        try writer.start()
+        let receiver = writer.pixelReceiver(for: input)
+        try writer.startOrThrow()
         writer.startSession(atSourceTime: .zero)
 
-        var frame = try CVMutablePixelBuffer(CVPixelBufferCreationAttributes(
-            pixelFormatType: CVPixelFormatType(rawValue: kCVPixelFormatType_32BGRA),
-            size: CVImageSize(width: 16, height: 16)
-        ))
-        frame.accessUnsafeMutableRawPlaneBytes { planes in
-            for plane in planes { plane.bytes.initializeMemory(as: UInt8.self, repeating: 0) }
+        var created: CVPixelBuffer?
+        CVPixelBufferCreate(nil, 16, 16, kCVPixelFormatType_32BGRA, nil, &created)
+        guard let frame = created else { throw CocoaError(.fileWriteUnknown) }
+        CVPixelBufferLockBaseAddress(frame, [])
+        if let base = CVPixelBufferGetBaseAddress(frame) {
+            memset(base, 0, CVPixelBufferGetBytesPerRow(frame) * CVPixelBufferGetHeight(frame))
         }
+        CVPixelBufferUnlockBaseAddress(frame, [])
         // Offered without waiting (the awaiting append can stay suspended forever).
-        let pixels = CVReadOnlyPixelBuffer(frame)
+        let pixels = ReadOnlyPixels(buffer: frame)
         var attempts = 0
         while try !receiver.appendImmediately(pixels, with: .zero) {
             attempts += 1

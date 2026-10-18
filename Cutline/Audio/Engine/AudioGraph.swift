@@ -57,8 +57,8 @@ nonisolated final class AudioGraph {
         engine.attach(masterSum)
         engine.attach(master.node)
         Self.keepAlive(masterSum, in: engine)
-        try? engine.connectNode(masterSum, to: master.node, format: format)
-        try? engine.connectNode(master.node, to: engine.mainMixerNode, format: format)
+        engine.connect(masterSum, to: master.node, format: format)
+        engine.connect(master.node, to: engine.mainMixerNode, format: format)
         postMaster()
     }
 
@@ -68,7 +68,7 @@ nonisolated final class AudioGraph {
     private static func keepAlive(_ mixer: AVAudioMixerNode, in engine: AVAudioEngine) {
         let silence = silentSource()
         engine.attach(silence)
-        try? engine.connectNode(silence, to: mixer, fromBus: 0, toBus: mixer.nextAvailableInputBus, format: AudioGraphFormat.format)
+        engine.connect(silence, to: mixer, fromBus: 0, toBus: mixer.nextAvailableInputBus, format: AudioGraphFormat.format)
     }
 
     private static func silentSource() -> AVAudioSourceNode {
@@ -142,8 +142,8 @@ nonisolated final class AudioGraph {
             engine.attach(sum)
             engine.attach(node)
             Self.keepAlive(sum, in: engine)
-            try? engine.connectNode(sum, to: node, format: format)
-            try? engine.connectNode(node, to: masterSum, fromBus: 0, toBus: masterSum.nextAvailableInputBus, format: format)
+            engine.connect(sum, to: node, format: format)
+            engine.connect(node, to: masterSum, fromBus: 0, toBus: masterSum.nextAvailableInputBus, format: format)
             tracks[id] = TrackNodes(sum: sum, node: node, unit: unit)
         }
     }
@@ -208,10 +208,10 @@ nonisolated final class AudioGraph {
         voice.nodes.forEach(engine.attach)
         let chain = voice.nodes
         for (from, to) in zip(chain, chain.dropFirst()) {
-            try? engine.connectNode(from, to: to, format: format)
+            engine.connect(from, to: to, format: format)
         }
         if let sum = tracks[trackID]?.sum {
-            try? engine.connectNode(node, to: sum, fromBus: 0, toBus: sum.nextAvailableInputBus, format: format)
+            engine.connect(node, to: sum, fromBus: 0, toBus: sum.nextAvailableInputBus, format: format)
         }
         voices[clip.id] = voice
         return voice
@@ -235,7 +235,7 @@ nonisolated final class AudioGraph {
         }
         master.unit.runControl.run.store(true, ordering: .relaxed)
         for voice in voices.values {
-            try? voice.player?.playAudio(at: start)
+            voice.player?.play(at: start)
         }
     }
 

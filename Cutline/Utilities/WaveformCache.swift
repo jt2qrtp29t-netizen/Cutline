@@ -83,8 +83,8 @@ final class WaveformCache {
             AVSampleRateKey: analysisSampleRate,
         ])
         guard reader.canAdd(output) else { return nil }
-        let provider = reader.outputProvider(for: output)
-        do { try reader.start() } catch { return nil }
+        let provider = reader.sampleProvider(for: output)
+        do { try reader.startOrThrow() } catch { return nil }
 
         let samplesPerBucket = Int(analysisSampleRate / bucketsPerSecond)
         var result: [Float] = []

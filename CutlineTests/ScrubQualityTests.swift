@@ -187,9 +187,7 @@ import Testing
         // Silent speakers; listen just before the output.
         renderer.engine.mainMixerNode.outputVolume = 0
         let recorder = Recorder()
-        // The throwing tap API of macOS 27 (the non-throwing `installTap` is deprecated);
-        // Swift imports it with the error as a thrown error and an empty `error:` slot.
-        try renderer.graph.masterNode.__installTap(onBus: 0, bufferSize: 512, format: nil, error: (), block: Self.tap(recorder))
+        renderer.graph.masterNode.installTap(onBus: 0, bufferSize: 512, format: nil, block: Self.tap(recorder))
         defer {
             renderer.graph.masterNode.removeTap(onBus: 0)
             renderer.stopScrubbing()

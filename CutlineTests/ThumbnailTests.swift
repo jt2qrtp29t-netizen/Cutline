@@ -15,8 +15,8 @@ import Testing
         let input = AVAssetWriterInput(mediaType: .video, outputSettings: [
             AVVideoCodecKey: AVVideoCodecType.h264, AVVideoWidthKey: 1280, AVVideoHeightKey: 720,
         ])
-        let receiver = writer.inputPixelBufferReceiver(for: input, pixelBufferAttributes: nil)
-        try writer.start()
+        let receiver = writer.pixelReceiver(for: input)
+        try writer.startOrThrow()
         writer.startSession(atSourceTime: .zero)
         let context = CIContext()
         var frame = 0
@@ -34,7 +34,7 @@ import Testing
         return url
     }
 
-    nonisolated static func render(_ image: CIImage, context: CIContext) throws -> CVReadOnlyPixelBuffer {
+    nonisolated static func render(_ image: CIImage, context: CIContext) throws -> ReadOnlyPixels {
         var buffer: CVPixelBuffer?
         CVPixelBufferCreate(nil, 1280, 720, kCVPixelFormatType_32BGRA, [kCVPixelBufferIOSurfacePropertiesKey: [:]] as CFDictionary, &buffer)
         let pixels = try #require(buffer)
@@ -44,7 +44,7 @@ import Testing
         let placed = scaled.transformed(by: CGAffineTransform(translationX: (1280 - scaled.extent.width) / 2 - scaled.extent.minX,
                                                               y: (720 - scaled.extent.height) / 2 - scaled.extent.minY))
         context.render(placed.cropped(to: CGRect(x: 0, y: 0, width: 1280, height: 720)), to: pixels)
-        return CVReadOnlyPixelBuffer(unsafeBuffer: pixels)
+        return ReadOnlyPixels(buffer: pixels)
     }
 
     static func photo(_ url: URL) throws -> CIImage { try #require(CIImage(contentsOf: url)) }

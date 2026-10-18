@@ -192,8 +192,8 @@ import Testing
         let input = AVAssetWriterInput(mediaType: .video, outputSettings: [
             AVVideoCodecKey: AVVideoCodecType.proRes422, AVVideoWidthKey: 160, AVVideoHeightKey: 90,
         ])
-        let receiver = writer.inputPixelBufferReceiver(for: input, pixelBufferAttributes: nil)
-        try writer.start()
+        let receiver = writer.pixelReceiver(for: input)
+        try writer.startOrThrow()
         writer.startSession(atSourceTime: .zero)
         for i in 0..<frames {
             let pixels = try Self.barFrame(i)
@@ -206,7 +206,7 @@ import Testing
         return url
     }
 
-    nonisolated private static func barFrame(_ i: Int) throws -> CVReadOnlyPixelBuffer {
+    nonisolated private static func barFrame(_ i: Int) throws -> ReadOnlyPixels {
         var buffer: CVPixelBuffer?
         CVPixelBufferCreate(nil, 160, 90, kCVPixelFormatType_32BGRA, [kCVPixelBufferIOSurfacePropertiesKey: [:]] as CFDictionary, &buffer)
         let pixels = try #require(buffer)
@@ -222,7 +222,7 @@ import Testing
             p[0] = v; p[1] = v; p[2] = v; p[3] = 255
         } }
         CVPixelBufferUnlockBaseAddress(pixels, [])
-        return CVReadOnlyPixelBuffer(unsafeBuffer: pixels)
+        return ReadOnlyPixels(buffer: pixels)
     }
 
     /// Brightness of each 10-pixel cell (in source pixels) along a row of a rendered frame.

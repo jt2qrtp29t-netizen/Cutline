@@ -6,7 +6,7 @@ A native video editor for macOS, written in Swift and SwiftUI with no third-part
 
 ## Download
 
-Get the newest version from **[Releases](https://github.com/jt2qrtp29t-netizen/Cutline/releases/latest)**: open **Cutline-X.Y.dmg** and drag Cutline onto Applications. It needs macOS 27 on a Mac with Apple silicon.
+This is the **Sequoia edition** (the `sequoia` branch): it runs on **macOS 15 Sequoia and later**, on Apple silicon and Intel Macs. Get it from [Releases](https://github.com/jt2qrtp29t-netizen/Cutline/releases): look for **Cutline X.Y for Sequoia**, open **Cutline-Sequoia-X.Y.dmg** and drag Cutline onto Applications. On macOS 27 with Apple silicon, use the main edition (the `main` branch) instead.
 
 Cutline isn't notarized by Apple, so the first time you open it macOS blocks it: click **Done**, then go to **System Settings → Privacy & Security** and click **Open Anyway**. After that, Cutline updates itself (**Cutline → Check for Updates…**), with no more Open Anyway.
 
@@ -35,8 +35,8 @@ Cutline is organized into tabs (⌘1–⌘8):
 
 ## Requirements
 
-- macOS 27 or later
-- Xcode with the macOS 27 SDK (Swift 6)
+- macOS 15 Sequoia or later (Apple silicon or Intel)
+- Xcode with the macOS 27 SDK (Swift 6); the app is built for macOS 15
 
 Optional tools, run as separate programs on your Mac and only needed for their features:
 

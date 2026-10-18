@@ -170,18 +170,18 @@ nonisolated enum ExportRenderer {
         }
 
         // Each stream is read and written by its own task.
-        let video = VideoStream(provider: reader.outputProvider(for: videoOutput),
-                                receiver: writer.inputPixelBufferReceiver(for: videoInput, pixelBufferAttributes: nil))
+        let video = VideoStream(provider: reader.sampleProvider(for: videoOutput),
+                                receiver: writer.pixelReceiver(for: videoInput))
         var audioStream: AudioStream?
         if let audioReader, let audioOutput, let audioInput {
-            audioStream = AudioStream(provider: audioReader.outputProvider(for: audioOutput),
-                                      receiver: writer.inputReceiver(for: audioInput))
+            audioStream = AudioStream(provider: audioReader.sampleProvider(for: audioOutput),
+                                      receiver: writer.sampleReceiver(for: audioInput))
         }
 
         do {
-            try reader.start()
-            try audioReader?.start()
-            try writer.start()
+            try reader.startOrThrow()
+            try audioReader?.startOrThrow()
+            try writer.startOrThrow()
         } catch {
             reader.cancelReading()
             audioReader?.cancelReading()
@@ -204,7 +204,7 @@ nonisolated enum ExportRenderer {
             // On the export's own thread: the providers wait for samples synchronously.
             try await Task.detached(executorPreference: MediaWorkThread(label: "app.cutline.export")) {
                 var written = 0
-                func nextVideo() async throws -> (pixels: CVReadOnlyPixelBuffer, time: CMTime)? {
+                func nextVideo() async throws -> (pixels: ReadOnlyPixels, time: CMTime)? {
                     while written < total, let sample = try await streams.video.provider.next() {
                         if case .pixelBuffer(let pixels) = sample.content {
                             return (pixels, CMTimeSubtract(sample.presentationTimeStamp, rangeStart))
@@ -212,7 +212,7 @@ nonisolated enum ExportRenderer {
                     }
                     return nil
                 }
-                func nextAudio() async throws -> CMReadySampleBuffer<CMSampleBuffer.DynamicContent>? {
+                func nextAudio() async throws -> ReadySample? {
                     guard let audio = streams.audio, let sample = try await audio.provider.next(),
                           CMTimeCompare(sample.presentationTimeStamp, audioEnd) < 0 else { return nil }
                     return sample
@@ -356,13 +356,13 @@ nonisolated enum ExportRenderer {
 
     /// A stream's reader and writer ends, handed to the one task that uses them.
     private struct VideoStream: @unchecked Sendable {
-        let provider: AVAssetReaderOutput.Provider<CMReadySampleBuffer<CMSampleBuffer.DynamicContent>>
-        let receiver: AVAssetWriterInput.PixelBufferReceiver
+        let provider: SampleProvider
+        let receiver: PixelReceiver
     }
 
     private struct AudioStream: @unchecked Sendable {
-        let provider: AVAssetReaderOutput.Provider<CMReadySampleBuffer<CMSampleBuffer.DynamicContent>>
-        let receiver: AVAssetWriterInput.SampleBufferReceiver
+        let provider: SampleProvider
+        let receiver: SampleReceiver
     }
 }
 

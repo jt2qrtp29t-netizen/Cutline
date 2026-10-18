@@ -140,8 +140,8 @@ final class AudioSourceCache {
             AVSampleRateKey: sampleRate,
         ])
         guard reader.canAdd(output) else { return false }
-        let provider = reader.outputProvider(for: output)
-        do { try reader.start() } catch { return false }
+        let provider = reader.sampleProvider(for: output)
+        do { try reader.startOrThrow() } catch { return false }
 
         while let ready = try? await provider.next() {
             let written: Bool = ready.withUnsafeSampleBuffer { sample in

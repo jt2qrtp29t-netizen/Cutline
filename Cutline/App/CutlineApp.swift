@@ -24,11 +24,10 @@ struct CutlineApp: App {
         .defaultLaunchBehavior(isRunningTests || !AppSettings.shared.showWelcomeAtLaunch ? .suppressed : .presented)
         .restorationBehavior(.disabled)
 
-        DocumentGroup(allowCreating: false) { (document: CutlineDocument) in
-            EditorView(document: document)
+        // File → New is replaced in CutlineCommands; projects are made from the launch window.
+        DocumentGroup(newDocument: { CutlineDocument() }) { file in
+            EditorView(document: file.document)
                 .cutlineAppearance()
-        } makeDocument: { _, _ in
-            CutlineDocument()
         }
         .defaultSize(width: WindowMetrics.defaultWidth, height: 900)
         .windowStyle(.hiddenTitleBar)

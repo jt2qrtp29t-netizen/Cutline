@@ -184,7 +184,7 @@ nonisolated class CutlineAudioUnit: AUAudioUnit, @unchecked Sendable {
         _ = registered
         let node = AVAudioUnitEffect(audioComponentDescription: description)
         // Registered in-process, so the node's unit is an instance of `Unit`.
-        let unit = node.withAUAudioUnit { $0 as! Unit }
+        let unit = node.auAudioUnit as! Unit
         return (node, unit)
     }
 }

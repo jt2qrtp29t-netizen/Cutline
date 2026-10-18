@@ -10,7 +10,8 @@ final class Updater {
     static let shared = Updater()
 
     /// GitHub's latest release of Cutline.
-    static let feed = URL(string: "https://api.github.com/repos/jt2qrtp29t-netizen/Cutline/releases/latest")!
+    /// Sequoia edition: the list of releases (its own are picked out by tag; see SoftwareRelease).
+    static let feed = URL(string: "https://api.github.com/repos/jt2qrtp29t-netizen/Cutline/releases?per_page=50")!
 
     enum Phase: Equatable {
         case idle
@@ -28,6 +29,8 @@ final class Updater {
     @ObservationIgnored private let settings: AppSettings
     @ObservationIgnored private var window: NSWindow?
     @ObservationIgnored private var task: Task<Void, Never>?
+    /// True while a check or an install is running.
+    var isBusy: Bool { task != nil }
 
     init(session: URLSession = .shared, settings: AppSettings = .shared) {
         self.session = session

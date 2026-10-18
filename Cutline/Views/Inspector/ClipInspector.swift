@@ -74,7 +74,7 @@ struct ClipInspector: View {
                 }
             }
             .controlSize(.small)
-            .buttonStyle(.glass)
+            .buttonStyle(.bordered)
 
             Rectangle().fill(Theme.border).frame(height: 1)
             // 1 px per point dragged (0.1 px with ⌥). The second field is the end

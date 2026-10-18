@@ -58,7 +58,7 @@ struct ClipDialogView: View {
                     .keyboardShortcut(.cancelAction)
                 Button("Apply", action: apply)
                     .keyboardShortcut(.defaultAction)
-                    .buttonStyle(.glassProminent)
+                    .buttonStyle(.borderedProminent)
                     .tint(Theme.accent)
             }
         }

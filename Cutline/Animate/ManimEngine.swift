@@ -97,7 +97,7 @@ nonisolated enum ManimEngine {
 
     /// Bumped when the movies Cutline makes change (so older renders aren't reused).
     /// 2: straight alpha and sRGB color tags. 3: waits keep their frames.
-    static let formatVersion = 3
+    static let formatVersion = 5
 
     /// A name for everything the result depends on.
     static func cacheKey(_ request: Request, version: String) -> String {

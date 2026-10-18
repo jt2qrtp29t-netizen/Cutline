@@ -28,16 +28,23 @@ nonisolated final class FakeGitHub: URLProtocol {
 @Suite(.serialized) @MainActor struct UpdaterTests {
     static func releaseJSON(version: String, zipSize: Int = 1_000, sha: String? = String(repeating: "ab", count: 32),
                             prerelease: Bool = false) -> Data {
-        var asset: [String: Any] = ["name": "Cutline-\(version).zip", "size": zipSize,
-                                    "browser_download_url": "https://github.com/x/Cutline/releases/download/v\(version)/Cutline-\(version).zip"]
+        var asset: [String: Any] = ["name": "Cutline-Sequoia-\(version).zip", "size": zipSize,
+                                    "browser_download_url": "https://github.com/x/Cutline/releases/download/sequoia-v\(version)/Cutline-Sequoia-\(version).zip"]
         if let sha { asset["digest"] = "sha256:\(sha)" }
         let release: [String: Any] = [
-            "tag_name": "v\(version)", "name": "Cutline \(version)", "draft": false, "prerelease": prerelease,
-            "html_url": "https://github.com/x/Cutline/releases/tag/v\(version)",
+            "tag_name": "sequoia-v\(version)", "name": "Cutline \(version) for Sequoia", "draft": false, "prerelease": prerelease,
+            "html_url": "https://github.com/x/Cutline/releases/tag/sequoia-v\(version)",
             "body": "## Better things\r\n\r\n- Fixed: one thing.\r\n- Added **another**.\r\n\r\n## Install\r\n\r\n1. Download it.",
-            "assets": [["name": "Cutline-\(version).dmg", "size": 5, "digest": "sha256:00", "browser_download_url": "https://x/a.dmg"], asset],
+            "assets": [["name": "Cutline-Sequoia-\(version).dmg", "size": 5, "digest": "sha256:00", "browser_download_url": "https://x/a.dmg"], asset],
         ]
-        return try! JSONSerialization.data(withJSONObject: release)
+        // The list GitHub sends: a newer main-edition release (never offered here) and this one.
+        let main: [String: Any] = [
+            "tag_name": "v100.0", "name": "Cutline 100.0", "draft": false, "prerelease": false,
+            "html_url": "https://github.com/x/Cutline/releases/tag/v100.0", "body": "",
+            "assets": [["name": "Cutline-100.0.zip", "size": 5, "digest": "sha256:\(String(repeating: "cd", count: 32))",
+                        "browser_download_url": "https://x/main.zip"]],
+        ]
+        return try! JSONSerialization.data(withJSONObject: [main, release])
     }
 
     @Test func versionsCompareAsNumbers() {
@@ -51,7 +58,8 @@ nonisolated final class FakeGitHub: URLProtocol {
 
     @Test func readsGitHubsAnswer() throws {
         let release = try SoftwareRelease.parse(Self.releaseJSON(version: "5.3", zipSize: 1234))
-        #expect(release.version == "5.3" && release.zip.name == "Cutline-5.3.zip" && release.zip.size == 1234)
+        #expect(release.version == "5.3" && release.zip.name == "Cutline-Sequoia-5.3.zip" && release.zip.size == 1234,
+                "the Sequoia edition's own release, not the newer main-edition one")
         #expect(release.zip.sha256 == String(repeating: "ab", count: 32), "GitHub's own checksum")
         #expect(release.notes == "## Better things\n\n- Fixed: one thing.\n- Added **another**.", "without the manual install steps")
         #expect(throws: SoftwareRelease.ParseError.self) { try SoftwareRelease.parse(Self.releaseJSON(version: "5.3", sha: nil)) }
@@ -74,6 +82,11 @@ nonisolated final class FakeGitHub: URLProtocol {
         try await Task.sleep(for: .milliseconds(50))
     }
 
+    /// Waits until the updater's check has finished (however busy the Mac is).
+    private func finished(_ updater: Updater) async throws {
+        for _ in 0..<500 where updater.isBusy { try await Task.sleep(for: .milliseconds(20)) }
+    }
+
     @Test func offersNewerVersionsOnly() async throws {
         try await keepingSettings {
             let updater = Updater(session: FakeGitHub.session())
@@ -90,7 +103,7 @@ nonisolated final class FakeGitHub: URLProtocol {
             // Skipped: not offered at launch, but still when asked.
             updater.skip(release)
             updater.check(userInitiated: false)
-            try await Task.sleep(for: .milliseconds(300))
+            try await finished(updater)
             #expect(updater.phase == .idle)
             updater.check(userInitiated: true)
             try await settle(updater)
@@ -99,16 +112,16 @@ nonisolated final class FakeGitHub: URLProtocol {
             // The same version: up to date (only said when asked).
             FakeGitHub.responses[Updater.feed.absoluteString] = (200, Self.releaseJSON(version: AppVersion.short))
             updater.check(userInitiated: true)
-            try await Task.sleep(for: .milliseconds(300))
+            try await finished(updater)
             #expect(updater.phase == .upToDate)
 
             // Offline or GitHub trouble: quiet at launch, explained when asked.
             FakeGitHub.responses[Updater.feed.absoluteString] = (500, Data())
             updater.check(userInitiated: false)
-            try await Task.sleep(for: .milliseconds(300))
+            try await finished(updater)
             #expect(updater.phase == .idle)
             updater.check(userInitiated: true)
-            try await Task.sleep(for: .milliseconds(300))
+            try await finished(updater)
             if case .failed = updater.phase {} else { Issue.record("\(updater.phase)") }
 
             // At launch, once a day at most.
@@ -117,12 +130,12 @@ nonisolated final class FakeGitHub: URLProtocol {
             AppSettings.shared.lastUpdateCheck = .now
             updater.close()
             updater.checkAutomatically()
-            try await Task.sleep(for: .milliseconds(300))
+            try await finished(updater)
             #expect(updater.phase == .idle, "checked recently")
             AppSettings.shared.checkForUpdates = false
             AppSettings.shared.lastUpdateCheck = nil
             updater.checkAutomatically()
-            try await Task.sleep(for: .milliseconds(300))
+            try await finished(updater)
             #expect(updater.phase == .idle, "turned off")
         }
     }

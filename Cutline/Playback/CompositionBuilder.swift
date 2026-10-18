@@ -398,16 +398,15 @@ nonisolated enum CompositionBuilder {
             instructions.append(CompositorInstruction(timeRange: span.cmTimeRange, layers: layers, captions: overlays))
         }
 
-        let configuration = AVVideoComposition.Configuration(
-            colorPrimaries: AVVideoColorPrimaries_ITU_R_709_2,
-            colorTransferFunction: AVVideoTransferFunction_ITU_R_709_2,
-            colorYCbCrMatrix: AVVideoYCbCrMatrix_ITU_R_709_2,
-            // Transparent clips need frames with their alpha (RGBA); otherwise the faster YUV.
-            customVideoCompositorClass: alpha ? AlphaLayerCompositor.self : LayerCompositor.self,
-            frameDuration: state.settings.frameDuration.cmTime,
-            instructions: instructions,
-            renderSize: state.settings.renderSize
-        )
-        return AVVideoComposition(configuration: configuration)
+        let composition = AVMutableVideoComposition()
+        composition.colorPrimaries = AVVideoColorPrimaries_ITU_R_709_2
+        composition.colorTransferFunction = AVVideoTransferFunction_ITU_R_709_2
+        composition.colorYCbCrMatrix = AVVideoYCbCrMatrix_ITU_R_709_2
+        // Transparent clips need frames with their alpha (RGBA); otherwise the faster YUV.
+        composition.customVideoCompositorClass = alpha ? AlphaLayerCompositor.self : LayerCompositor.self
+        composition.frameDuration = state.settings.frameDuration.cmTime
+        composition.instructions = instructions
+        composition.renderSize = state.settings.renderSize
+        return composition.copy() as! AVVideoComposition
     }
 }

@@ -62,7 +62,7 @@ nonisolated class LayerCompositor: NSObject, AVVideoCompositing, @unchecked Send
         var output = CIImage(color: CIColor(red: 0, green: 0, blue: 0)).cropped(to: canvas)
 
         // Source buffers must outlive the render because CIImage references them lazily.
-        var sources: [CVReadOnlyPixelBuffer] = []
+        var sources: [ReadOnlyPixels] = []
         if let instruction = request.videoCompositionInstruction as? CompositorInstruction {
             let time = Time(request.compositionTime)
             for layer in instruction.layers {
@@ -86,18 +86,16 @@ nonisolated class LayerCompositor: NSObject, AVVideoCompositing, @unchecked Send
             }
         }
 
-        let pixelBuffer = try request.renderContext.makeMutablePixelBuffer()
-        pixelBuffer.withUnsafeBuffer { target in
-            context.render(output.cropped(to: canvas), to: target, bounds: canvas, colorSpace: outputColorSpace)
-        }
-        request.finish(withComposedPixelBuffer: CVReadOnlyPixelBuffer(pixelBuffer))
+        guard let pixelBuffer = request.renderContext.newPixelBuffer() else { throw CocoaError(.fileWriteUnknown) }
+        context.render(output.cropped(to: canvas), to: pixelBuffer, bounds: canvas, colorSpace: outputColorSpace)
+        request.finish(withComposedVideoFrame: pixelBuffer)
         withExtendedLifetime(sources) {}
     }
 
     /// The processed image of one layer's clip at `time`: drawn text, or the clip's
     /// source frame. Source buffers are kept in `sources` until the frame is rendered.
     private func image(of layer: CompositorLayer, request: AVAsynchronousVideoCompositionRequest,
-                       renderSize: CGSize, time: Time, keeping sources: inout [CVReadOnlyPixelBuffer]) -> CIImage? {
+                       renderSize: CGSize, time: Time, keeping sources: inout [ReadOnlyPixels]) -> CIImage? {
         if let text = layer.text {
             guard let image = TextRenderer.image(for: text) else { return nil }
             return Self.process(image, layer: layer, renderSize: renderSize, at: time)
@@ -112,11 +110,11 @@ nonisolated class LayerCompositor: NSObject, AVVideoCompositing, @unchecked Send
                                 renderSize: renderSize, at: time)
         }
         guard let trackID = layer.trackID,
-              let buffer = request.sourceReadOnlyPixelBuffer(byTrackID: trackID) else { return nil }
+              let buffer = request.sourceFrame(byTrackID: trackID).map(ReadOnlyPixels.init(buffer:)) else { return nil }
         sources.append(buffer)
         var image = buffer.withUnsafeBuffer { Self.image(from: $0) }
         // Frame Blend: mix in the next source frame by how far toward it this moment is.
-        if let retime = layer.retime, let next = request.sourceReadOnlyPixelBuffer(byTrackID: retime.nextFrameTrackID) {
+        if let retime = layer.retime, let next = request.sourceFrame(byTrackID: retime.nextFrameTrackID).map(ReadOnlyPixels.init(buffer:)) {
             let fraction = retime.fraction(at: time)
             if fraction > 0.001 {
                 sources.append(next)

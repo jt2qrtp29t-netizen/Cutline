@@ -12,8 +12,8 @@ import Testing
         let input = AVAssetWriterInput(mediaType: .video, outputSettings: [
             AVVideoCodecKey: AVVideoCodecType.proRes4444, AVVideoWidthKey: 640, AVVideoHeightKey: 360,
         ])
-        let receiver = writer.inputPixelBufferReceiver(for: input, pixelBufferAttributes: nil)
-        try writer.start()
+        let receiver = writer.pixelReceiver(for: input)
+        try writer.startOrThrow()
         writer.startSession(atSourceTime: .zero)
         for i in 0..<30 { try await receiver.append(frame, with: CMTime(value: Int64(i), timescale: 30)) }
         receiver.finish()
@@ -21,14 +21,14 @@ import Testing
         return url
     }
 
-    nonisolated private static func halfTransparentFrame() throws -> CVReadOnlyPixelBuffer {
+    nonisolated private static func halfTransparentFrame() throws -> ReadOnlyPixels {
         var buffer: CVPixelBuffer?
         CVPixelBufferCreate(nil, 640, 360, kCVPixelFormatType_32BGRA, [kCVPixelBufferIOSurfacePropertiesKey: [:]] as CFDictionary, &buffer)
         let pixels = try #require(buffer)
         let white = CIImage(color: CIColor(red: 1, green: 1, blue: 1)).cropped(to: CGRect(x: 320, y: 0, width: 320, height: 360))
         let clear = CIImage(color: .clear).cropped(to: CGRect(x: 0, y: 0, width: 640, height: 360))
         CIContext().render(white.composited(over: clear), to: pixels)
-        return CVReadOnlyPixelBuffer(unsafeBuffer: pixels)
+        return ReadOnlyPixels(buffer: pixels)
     }
 
     /// Source frames now come as the decoder's own YUV, so the alpha in a ProRes 4444

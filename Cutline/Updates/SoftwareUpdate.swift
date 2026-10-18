@@ -31,7 +31,14 @@ nonisolated struct SoftwareRelease: Equatable, Sendable {
         }
     }
 
-    /// Reads GitHub's "latest release" answer (api.github.com/repos/…/releases/latest).
+    /// Sequoia edition: its releases share the repository with the main edition's, so
+    /// they're told apart by tag ("sequoia-v5.4") and download ("Cutline-Sequoia-5.4.zip").
+    /// They're never GitHub's "latest" release, which belongs to the main edition.
+    static let tagPrefix = "sequoia-v"
+    static func zipName(for version: String) -> String { "Cutline-Sequoia-\(version).zip" }
+
+    /// Reads GitHub's list of releases (api.github.com/repos/…/releases) and picks the
+    /// newest published Sequoia edition release.
     static func parse(_ data: Data) throws -> SoftwareRelease {
         struct Asset: Decodable {
             let name: String
@@ -48,11 +55,14 @@ nonisolated struct SoftwareRelease: Equatable, Sendable {
             let prerelease: Bool
             let assets: [Asset]
         }
-        guard let release = try? JSONDecoder().decode(Release.self, from: data), !release.draft, !release.prerelease else {
+        guard let releases = try? JSONDecoder().decode([Release].self, from: data) else { throw ParseError.notARelease }
+        let candidates = releases.filter { !$0.draft && !$0.prerelease && $0.tag_name.hasPrefix(tagPrefix) }
+        guard let release = candidates.max(by: { isNewer($1.tag_name.dropFirst(tagPrefix.count).description,
+                                                         than: $0.tag_name.dropFirst(tagPrefix.count).description) }) else {
             throw ParseError.notARelease
         }
-        let version = release.tag_name.hasPrefix("v") ? String(release.tag_name.dropFirst()) : release.tag_name
-        let zipName = "Cutline-\(version).zip"
+        let version = String(release.tag_name.dropFirst(tagPrefix.count))
+        let zipName = zipName(for: version)
         guard let zip = release.assets.first(where: { $0.name == zipName }) else { throw ParseError.noDownload(zipName) }
         guard let digest = zip.digest, digest.hasPrefix("sha256:") else { throw ParseError.noChecksum }
         return SoftwareRelease(version: version, title: release.name ?? "Cutline \(version)",

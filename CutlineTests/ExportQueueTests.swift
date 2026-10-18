@@ -55,7 +55,8 @@ import Testing
         let folder = ExportProbe.folder()
         let queue = ExportQueue()
         queue.notifies = false
-        let long = try await job("long", seconds: 20, folder: folder)
+        // Long enough to still be running when a busy test machine gets round to canceling it.
+        let long = try await job("long", seconds: 120, folder: folder)
         queue.enqueue(long)
         // Wait until it's actually writing frames, then cancel.
         let deadline = Date().addingTimeInterval(30)

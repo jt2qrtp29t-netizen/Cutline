@@ -272,10 +272,10 @@ nonisolated enum MediaTranscoder {
         // The same orientation as the original, so the compositor treats both alike.
         input.transform = transform
 
-        let provider = reader.outputProvider(for: output)
-        let receiver = writer.inputPixelBufferReceiver(for: input, pixelBufferAttributes: nil)
-        try reader.start()
-        try writer.start()
+        let provider = reader.sampleProvider(for: output)
+        let receiver = writer.pixelReceiver(for: input)
+        try reader.startOrThrow()
+        try writer.startOrThrow()
         writer.startSession(atSourceTime: .zero)
 
         let streams = TranscodeStreams(provider: provider, receiver: receiver, writer: writer)
@@ -319,8 +319,8 @@ nonisolated enum MediaTranscoder {
     }
 
     private struct TranscodeStreams: @unchecked Sendable {
-        let provider: AVAssetReaderOutput.Provider<CMReadySampleBuffer<CMSampleBuffer.DynamicContent>>
-        let receiver: AVAssetWriterInput.PixelBufferReceiver
+        let provider: SampleProvider
+        let receiver: PixelReceiver
         let writer: AVAssetWriter
     }
 }

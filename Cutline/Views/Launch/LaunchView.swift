@@ -43,7 +43,7 @@ struct LaunchView: View {
                     .font(.system(size: 26, weight: .medium))
                     .foregroundStyle(Theme.accent)
                     .frame(width: 48, height: 48)
-                    .glassEffect(.regular.tint(Theme.accentMuted), in: .rect(cornerRadius: 12))
+                    .background(Theme.accentMuted, in: .rect(cornerRadius: 12))
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Cutline")
                         .font(.system(size: 22, weight: .semibold))
@@ -138,7 +138,7 @@ struct LaunchView: View {
                         .padding(.horizontal, 10)
                         .padding(.vertical, 2)
                 }
-                .buttonStyle(.glassProminent)
+                .buttonStyle(.borderedProminent)
                 .tint(Theme.accent)
                 .foregroundStyle(Theme.textOnAccent)
                 .keyboardShortcut(.defaultAction)
@@ -199,7 +199,7 @@ struct LaunchView: View {
                 } label: {
                     Label("Open Other…", systemImage: "folder")
                 }
-                .buttonStyle(.glass)
+                .buttonStyle(.bordered)
                 Spacer()
             }
             .padding(16)

@@ -88,7 +88,7 @@ struct ExportLiveView: View {
             .foregroundStyle(Theme.textPrimary)
             .padding(.horizontal, 16)
             .padding(.vertical, 6)
-            .glassEffect(.regular, in: .capsule)
+            .background(.regularMaterial, in: .capsule)
         }
     }
 }

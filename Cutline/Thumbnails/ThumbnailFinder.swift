@@ -158,11 +158,11 @@ nonisolated enum ThumbnailFinder {
         guard let track = try await asset.loadTracks(withMediaType: .audio).first else { return [] }
         let reader = try AVAssetReader(asset: asset)
         // The track's own rate and channels (interleaved float samples).
-        let provider = reader.outputProvider(for: AVAssetReaderTrackOutput(track: track, outputSettings: [
+        let provider = reader.sampleProvider(for: AVAssetReaderTrackOutput(track: track, outputSettings: [
             AVFormatIDKey: kAudioFormatLinearPCM, AVLinearPCMIsFloatKey: true, AVLinearPCMBitDepthKey: 32,
             AVLinearPCMIsNonInterleaved: false, AVLinearPCMIsBigEndianKey: false,
         ]))
-        try reader.start()
+        try reader.startOrThrow()
         var sums = [Double](repeating: 0, count: Int((duration / loudnessStep).rounded(.up)) + 1)
         var counts = [Int](repeating: 0, count: sums.count)
         var frame = 0

@@ -47,7 +47,7 @@ nonisolated final class ExportFrameTap: @unchecked Sendable {
     }
 
     /// Offers the frame just encoded. Returns at once; most frames are skipped.
-    func offer(_ pixels: CVReadOnlyPixelBuffer, index: Int, isLast: Bool = false) {
+    func offer(_ pixels: ReadOnlyPixels, index: Int, isLast: Bool = false) {
         let now = DispatchTime.now().uptimeNanoseconds
         lock.lock()
         let due = isLast || now &- lastOffer >= UInt64(1_000_000_000 / Self.framesPerSecond)
@@ -72,6 +72,6 @@ nonisolated final class ExportFrameTap: @unchecked Sendable {
     }
 
     private struct FrameBox: @unchecked Sendable {
-        let pixels: CVReadOnlyPixelBuffer
+        let pixels: ReadOnlyPixels
     }
 }

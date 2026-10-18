@@ -10,6 +10,9 @@ enum AppVersion {
         Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "1"
     }
 
-    /// e.g. "v1.3"
-    static var display: String { "v\(short)" }
+    /// Which edition this is: the Sequoia edition runs on macOS 15 and later, on Intel too.
+    static let edition = "Sequoia"
+
+    /// e.g. "v1.3 · Sequoia"
+    static var display: String { "v\(short) · \(edition)" }
 }

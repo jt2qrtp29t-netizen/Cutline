@@ -81,10 +81,13 @@ struct RenderCacheTests {
 
     @Test func thisMacReportsItsMediaHardware() {
         #expect(!HardwareInfo.gpuName.isEmpty)
-        // Every Apple silicon Mac decodes and encodes H.264 and HEVC in hardware.
+        // Every Mac that runs macOS 15 decodes HEVC and encodes H.264 in hardware; Apple
+        // silicon encodes HEVC too (Intel Macs vary, so it isn't required there).
         #expect(HardwareInfo.hasHardwareDecoder(for: kCMVideoCodecType_HEVC))
-        #expect(HardwareInfo.hardwareEncoders.contains(kCMVideoCodecType_HEVC))
         #expect(HardwareInfo.hardwareEncoders.contains(kCMVideoCodecType_H264))
+        #if arch(arm64)
+        #expect(HardwareInfo.hardwareEncoders.contains(kCMVideoCodecType_HEVC))
+        #endif
     }
 }
 

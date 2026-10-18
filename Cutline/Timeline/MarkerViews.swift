@@ -177,7 +177,7 @@ struct MarkerEditor: View {
                     .keyboardShortcut(.cancelAction)
                 Button("Done", action: done)
                     .keyboardShortcut(.defaultAction)
-                    .buttonStyle(.glassProminent)
+                    .buttonStyle(.borderedProminent)
                     .tint(Theme.accent)
             }
             .controlSize(.small)

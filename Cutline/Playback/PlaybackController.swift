@@ -335,15 +335,16 @@ final class PlaybackController {
     @ObservationIgnored private var frameOutput: AVPlayerItemVideoOutput?
     @ObservationIgnored private var lastFrame: CIImage?
     /// Keeps the pixel buffer behind `lastFrame` alive (CIImage reads it lazily).
-    @ObservationIgnored private var lastFrameBuffer: CVReadOnlyPixelBuffer?
+    @ObservationIgnored private var lastFrameBuffer: ReadOnlyPixels?
     /// Bumped whenever `latestFrame()` returns a new frame.
     @ObservationIgnored private(set) var frameNumber = 0
 
     private func attachFrameOutput(to item: AVPlayerItem) {
         frameOutput = nil
         guard providesFrames else { return }
-        let output = AVPlayerItemVideoOutput(pixelBufferAttributes: CVPixelBufferAttributes(
-            pixelFormatTypes: [CVPixelFormatType(rawValue: kCVPixelFormatType_32BGRA)]))
+        let output = AVPlayerItemVideoOutput(pixelBufferAttributes: [
+            kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA,
+        ])
         item.add(output)
         frameOutput = output
         // A paused frame was drawn before the output existed: draw it again.
@@ -363,7 +364,7 @@ final class PlaybackController {
         let time = output.itemTime(forHostTime: CACurrentMediaTime())
         let itemTime = isPlaying ? time : player.currentTime()
         if output.hasNewPixelBuffer(forItemTime: itemTime),
-           let buffer = output.pixelBufferAndDisplayTime(forItemTime: itemTime).pixelBuffer {
+           let buffer = output.copyPixelBuffer(forItemTime: itemTime, itemTimeForDisplay: nil).map(ReadOnlyPixels.init(buffer:)) {
             lastFrameBuffer = buffer
             lastFrame = buffer.withUnsafeBuffer { CIImage(cvPixelBuffer: $0) }
             frameNumber += 1

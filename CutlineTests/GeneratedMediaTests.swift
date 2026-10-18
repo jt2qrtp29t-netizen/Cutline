@@ -13,8 +13,8 @@ import Testing
         let track = try #require(try await asset.loadTracks(withMediaType: .video).first)
         let reader = try AVAssetReader(asset: asset)
         let output = AVAssetReaderTrackOutput(track: track, outputSettings: nil)
-        let provider = reader.outputProvider(for: output)
-        try reader.start()
+        let provider = reader.sampleProvider(for: output)
+        try reader.startOrThrow()
         var times: [CMTime] = []
         while let sample = try await provider.next() { times.append(sample.presentationTimeStamp) }
         return times.sorted { CMTimeCompare($0, $1) < 0 }
